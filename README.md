@@ -1,3 +1,5 @@
+![alt text](image.png)
+
 # AlertView
 
 A lightweight alert dashboard for Alertmanager and Grafana. Built with Rust (Axum) and a single-page HTML frontend — no database, no dependencies at runtime.
