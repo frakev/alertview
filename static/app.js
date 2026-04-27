@@ -45,6 +45,23 @@ document.getElementById('tv-theme-btn').addEventListener('click', () => {
   pushUrl();
 });
 
+/* ── knownFps persistence ── */
+function loadKnownFps() {
+  try {
+    const raw = localStorage.getItem('av-known-fps');
+    if (!raw) return null;
+    const { fps, ts } = JSON.parse(raw);
+    if (Date.now() - ts > 86400000) return null;
+    return new Set(fps);
+  } catch { return null; }
+}
+
+function saveKnownFps(fps) {
+  try {
+    localStorage.setItem('av-known-fps', JSON.stringify({ fps: [...fps], ts: Date.now() }));
+  } catch {}
+}
+
 /* ── Notifications ── */
 const NotifBtn = document.getElementById('notif-btn');
 
@@ -78,7 +95,7 @@ function sendNotif(newAlerts) {
 /* ── App state (filters persistés dans localStorage) ── */
 const App = {
   data:           null,
-  knownFps:       null,
+  knownFps:       loadKnownFps(),
   freshFps:       new Set(),
   searchQ:        '',
   sevFilter:      localStorage.getItem('av-sev-filter') || 'all',
@@ -156,6 +173,7 @@ async function fetchAlerts() {
       if (newAlerts.length) { sendNotif(newAlerts); newAlerts.forEach(a => App.freshFps.add(a.fingerprint)); }
     }
     App.knownFps = curFps;
+    saveKnownFps(curFps);
     App.data = data;
 
     render();
@@ -229,7 +247,15 @@ function toggleSev(s) {
 }
 
 /* ── Render ── */
-function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); }
+function updateTitle() {
+  const firing = (App.data?.alerts ?? []).filter(a => a.status === 'firing');
+  if (!firing.length) { document.title = 'AlertView'; return; }
+  const bySev = s => firing.filter(a => a.severity === s).length;
+  const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
+  document.title = `${icon} ${firing.length} alerte${firing.length > 1 ? 's' : ''} — AlertView`;
+}
+
+function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); updateTitle(); }
 
 function renderStats() {
   const counts = {};
