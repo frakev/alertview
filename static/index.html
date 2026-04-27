@@ -370,6 +370,23 @@
     }
     .source-sel:focus { border-color: var(--accent); }
 
+    .silence-toggle {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+      padding: 5px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color .15s, border-color .15s;
+    }
+    .silence-toggle:hover { color: var(--text); border-color: var(--accent); }
+    .silence-toggle.active { color: var(--c-silenced); border-color: var(--c-silenced); }
+
     /* ── Alert list ── */
     .alert-list {
       display: flex;
@@ -624,6 +641,10 @@
       </select>
     </div>
     <div class="tv-row">
+      <span class="tv-label">Silencées</span>
+      <button class="silence-toggle" id="tv-silence-btn"></button>
+    </div>
+    <div class="tv-row">
       <span class="tv-label">Thème</span>
       <button class="icon-btn" id="tv-theme-btn" style="width:26px;height:26px">
         <svg id="tv-theme-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -652,9 +673,12 @@
 <main class="main">
   <div class="toolbar">
     <span class="alert-count" id="alert-count"></span>
-    <select class="source-sel" id="source-sel">
-      <option value="all">Toutes les sources</option>
-    </select>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <button class="silence-toggle" id="silence-btn"></button>
+      <select class="source-sel" id="source-sel">
+        <option value="all">Toutes les sources</option>
+      </select>
+    </div>
   </div>
   <div class="alert-list" id="alert-list">
     <div class="empty-state">
@@ -750,6 +774,7 @@
     searchQ:        '',
     sevFilter:      localStorage.getItem('av-sev-filter') || 'all',
     srcFilter:      localStorage.getItem('av-src-filter') || 'all',
+    showSilenced:   localStorage.getItem('av-show-silenced') === 'true',
     refreshTimer:   null,
     countdownTimer: null,
     countdown:      0,
@@ -770,6 +795,24 @@
     SearchClear.style.display = 'none';
     renderAlerts();
   });
+
+  /* ── Silence toggle ── */
+  function updateSilenceBtn() {
+    [document.getElementById('silence-btn'), document.getElementById('tv-silence-btn')].forEach(btn => {
+      if (!btn) return;
+      btn.textContent = App.showSilenced ? 'Masquer silencées' : 'Afficher silencées';
+      btn.classList.toggle('active', App.showSilenced);
+    });
+  }
+  function toggleSilenced() {
+    App.showSilenced = !App.showSilenced;
+    localStorage.setItem('av-show-silenced', App.showSilenced);
+    updateSilenceBtn();
+    renderAlerts();
+    pushUrl();
+  }
+  document.getElementById('silence-btn').addEventListener('click', toggleSilenced);
+  document.getElementById('tv-silence-btn').addEventListener('click', toggleSilenced);
 
   /* ── Source filter (normal mode) ── */
   const SourceSel = document.getElementById('source-sel');
@@ -854,6 +897,7 @@
   /* ── Filters ── */
   function filteredAlerts() {
     return (App.data?.alerts ?? []).filter(a => {
+      if (!App.showSilenced && a.status === 'silenced') return false;
       if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
       if (App.srcFilter !== 'all' && a.source !== App.srcFilter) return false;
       if (App.searchQ) {
@@ -876,7 +920,7 @@
   }
 
   /* ── Render ── */
-  function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); }
+  function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); }
 
   function renderStats() {
     const counts = {};
@@ -1105,9 +1149,10 @@
     const p = new URLSearchParams();
     const theme = document.documentElement.getAttribute('data-theme');
     if (theme !== 'dark')        p.set('theme', theme);
-    if (App.sevFilter !== 'all') p.set('sev',   App.sevFilter);
-    if (App.srcFilter !== 'all') p.set('src',   App.srcFilter);
-    if (App.searchQ)             p.set('q',     App.searchQ);
+    if (App.sevFilter !== 'all') p.set('sev',      App.sevFilter);
+    if (App.srcFilter !== 'all') p.set('src',      App.srcFilter);
+    if (App.searchQ)             p.set('q',        App.searchQ);
+    if (App.showSilenced)        p.set('silenced', '1');
     const qs = p.toString();
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
   }
@@ -1117,15 +1162,17 @@
     if (p.has('theme')) applyTheme(p.get('theme'));
     if (p.has('sev'))   { App.sevFilter = p.get('sev');   localStorage.setItem('av-sev-filter', App.sevFilter); }
     if (p.has('src'))   { App.srcFilter = p.get('src');   localStorage.setItem('av-src-filter', App.srcFilter); }
-    if (p.has('q'))     {
+    if (p.has('q'))        {
       App.searchQ = p.get('q');
       SearchInput.value = App.searchQ;
       SearchClear.style.display = App.searchQ ? 'block' : 'none';
     }
+    if (p.has('silenced')) { App.showSilenced = p.get('silenced') === '1'; localStorage.setItem('av-show-silenced', App.showSilenced); }
   }
 
   /* ── Boot ── */
   initFromUrl();
+  updateSilenceBtn();
   fetchAlerts();
 </script>
 </body>
