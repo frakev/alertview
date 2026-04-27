@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AlertView</title>
+  <style>
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b22;
+      --surface2:   #21262d;
+      --border:     #30363d;
+      --text:       #e6edf3;
+      --text-muted: #8b949e;
+      --text-dim:   #484f58;
+      --accent:     #818cf8;
+      --c-critical: #f85149;
+      --c-high:     #fb923c;
+      --c-warning:  #d29922;
+      --c-info:     #58a6ff;
+      --c-none:     #6e7681;
+      --c-resolved: #3fb950;
+      --c-silenced: #bc8cff;
+      --radius:     6px;
+      --shadow:     0 1px 3px rgba(0,0,0,.4), 0 4px 12px rgba(0,0,0,.25);
+    }
+
+    [data-theme="light"] {
+      --bg:         #f6f8fa;
+      --surface:    #ffffff;
+      --surface2:   #f6f8fa;
+      --border:     #d0d7de;
+      --text:       #1f2328;
+      --text-muted: #636c76;
+      --text-dim:   #9198a1;
+      --shadow:     0 1px 3px rgba(31,35,40,.12), 0 4px 12px rgba(31,35,40,.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    a { color: inherit; }
+
+    /* ── Header ── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: 0 1.25rem;
+      height: 52px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .logo svg { flex-shrink: 0; }
+
+    .stats-bar {
+      display: flex;
+      gap: .35rem;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .stats-bar::-webkit-scrollbar { display: none; }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      padding: 2px 9px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      transition: opacity .15s, box-shadow .15s;
+      user-select: none;
+    }
+    .stat-chip:hover { opacity: .85; }
+    .stat-chip.active { box-shadow: 0 0 0 2px var(--text); }
+
+    .stat-chip.sev-critical { background: rgba(248,81,73,.15);  color: var(--c-critical); border-color: rgba(248,81,73,.3); }
+    .stat-chip.sev-high     { background: rgba(251,146,60,.15); color: var(--c-high);     border-color: rgba(251,146,60,.3); }
+    .stat-chip.sev-warning  { background: rgba(210,153,34,.15); color: var(--c-warning);  border-color: rgba(210,153,34,.3); }
+    .stat-chip.sev-info     { background: rgba(88,166,255,.15); color: var(--c-info);     border-color: rgba(88,166,255,.3); }
+    .stat-chip.sev-none     { background: rgba(110,118,129,.15);color: var(--c-none);     border-color: rgba(110,118,129,.3); }
+
+    .search-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+    }
+    .search-ico {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .search-clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      cursor: pointer;
+      display: none;
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .search-input {
+      width: 100%;
+      padding: 6px 28px 6px 30px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text-dim); }
+
+    .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .refresh-info {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      color: var(--text-muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      transition: background .15s, color .15s;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { background: var(--border); color: var(--text); }
+    .icon-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .icon-btn.notif-granted { color: var(--c-warning); }
+    .icon-btn.notif-denied  { opacity: .4; cursor: not-allowed; }
+
+    .spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Sources bar ── */
+    .sources-bar {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: 4px 1.25rem;
+      border-top: 1px solid var(--border);
+      overflow-x: auto;
+      min-height: 26px;
+    }
+    .sources-bar::-webkit-scrollbar { display: none; }
+
+    .src-item {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .src-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .src-dot.ok    { background: var(--c-resolved); }
+    .src-dot.error { background: var(--c-critical); animation: pulse 1.5s ease-in-out infinite; }
+    .src-sep { color: var(--border); }
+    .src-err-label { color: var(--c-critical); cursor: default; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .4; }
+    }
+
+    /* ── TV Mode ── */
+    [data-tv="true"] .header  { display: none; }
+    [data-tv="true"] .toolbar { display: none; }
+    [data-tv="true"] .main    { padding: .5rem; }
+
+    .tv-overlay {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 500;
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: .5rem;
+      pointer-events: none;
+    }
+    [data-tv="true"] .tv-overlay { display: flex; }
+    .tv-overlay > * { pointer-events: auto; }
+
+    /* Settings panel (above the bar) */
+    .tv-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: .75rem 1rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      display: none;
+      flex-direction: column;
+      gap: .6rem;
+      min-width: 230px;
+    }
+    .tv-panel.open { display: flex; }
+
+    .tv-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+    }
+    .tv-row-sep {
+      border-top: 1px solid var(--border);
+      padding-top: .55rem;
+      margin-top: .1rem;
+    }
+    .tv-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .tv-chips {
+      display: flex;
+      gap: .25rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .tv-exit-btn {
+      width: 100%;
+      padding: 5px 10px;
+      background: rgba(248,81,73,.1);
+      border: 1px solid rgba(248,81,73,.3);
+      border-radius: var(--radius);
+      color: var(--c-critical);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .tv-exit-btn:hover { background: rgba(248,81,73,.2); }
+
+    /* Floating bar */
+    .tv-bar {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      background: color-mix(in srgb, var(--surface) 90%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 5px 12px;
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      transition: opacity .4s;
+      white-space: nowrap;
+    }
+    .tv-bar.visible { opacity: 1; }
+
+    .tv-clock {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .5px;
+    }
+    .tv-dots {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .tv-cd {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .tv-icon-sm {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+    }
+
+    /* ── Main ── */
+    .main { padding: 1.25rem; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .85rem;
+      gap: .75rem;
+    }
+
+    .alert-count { color: var(--text-muted); font-size: 12px; }
+
+    .source-sel {
+      padding: 5px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+    }
+    .source-sel:focus { border-color: var(--accent); }
+
+    /* ── Alert list ── */
+    .alert-list {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-muted);
+    }
+    .empty-state-icon { font-size: 2.5rem; margin-bottom: .75rem; }
+
+    /* ── Alert card ── */
+    .alert-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left-width: 3px;
+      border-radius: var(--radius);
+      padding: .75rem 1rem;
+      box-shadow: var(--shadow);
+      transition: box-shadow .15s;
+    }
+    .alert-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.2); }
+
+    .alert-card.sev-critical { border-left-color: var(--c-critical); }
+    .alert-card.sev-high     { border-left-color: var(--c-high); }
+    .alert-card.sev-warning  { border-left-color: var(--c-warning); }
+    .alert-card.sev-info     { border-left-color: var(--c-info); }
+    .alert-card.sev-none     { border-left-color: var(--c-none); }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .35rem;
+    }
+    .sev-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sev-dot.sev-critical { background: var(--c-critical); }
+    .sev-dot.sev-high     { background: var(--c-high); }
+    .sev-dot.sev-warning  { background: var(--c-warning); }
+    .sev-dot.sev-info     { background: var(--c-info); }
+    .sev-dot.sev-none     { background: var(--c-none); }
+
+    .alert-name { font-weight: 600; font-size: 13px; }
+
+    .sev-badge, .status-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .sev-badge.sev-critical { background: rgba(248,81,73,.15);   color: var(--c-critical); }
+    .sev-badge.sev-high     { background: rgba(251,146,60,.15);  color: var(--c-high); }
+    .sev-badge.sev-warning  { background: rgba(210,153,34,.15);  color: var(--c-warning); }
+    .sev-badge.sev-info     { background: rgba(88,166,255,.15);  color: var(--c-info); }
+    .sev-badge.sev-none     { background: rgba(110,118,129,.15); color: var(--c-none); }
+
+    .status-badge.status-firing   { background: rgba(248,81,73,.1);   color: var(--c-critical); }
+    .status-badge.status-resolved { background: rgba(63,185,80,.1);   color: var(--c-resolved); }
+    .status-badge.status-silenced { background: rgba(188,140,255,.1); color: var(--c-silenced); }
+    .status-badge.status-pending  { background: rgba(88,166,255,.1);  color: var(--c-info); }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      flex-shrink: 0;
+    }
+    .src-chip {
+      font-size: 10px;
+      padding: 1px 7px;
+      background: rgba(129,140,248,.1);
+      color: var(--accent);
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    .time-ago {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      cursor: default;
+    }
+    .gen-link {
+      font-size: 14px;
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color .15s;
+      line-height: 1;
+    }
+    .gen-link:hover { color: var(--accent); }
+
+    .card-summary { margin-top: .35rem; font-size: 12px; color: var(--text); }
+    .card-desc {
+      margin-top: .2rem;
+      font-size: 11px;
+      color: var(--text-muted);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      white-space: pre-wrap;
+    }
+    .label-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+    .lbl {
+      font-size: 11px;
+      padding: 1px 7px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text-muted);
+      font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    }
+    .lbl b { color: var(--text); font-weight: 500; }
+
+    @keyframes flash-in {
+      0%   { background: rgba(129,140,248,.18); }
+      100% { background: var(--surface); }
+    }
+    .alert-card.new { animation: flash-in 2s ease-out forwards; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 600px) {
+      .stats-bar { display: none; }
+      .main { padding: .75rem; }
+      .card-top { flex-direction: column; gap: .3rem; }
+      .hdr-right .refresh-info span:not(.spinner) { display: none; }
+    }
+
+    /* ── TV mode: couleurs vives ── */
+    [data-tv="true"] {
+      --c-critical: #ff2d20;
+      --c-high:     #ff7500;
+      --c-warning:  #ffbf00;
+      --c-info:     #00aaff;
+    }
+    [data-tv="true"] .alert-card { border-left-width: 4px; }
+    [data-tv="true"] .alert-card.sev-critical { background: rgba(255,45,32,.14); }
+    [data-tv="true"] .alert-card.sev-high     { background: rgba(255,117,0,.12); }
+    [data-tv="true"] .alert-card.sev-warning  { background: rgba(255,191,0,.09); }
+    [data-tv="true"] .alert-card.sev-info     { background: rgba(0,170,255,.09); }
+    [data-tv="true"] .alert-list { gap: .2rem; }
+
+    /* ── Ligne compacte (mode TV) ── */
+    .alert-row {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      padding: .3rem .75rem;
+      overflow: hidden;
+      flex-wrap: nowrap;
+    }
+    .alert-row .alert-name  { font-size: 12px; white-space: nowrap; }
+    .alert-row .row-summary {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
+    .alert-row .src-chip { font-size: 10px; }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-top">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      AlertView
+    </div>
+
+    <div class="stats-bar" id="stats-bar"></div>
+
+    <div class="search-wrap">
+      <svg class="search-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input type="search" id="search" class="search-input" placeholder="Rechercher alertes, labels, annotations…" autocomplete="off" spellcheck="false">
+      <button class="search-clear" id="search-clear" title="Effacer">✕</button>
+    </div>
+
+    <div class="hdr-right">
+      <div class="refresh-info">
+        <div class="spinner" id="spinner"></div>
+        <span id="last-refresh">–</span>
+        <span>·</span>
+        <span>↻&thinsp;<b id="countdown">–</b>s</span>
+      </div>
+      <button class="icon-btn" id="refresh-btn" title="Rafraîchir maintenant">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+          <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="notif-btn" title="Notifications navigateur">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </button>
+      <!-- Mode TV -->
+      <button class="icon-btn" id="tv-btn" title="Mode TV (T)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="theme-btn" title="Thème clair/sombre">
+        <svg id="theme-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="sources-bar" id="sources-bar"></div>
+</header>
+
+<!-- TV overlay (visible uniquement en mode TV) -->
+<div class="tv-overlay" id="tv-overlay">
+  <!-- Panneau de réglages -->
+  <div class="tv-panel" id="tv-panel">
+    <div class="tv-row">
+      <span class="tv-label">Sévérité</span>
+      <div class="tv-chips" id="tv-sev-chips"></div>
+    </div>
+    <div class="tv-row">
+      <span class="tv-label">Source</span>
+      <select class="source-sel" id="tv-src-sel" style="font-size:11px;padding:3px 8px">
+        <option value="all">Toutes</option>
+      </select>
+    </div>
+    <div class="tv-row">
+      <span class="tv-label">Thème</span>
+      <button class="icon-btn" id="tv-theme-btn" style="width:26px;height:26px">
+        <svg id="tv-theme-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="tv-row tv-row-sep">
+      <button class="tv-exit-btn" id="tv-exit-btn">✕&ensp;Quitter le mode TV</button>
+    </div>
+  </div>
+  <!-- Barre flottante -->
+  <div class="tv-bar" id="tv-bar">
+    <span class="tv-clock" id="tv-clock">00:00</span>
+    <div class="tv-dots" id="tv-dots"></div>
+    <span class="tv-cd">↻&thinsp;<span id="tv-cd">–</span>s</span>
+    <button class="icon-btn tv-icon-sm" id="tv-settings-btn" title="Paramètres">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<main class="main">
+  <div class="toolbar">
+    <span class="alert-count" id="alert-count"></span>
+    <select class="source-sel" id="source-sel">
+      <option value="all">Toutes les sources</option>
+    </select>
+  </div>
+  <div class="alert-list" id="alert-list">
+    <div class="empty-state">
+      <div class="empty-state-icon">⏳</div>
+      <div>Chargement…</div>
+    </div>
+  </div>
+</main>
+
+<script>
+  /* ── Utilities ── */
+  function esc(s) {
+    if (s == null) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+  }
+
+  function relTime(iso) {
+    try {
+      const d = Math.max(0, Date.now() - new Date(iso).getTime());
+      const m = Math.floor(d / 60000);
+      const h = Math.floor(m / 60);
+      const days = Math.floor(h / 24);
+      if (days > 0) return days + 'j ' + (h % 24) + 'h';
+      if (h  > 0) return h + 'h ' + (m % 60) + 'm';
+      if (m  > 0) return m + 'm';
+      return 'à l\'instant';
+    } catch { return '?' }
+  }
+
+  function absTime(iso) {
+    try { return new Date(iso).toLocaleString('fr-FR'); }
+    catch { return iso; }
+  }
+
+  /* ── Theme ── */
+  const SUN  = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  const MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem('av-theme', t);
+    document.getElementById('theme-ico').innerHTML    = t === 'dark' ? MOON : SUN;
+    document.getElementById('tv-theme-ico').innerHTML = t === 'dark' ? MOON : SUN;
+  }
+
+  applyTheme(localStorage.getItem('av-theme') || 'dark');
+  document.getElementById('theme-btn').addEventListener('click', () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    pushUrl();
+  });
+  document.getElementById('tv-theme-btn').addEventListener('click', () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    pushUrl();
+  });
+
+  /* ── Notifications ── */
+  const NotifBtn = document.getElementById('notif-btn');
+
+  function updateNotifBtn() {
+    if (!('Notification' in window)) { NotifBtn.style.display = 'none'; return; }
+    NotifBtn.className = 'icon-btn';
+    if (Notification.permission === 'granted') NotifBtn.classList.add('notif-granted');
+    if (Notification.permission === 'denied')  NotifBtn.classList.add('notif-denied');
+    NotifBtn.title = { granted: 'Notifications activées', denied: 'Notifications bloquées', default: 'Activer les notifications' }[Notification.permission] || 'Notifications';
+  }
+  NotifBtn.addEventListener('click', async () => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'denied') { alert('Notifications bloquées — modifiez les paramètres du site.'); return; }
+    await Notification.requestPermission();
+    updateNotifBtn();
+  });
+  updateNotifBtn();
+
+  function sendNotif(newAlerts) {
+    if (Notification?.permission !== 'granted' || !newAlerts.length) return;
+    const bySev = s => newAlerts.filter(a => a.severity === s).length;
+    const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
+    const n = new Notification(
+      `${icon} ${newAlerts.length} nouvelle${newAlerts.length > 1 ? 's' : ''} alerte${newAlerts.length > 1 ? 's' : ''}`,
+      { body: newAlerts.slice(0, 6).map(a => `[${a.severity.toUpperCase()}] ${a.name}`).join('\n') + (newAlerts.length > 6 ? `\n… et ${newAlerts.length - 6} de plus` : '') }
+    );
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(() => n.close(), 9000);
+  }
+
+  /* ── App state (filters persistés dans localStorage) ── */
+  const App = {
+    data:           null,
+    knownFps:       null,
+    freshFps:       new Set(),
+    searchQ:        '',
+    sevFilter:      localStorage.getItem('av-sev-filter') || 'all',
+    srcFilter:      localStorage.getItem('av-src-filter') || 'all',
+    refreshTimer:   null,
+    countdownTimer: null,
+    countdown:      0,
+    loading:        false,
+  };
+
+  /* ── Search ── */
+  const SearchInput = document.getElementById('search');
+  const SearchClear = document.getElementById('search-clear');
+  SearchInput.addEventListener('input', e => {
+    App.searchQ = e.target.value;
+    SearchClear.style.display = App.searchQ ? 'block' : 'none';
+    renderAlerts();
+    pushUrl();
+  });
+  SearchClear.addEventListener('click', () => {
+    SearchInput.value = App.searchQ = '';
+    SearchClear.style.display = 'none';
+    renderAlerts();
+  });
+
+  /* ── Source filter (normal mode) ── */
+  const SourceSel = document.getElementById('source-sel');
+  SourceSel.addEventListener('change', e => {
+    App.srcFilter = e.target.value;
+    localStorage.setItem('av-src-filter', e.target.value);
+    syncTvSrcSel();
+    renderAlerts();
+    pushUrl();
+  });
+
+  /* ── Refresh ── */
+  document.getElementById('refresh-btn').addEventListener('click', () => fetchAlerts());
+
+  /* ── Fetch ── */
+  async function fetchAlerts() {
+    if (App.loading) return;
+    App.loading = true;
+    document.getElementById('spinner').style.display = 'block';
+    clearTimeout(App.refreshTimer);
+    clearInterval(App.countdownTimer);
+
+    try {
+      const resp = await fetch('/api/alerts');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+
+      const curFps = new Set(data.alerts.map(a => a.fingerprint));
+      App.freshFps = new Set();
+      if (App.knownFps !== null) {
+        const newAlerts = data.alerts.filter(a => !App.knownFps.has(a.fingerprint));
+        if (newAlerts.length) { sendNotif(newAlerts); newAlerts.forEach(a => App.freshFps.add(a.fingerprint)); }
+      }
+      App.knownFps = curFps;
+      App.data = data;
+
+      render();
+      syncSourceSel();
+
+      document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('fr-FR');
+
+      App.countdown = data.refresh_interval;
+      document.getElementById('countdown').textContent = App.countdown;
+      document.getElementById('tv-cd').textContent = App.countdown;
+
+      App.countdownTimer = setInterval(() => {
+        App.countdown = Math.max(0, App.countdown - 1);
+        document.getElementById('countdown').textContent = App.countdown;
+        document.getElementById('tv-cd').textContent = App.countdown;
+      }, 1000);
+
+      App.refreshTimer = setTimeout(fetchAlerts, data.refresh_interval * 1000);
+    } catch (err) {
+      console.error('AlertView:', err);
+      App.refreshTimer = setTimeout(fetchAlerts, 15000);
+    } finally {
+      App.loading = false;
+      document.getElementById('spinner').style.display = 'none';
+    }
+  }
+
+  function syncSourceSel() {
+    [SourceSel, document.getElementById('tv-src-sel')].forEach(sel => {
+      const cur = App.srcFilter;
+      sel.innerHTML = `<option value="all">${sel === SourceSel ? 'Toutes les sources' : 'Toutes'}</option>`;
+      (App.data?.sources ?? []).forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.name;
+        o.textContent = sel === SourceSel ? `${s.name} (${s.alert_count})` : s.name;
+        sel.appendChild(o);
+      });
+      if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    });
+  }
+
+  function syncTvSrcSel() {
+    const sel = document.getElementById('tv-src-sel');
+    if ([...sel.options].some(o => o.value === App.srcFilter)) sel.value = App.srcFilter;
+    if ([...SourceSel.options].some(o => o.value === App.srcFilter)) SourceSel.value = App.srcFilter;
+  }
+
+  /* ── Filters ── */
+  function filteredAlerts() {
+    return (App.data?.alerts ?? []).filter(a => {
+      if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
+      if (App.srcFilter !== 'all' && a.source !== App.srcFilter) return false;
+      if (App.searchQ) {
+        const q = App.searchQ.toLowerCase();
+        const hay = [a.name, a.severity, a.source, a.status,
+          ...Object.values(a.labels ?? {}), ...Object.values(a.annotations ?? {})].join('\n').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function toggleSev(s) {
+    App.sevFilter = App.sevFilter === s ? 'all' : s;
+    localStorage.setItem('av-sev-filter', App.sevFilter);
+    renderStats();
+    renderAlerts();
+    TV.renderChips();
+    pushUrl();
+  }
+
+  /* ── Render ── */
+  function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); }
+
+  function renderStats() {
+    const counts = {};
+    (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
+    const order = ['critical','high','warning','info','none'];
+    document.getElementById('stats-bar').innerHTML = order.filter(s => counts[s])
+      .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
+      .join('');
+  }
+
+  function renderSources() {
+    document.getElementById('sources-bar').innerHTML = (App.data?.sources ?? []).map((s, i) => `
+      ${i > 0 ? '<span class="src-sep">·</span>' : ''}
+      <span class="src-item">
+        <span class="src-dot ${s.status}"></span>
+        ${esc(s.name)}
+        ${s.status === 'ok' ? '· ' + s.alert_count + ' alerte' + (s.alert_count !== 1 ? 's' : '') : `<span class="src-err-label" title="${esc(s.error)}">⚠ erreur</span>`}
+      </span>`).join('');
+  }
+
+  function renderAlerts() {
+    const filtered = filteredAlerts();
+    const total    = App.data?.alerts.length ?? 0;
+    const listEl   = document.getElementById('alert-list');
+
+    document.getElementById('alert-count').textContent = filtered.length < total
+      ? filtered.length + ' / ' + total + ' alertes'
+      : total + ' alerte' + (total !== 1 ? 's' : '');
+
+    if (!filtered.length) {
+      listEl.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">${App.searchQ || App.sevFilter !== 'all' || App.srcFilter !== 'all' ? '🔍' : '✅'}</div>
+        <div>${App.searchQ ? 'Aucun résultat pour &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;' : 'Aucune alerte active'}</div>
+      </div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(cardHtml).join('');
+
+    if (App.freshFps.size) {
+      listEl.querySelectorAll('.alert-card').forEach(el => {
+        if (App.freshFps.has(el.dataset.fp)) el.classList.add('new');
+      });
+    }
+  }
+
+  function genLinkHtml(url) {
+    if (!url) return '';
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="Ouvrir dans Prometheus/Grafana">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+      </svg></a>`;
+  }
+
+  function cardHtml(a) {
+    if (TV.active) return cardHtmlTV(a);
+
+    const sev    = a.severity || 'none';
+    const labels = (App.data?.display_labels ?? [])
+      .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
+      .map(l => `<span class="lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('');
+
+    const summary  = a.annotations?.summary || '';
+    const desc     = a.annotations?.description || '';
+    const showDesc = desc && desc !== summary;
+
+    return `
+      <div class="alert-card sev-${sev}" data-fp="${esc(a.fingerprint)}">
+        <div class="card-top">
+          <div class="card-title">
+            <span class="sev-dot sev-${sev}"></span>
+            <span class="alert-name">${esc(a.name)}</span>
+            <span class="sev-badge sev-${sev}">${sev}</span>
+            <span class="status-badge status-${a.status}">${a.status}</span>
+          </div>
+          <div class="card-meta">
+            <span class="src-chip">${esc(a.source)}</span>
+            <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
+            ${genLinkHtml(a.link_url)}
+          </div>
+        </div>
+        ${summary  ? `<div class="card-summary">${esc(summary)}</div>` : ''}
+        ${showDesc ? `<div class="card-desc">${esc(desc)}</div>` : ''}
+        ${labels   ? `<div class="label-chips">${labels}</div>` : ''}
+      </div>`;
+  }
+
+  function cardHtmlTV(a) {
+    const sev     = a.severity || 'none';
+    const summary = a.annotations?.summary || '';
+    return `
+      <div class="alert-card alert-row sev-${sev}" data-fp="${esc(a.fingerprint)}">
+        <span class="sev-dot sev-${sev}"></span>
+        <span class="alert-name">${esc(a.name)}</span>
+        <span class="sev-badge sev-${sev}">${sev}</span>
+        <span class="status-badge status-${a.status}">${a.status}</span>
+        <span class="row-summary">${esc(summary)}</span>
+        <span class="src-chip">${esc(a.source)}</span>
+        <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
+        ${genLinkHtml(a.link_url)}
+      </div>`;
+  }
+
+  /* ── TV Mode ── */
+  const TV = {
+    active:     false,
+    panelOpen:  false,
+    clockTimer: null,
+    hideTimer:  null,
+
+    init() {
+      this.active = localStorage.getItem('av-tv') === 'true';
+      if (this.active) this._apply();
+
+      document.getElementById('tv-btn').addEventListener('click',      () => this.toggle());
+      document.getElementById('tv-settings-btn').addEventListener('click', e => { e.stopPropagation(); this.togglePanel(); });
+      document.getElementById('tv-exit-btn').addEventListener('click', () => this.toggle());
+
+      document.getElementById('tv-src-sel').addEventListener('change', e => {
+        App.srcFilter = e.target.value;
+        localStorage.setItem('av-src-filter', e.target.value);
+        syncTvSrcSel();
+        renderAlerts();
+        pushUrl();
+      });
+
+      // Afficher la barre au moindre mouvement
+      document.addEventListener('mousemove', () => this.showBar());
+      document.addEventListener('click',     () => this.showBar());
+
+      // Fermer le panneau en cliquant ailleurs
+      document.addEventListener('click', e => {
+        if (this.panelOpen && !document.getElementById('tv-panel').contains(e.target) && e.target.id !== 'tv-settings-btn') {
+          this.closePanel();
+        }
+      });
+
+      // Raccourcis clavier
+      document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.key === 'Escape') { if (this.panelOpen) this.closePanel(); else if (this.active) this.toggle(); }
+        if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) this.toggle();
+      });
+    },
+
+    toggle() {
+      this.active = !this.active;
+      localStorage.setItem('av-tv', this.active);
+      this._apply();
+    },
+
+    _apply() {
+      document.documentElement.setAttribute('data-tv', this.active);
+      document.getElementById('tv-btn').classList.toggle('active', this.active);
+      if (this.active) {
+        this.startClock();
+        this.showBar();
+        this.renderChips();
+        this.renderDots();
+        syncTvSrcSel();
+      } else {
+        this.stopClock();
+        this.closePanel();
+        clearTimeout(this.hideTimer);
+      }
+      renderAlerts();
+    },
+
+    startClock() {
+      this.updateClock();
+      this.clockTimer = setInterval(() => this.updateClock(), 1000);
+    },
+    stopClock() { clearInterval(this.clockTimer); },
+    updateClock() {
+      document.getElementById('tv-clock').textContent =
+        new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    },
+
+    showBar() {
+      if (!this.active) return;
+      const bar = document.getElementById('tv-bar');
+      bar.classList.add('visible');
+      clearTimeout(this.hideTimer);
+      if (!this.panelOpen) {
+        this.hideTimer = setTimeout(() => bar.classList.remove('visible'), 4000);
+      }
+    },
+
+    togglePanel() {
+      this.panelOpen ? this.closePanel() : this.openPanel();
+    },
+    openPanel() {
+      this.panelOpen = true;
+      document.getElementById('tv-panel').classList.add('open');
+      clearTimeout(this.hideTimer);
+      document.getElementById('tv-bar').classList.add('visible');
+    },
+    closePanel() {
+      this.panelOpen = false;
+      document.getElementById('tv-panel').classList.remove('open');
+      this.showBar();
+    },
+
+    renderChips() {
+      const counts = {};
+      (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
+      const order = ['critical','high','warning','info','none'];
+      const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('all')">tout</span>`;
+      document.getElementById('tv-sev-chips').innerHTML = all + order.filter(s => counts[s])
+        .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
+        .join('');
+    },
+
+    renderDots() {
+      document.getElementById('tv-dots').innerHTML = (App.data?.sources ?? [])
+        .map(s => `<span class="src-dot ${s.status}" title="${esc(s.name)}${s.error ? ': ' + esc(s.error) : ''}"></span>`)
+        .join('');
+    },
+  };
+
+  TV.init();
+
+  /* ── URL state sync ── */
+  function pushUrl() {
+    const p = new URLSearchParams();
+    const theme = document.documentElement.getAttribute('data-theme');
+    if (theme !== 'dark')        p.set('theme', theme);
+    if (App.sevFilter !== 'all') p.set('sev',   App.sevFilter);
+    if (App.srcFilter !== 'all') p.set('src',   App.srcFilter);
+    if (App.searchQ)             p.set('q',     App.searchQ);
+    const qs = p.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }
+
+  function initFromUrl() {
+    const p = new URLSearchParams(location.search);
+    if (p.has('theme')) applyTheme(p.get('theme'));
+    if (p.has('sev'))   { App.sevFilter = p.get('sev');   localStorage.setItem('av-sev-filter', App.sevFilter); }
+    if (p.has('src'))   { App.srcFilter = p.get('src');   localStorage.setItem('av-src-filter', App.srcFilter); }
+    if (p.has('q'))     {
+      App.searchQ = p.get('q');
+      SearchInput.value = App.searchQ;
+      SearchClear.style.display = App.searchQ ? 'block' : 'none';
+    }
+  }
+
+  /* ── Boot ── */
+  initFromUrl();
+  fetchAlerts();
+</script>
+</body>
+</html>

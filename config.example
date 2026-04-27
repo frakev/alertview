@@ -1,0 +1,33 @@
+# AlertView configuration
+port: 8080
+refresh_interval: 30   # secondes entre chaque actualisation automatique
+tls_insecure: false    # true pour ignorer les erreurs de certificat (self-signed)
+
+sources:
+  - name: "Alertmanager"
+    type: alertmanager
+    url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    # basic_auth:
+    #   username: admin
+    #   password: secret
+    # bearer_token: "eyJhbGci..."
+
+  - name: "Grafana"
+    type: grafana
+    url: "http://grafana.monitoring.svc.cluster.local:3000"
+    # bearer_token est le Service Account token Grafana (recommandé)
+    # bearer_token: "glsa_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx"
+    # ou basic_auth avec un compte admin :
+    # basic_auth:
+    #   username: admin
+    #   password: secret
+
+display:
+  # Labels affichés sur chaque carte (severity et alertname sont toujours affichés en badge)
+  labels:
+    - namespace
+    - job
+    - instance
+    - cluster
+    - node
+    - pod

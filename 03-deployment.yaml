@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertview
+  namespace: alertview
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertview
+  template:
+    metadata:
+      labels:
+        app: alertview
+    spec:
+      containers:
+        - name: alertview
+          image: ghcr.io/frakev/alertview:latest
+          imagePullPolicy: IfNotPresent
+          command: ["alertview"]
+          args: ["/config/config.yaml"]
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/alerts
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: alertview-config
