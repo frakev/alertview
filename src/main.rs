@@ -7,6 +7,8 @@ mod alerts;
 mod config;
 
 static INDEX_HTML: &str = include_str!("../static/index.html");
+static STYLE_CSS: &str  = include_str!("../static/style.css");
+static APP_JS: &str     = include_str!("../static/app.js");
 
 struct AppState {
     config: Config,
@@ -47,6 +49,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/style.css", get(serve_css))
+        .route("/app.js", get(serve_js))
         .route("/api/alerts", get(get_alerts))
         .with_state(state);
 
@@ -59,6 +63,14 @@ async fn main() -> anyhow::Result<()> {
 
 async fn serve_index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+async fn serve_css() -> ([(&'static str, &'static str); 1], &'static str) {
+    ([("content-type", "text/css; charset=utf-8")], STYLE_CSS)
+}
+
+async fn serve_js() -> ([(&'static str, &'static str); 1], &'static str) {
+    ([("content-type", "application/javascript; charset=utf-8")], APP_JS)
 }
 
 async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> {
