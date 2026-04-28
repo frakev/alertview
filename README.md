@@ -2,12 +2,14 @@
 
 # AlertView
 
-A lightweight alert dashboard for Alertmanager and Grafana. Built with Rust (Axum) and a single-page HTML frontend — no database, no dependencies at runtime.
+A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with Rust (Axum) and a single-page HTML frontend — no database, no dependencies at runtime.
 
 **Features:**
-- Aggregates alerts from multiple Alertmanager and/or Grafana sources
+- Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
 - Severity-colored cards (critical / high / warning / info)
 - Filter by severity, status (firing / silenced / pending), and source
+- Multi-source filter chips
+- Direct links to specific alerts (Zabbix uses `filter_eventid`, Alertmanager/Grafana use `generator_url`)
 - TV mode for wall displays — full-screen, auto-refresh, URL-persisted filters
 - Dark/light theme
 
@@ -37,12 +39,22 @@ sources:
     bearer_token: "glsa_xxxx"   # Grafana service account token
     # or: basic_auth: { username: admin, password: secret }
 
+  - name: "Zabbix"
+    type: zabbix
+    url: "https://zabbix.example.com/zabbix"
+    bearer_token: "YOUR_ZABBIX_TOKEN_HERE"  # Zabbix API token
+    dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
+
 display:
   labels:          # which labels to show on each alert card
     - namespace
     - job
     - instance
+    - host
+    - hostgroup
 ```
+
+> **Note for Zabbix**: Direct alert links require `filter_set=1&filter_eventid=<ID>` parameters, which are automatically added by AlertView.
 
 > `config.yaml` is gitignored — never commit credentials.
 
@@ -77,7 +89,7 @@ The `k8s/` manifests deploy AlertView into its own namespace using a ConfigMap f
 
 | File | What to change |
 |---|---|
-| `02-configmap.yaml` | Alertmanager/Grafana URLs, dashboard link |
+| `02-configmap.yaml` | Alertmanager/Grafana/Zabbix URLs, dashboard links, tokens |
 | `05-ingress.yaml` | Your domain, TLS secret name, middlewares |
 
 **2. Apply**
