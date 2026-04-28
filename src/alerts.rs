@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub struct Alert {
     pub fingerprint: String,
     pub source: String,
+    pub source_type: String,
     pub status: String,
     pub severity: String,
     pub name: String,
@@ -236,9 +237,37 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 None
             };
 
+            // Build direct URL to Zabbix alert using eventid
+            // Zabbix requires filter_set=1 for filter_eventid to work
+            let link_url = source.dashboard_url.clone().map(|url| {
+                // If dashboard_url already contains eventid filter with filter_set, use it as-is
+                if url.contains("filter_eventid") && url.contains("filter_set=1") {
+                    url
+                } else {
+                    // Remove any existing query params and rebuild with filter
+                    let clean_url = url.split_once('?').map(|(base, _)| base.to_string()).unwrap_or(url);
+                    let base = if clean_url.contains("zabbix.php") {
+                        clean_url
+                    } else if clean_url.ends_with('/') {
+                        format!("{}/zabbix.php", clean_url.trim_end_matches('/'))
+                    } else {
+                        format!("{}/zabbix.php", clean_url)
+                    };
+                    format!("{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}", 
+                        base.trim_end_matches("/zabbix.php"), p.eventid)
+                }
+            }).or_else(|| {
+                Some(format!(
+                    "{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}",
+                    source.url.trim_end_matches('/'),
+                    p.eventid
+                ))
+            });
+
             Alert {
                 fingerprint: format!("{}:{}", source.name, p.eventid),
                 source: source.name.clone(),
+                source_type: "zabbix".to_string(),
                 status,
                 severity,
                 name: p.name,
@@ -246,7 +275,7 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 annotations,
                 starts_at: unix_ts_to_iso(&p.clock),
                 ends_at,
-                link_url: source.dashboard_url.clone(),
+                link_url,
             }
         })
         .collect();
@@ -316,6 +345,14 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 Some(a.ends_at)
             };
 
+            // Determine source type string
+            let source_type_str = match source.source_type {
+                SourceType::Alertmanager => "alertmanager",
+                SourceType::Grafana => "grafana",
+                SourceType::Zabbix => "zabbix",
+            }
+            .to_string();
+
             // dashboard_url from config takes priority over the internal generator_url
             let link_url = source.dashboard_url.clone().or_else(|| {
                 if a.generator_url.is_empty() {
@@ -328,6 +365,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             Alert {
                 fingerprint: format!("{}:{}", source.name, a.fingerprint),
                 source: source.name.clone(),
+                source_type: source_type_str,
                 status,
                 severity,
                 name,

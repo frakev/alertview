@@ -6,21 +6,30 @@ tls_insecure: false    # true pour ignorer les erreurs de certificat (self-signe
 sources:
   - name: "Alertmanager"
     type: alertmanager
-    url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    url: "http://alertmanager.example.com:9093"
+    dashboard_url: "https://grafana.example.com/alerting/list"
     # basic_auth:
     #   username: admin
     #   password: secret
-    # bearer_token: "eyJhbGci..."
+    # bearer_token: "YOUR_TOKEN_HERE"
 
   - name: "Grafana"
     type: grafana
-    url: "http://grafana.monitoring.svc.cluster.local:3000"
+    url: "http://grafana.example.com:3000"
+    dashboard_url: "https://grafana.example.com/"
     # bearer_token est le Service Account token Grafana (recommandé)
-    # bearer_token: "glsa_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx"
+    # bearer_token: "YOUR_GRAFANA_TOKEN_HERE"
     # ou basic_auth avec un compte admin :
     # basic_auth:
     #   username: admin
     #   password: secret
+
+  - name: "Zabbix"
+    type: zabbix
+    url: "https://zabbix.example.com/zabbix"
+    dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
+    # Token API Zabbix
+    # bearer_token: "YOUR_ZABBIX_TOKEN_HERE"
 
 display:
   # Labels affichés sur chaque carte (severity et alertname sont toujours affichés en badge)
@@ -31,3 +40,5 @@ display:
     - cluster
     - node
     - pod
+    - host
+    - hostgroup

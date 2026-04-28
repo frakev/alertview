@@ -296,9 +296,19 @@ function renderAlerts() {
   }
 }
 
-function genLinkHtml(url) {
+function getSourceLabel(sourceType) {
+  const labels = {
+    alertmanager: "Ouvrir dans Alertmanager",
+    grafana: "Ouvrir dans Grafana",
+    zabbix: "Ouvrir dans Zabbix"
+  };
+  return labels[sourceType] || "Ouvrir dans la source";
+}
+
+function genLinkHtml(url, sourceType) {
   if (!url) return '';
-  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="Ouvrir dans Prometheus/Grafana">
+  const label = sourceType ? getSourceLabel(sourceType) : "Ouvrir dans Prometheus/Grafana";
+  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="${esc(label)}">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
       <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
@@ -329,7 +339,7 @@ function cardHtml(a) {
         <div class="card-meta">
           <span class="src-chip">${esc(a.source)}</span>
           <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
-          ${genLinkHtml(a.link_url)}
+          ${genLinkHtml(a.link_url, a.source_type)}
         </div>
       </div>
       ${summary  ? `<div class="card-summary">${esc(summary)}</div>` : ''}
@@ -350,7 +360,7 @@ function cardHtmlTV(a) {
       <span class="row-summary">${esc(summary)}</span>
       <span class="src-chip">${esc(a.source)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
-      ${genLinkHtml(a.link_url)}
+      ${genLinkHtml(a.link_url, a.source_type)}
     </div>`;
 }
 

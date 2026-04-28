@@ -12,14 +12,20 @@ data:
     sources:
       - name: "Alertmanager"
         type: alertmanager
-        url: "http://alertmanager.monitoring.svc.cluster.local:9093"
-        dashboard_url: "https://grafana.example.com/alerting/list"   # Replace with your Grafana URL
+        url: "http://alertmanager.example.com:9093"
+        dashboard_url: "https://grafana.example.com/alerting/list"
 
-      # - name: "Grafana"
-      #   type: grafana
-      #   url: "http://grafana.monitoring.svc.cluster.local:3000"
-      #   dashboard_url: "https://grafana.example.com/alerting/list"   # Replace with your Grafana URL
-      #   bearer_token: "glsa_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx"
+      - name: "Grafana"
+        type: grafana
+        url: "https://grafana.example.com/"
+        bearer_token: "YOUR_GRAFANA_TOKEN_HERE"
+        dashboard_url: "https://grafana.example.com/"
+
+      - name: "Zabbix"
+        type: zabbix
+        url: "https://zabbix.example.com/zabbix"
+        bearer_token: "YOUR_ZABBIX_TOKEN_HERE"
+        dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
 
     display:
       labels:
@@ -29,3 +35,5 @@ data:
         - cluster
         - node
         - pod
+        - host
+        - hostgroup
