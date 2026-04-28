@@ -72,9 +72,7 @@
     </div>
     <div class="tv-row">
       <span class="tv-label">Source</span>
-      <select class="source-sel" id="tv-src-sel" style="font-size:11px;padding:3px 8px">
-        <option value="all">Toutes</option>
-      </select>
+      <div class="tv-chips" id="tv-src-chips"></div>
     </div>
     <div class="tv-row">
       <span class="tv-label">Silencées</span>
@@ -111,9 +109,7 @@
     <span class="alert-count" id="alert-count"></span>
     <div style="display:flex;gap:.5rem;align-items:center">
       <button class="silence-toggle" id="silence-btn"></button>
-      <select class="source-sel" id="source-sel">
-        <option value="all">Toutes les sources</option>
-      </select>
+      <div class="src-filter-chips" id="src-filter-chips"></div>
     </div>
   </div>
   <div class="alert-list" id="alert-list">

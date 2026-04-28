@@ -99,7 +99,7 @@ const App = {
   freshFps:       new Set(),
   searchQ:        '',
   sevFilter:      localStorage.getItem('av-sev-filter') || 'all',
-  srcFilter:      localStorage.getItem('av-src-filter') || 'all',
+  srcFilter:      (() => { try { const r = localStorage.getItem('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
   showSilenced:   localStorage.getItem('av-show-silenced') === 'true',
   refreshTimer:   null,
   countdownTimer: null,
@@ -140,15 +140,29 @@ function toggleSilenced() {
 document.getElementById('silence-btn').addEventListener('click', toggleSilenced);
 document.getElementById('tv-silence-btn').addEventListener('click', toggleSilenced);
 
-/* ── Source filter (normal mode) ── */
-const SourceSel = document.getElementById('source-sel');
-SourceSel.addEventListener('change', e => {
-  App.srcFilter = e.target.value;
-  localStorage.setItem('av-src-filter', e.target.value);
-  syncTvSrcSel();
+/* ── Source filter ── */
+function toggleSrc(name) {
+  if (App.srcFilter.has(name)) App.srcFilter.delete(name);
+  else App.srcFilter.add(name);
+  localStorage.setItem('av-src-filter', JSON.stringify([...App.srcFilter]));
+  renderSourceChips();
   renderAlerts();
   pushUrl();
-});
+}
+
+function renderSourceChips() {
+  const sources = App.data?.sources ?? [];
+  const chips = sources.map(s => {
+    const active = App.srcFilter.has(s.name);
+    const count  = s.status === 'ok' ? `&thinsp;(${s.alert_count})` : '';
+    return `<span class="src-flt-chip${active ? ' active' : ''}" onclick='toggleSrc(${JSON.stringify(s.name)})'>` +
+      `<span class="src-dot ${s.status}"></span>${esc(s.name)}${count}</span>`;
+  }).join('');
+  ['src-filter-chips', 'tv-src-chips'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = chips;
+  });
+}
 
 /* ── Refresh ── */
 document.getElementById('refresh-btn').addEventListener('click', () => fetchAlerts());
@@ -177,7 +191,6 @@ async function fetchAlerts() {
     App.data = data;
 
     render();
-    syncSourceSel();
 
     document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('fr-FR');
 
@@ -201,32 +214,13 @@ async function fetchAlerts() {
   }
 }
 
-function syncSourceSel() {
-  [SourceSel, document.getElementById('tv-src-sel')].forEach(sel => {
-    const cur = App.srcFilter;
-    sel.innerHTML = `<option value="all">${sel === SourceSel ? 'Toutes les sources' : 'Toutes'}</option>`;
-    (App.data?.sources ?? []).forEach(s => {
-      const o = document.createElement('option');
-      o.value = s.name;
-      o.textContent = sel === SourceSel ? `${s.name} (${s.alert_count})` : s.name;
-      sel.appendChild(o);
-    });
-    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
-  });
-}
-
-function syncTvSrcSel() {
-  const sel = document.getElementById('tv-src-sel');
-  if ([...sel.options].some(o => o.value === App.srcFilter)) sel.value = App.srcFilter;
-  if ([...SourceSel.options].some(o => o.value === App.srcFilter)) SourceSel.value = App.srcFilter;
-}
 
 /* ── Filters ── */
 function filteredAlerts() {
   return (App.data?.alerts ?? []).filter(a => {
     if (!App.showSilenced && a.status === 'silenced') return false;
     if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
-    if (App.srcFilter !== 'all' && a.source !== App.srcFilter) return false;
+    if (App.srcFilter.size > 0 && !App.srcFilter.has(a.source)) return false;
     if (App.searchQ) {
       const q = App.searchQ.toLowerCase();
       const hay = [a.name, a.severity, a.source, a.status,
@@ -255,7 +249,7 @@ function updateTitle() {
   document.title = `${icon} ${firing.length} alerte${firing.length > 1 ? 's' : ''} — AlertView`;
 }
 
-function render() { renderStats(); renderSources(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); updateTitle(); }
+function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); updateTitle(); }
 
 function renderStats() {
   const counts = {};
@@ -287,7 +281,7 @@ function renderAlerts() {
 
   if (!filtered.length) {
     listEl.innerHTML = `<div class="empty-state">
-      <div class="empty-state-icon">${App.searchQ || App.sevFilter !== 'all' || App.srcFilter !== 'all' ? '🔍' : '✅'}</div>
+      <div class="empty-state-icon">${App.searchQ || App.sevFilter !== 'all' || App.srcFilter.size > 0 ? '🔍' : '✅'}</div>
       <div>${App.searchQ ? 'Aucun résultat pour &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;' : 'Aucune alerte active'}</div>
     </div>`;
     return;
@@ -375,14 +369,6 @@ const TV = {
     document.getElementById('tv-settings-btn').addEventListener('click', e => { e.stopPropagation(); this.togglePanel(); });
     document.getElementById('tv-exit-btn').addEventListener('click', () => this.toggle());
 
-    document.getElementById('tv-src-sel').addEventListener('change', e => {
-      App.srcFilter = e.target.value;
-      localStorage.setItem('av-src-filter', e.target.value);
-      syncTvSrcSel();
-      renderAlerts();
-      pushUrl();
-    });
-
     // Afficher la barre au moindre mouvement
     document.addEventListener('mousemove', () => this.showBar());
     document.addEventListener('click',     () => this.showBar());
@@ -416,7 +402,7 @@ const TV = {
       this.showBar();
       this.renderChips();
       this.renderDots();
-      syncTvSrcSel();
+      renderSourceChips();
     } else {
       this.stopClock();
       this.closePanel();
@@ -485,7 +471,7 @@ function pushUrl() {
   const theme = document.documentElement.getAttribute('data-theme');
   if (theme !== 'dark')        p.set('theme', theme);
   if (App.sevFilter !== 'all') p.set('sev',      App.sevFilter);
-  if (App.srcFilter !== 'all') p.set('src',      App.srcFilter);
+  if (App.srcFilter.size > 0)  p.set('src', [...App.srcFilter].join(','));
   if (App.searchQ)             p.set('q',        App.searchQ);
   if (App.showSilenced)        p.set('silenced', '1');
   const qs = p.toString();
@@ -496,7 +482,7 @@ function initFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.has('theme')) applyTheme(p.get('theme'));
   if (p.has('sev'))   { App.sevFilter = p.get('sev');   localStorage.setItem('av-sev-filter', App.sevFilter); }
-  if (p.has('src'))   { App.srcFilter = p.get('src');   localStorage.setItem('av-src-filter', App.srcFilter); }
+  if (p.has('src'))   { const s = p.get('src').split(',').filter(Boolean); App.srcFilter = new Set(s); localStorage.setItem('av-src-filter', JSON.stringify(s)); }
   if (p.has('q'))        {
     App.searchQ = p.get('q');
     SearchInput.value = App.searchQ;

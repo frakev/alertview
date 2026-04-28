@@ -351,17 +351,38 @@ a { color: inherit; }
 
 .alert-count { color: var(--text-muted); font-size: 12px; }
 
-.source-sel {
-  padding: 5px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  outline: none;
+.src-filter-chips {
+  display: flex;
+  gap: .3rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  align-items: center;
 }
-.source-sel:focus { border-color: var(--accent); }
+.src-filter-chips::-webkit-scrollbar { display: none; }
+
+.src-flt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: 3px 9px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+  transition: color .15s, background .15s, border-color .15s, box-shadow .15s;
+}
+.src-flt-chip:hover { color: var(--text); border-color: var(--accent); }
+.src-flt-chip.active {
+  background: rgba(129,140,248,.15);
+  color: var(--accent);
+  border-color: rgba(129,140,248,.4);
+  box-shadow: 0 0 0 2px rgba(129,140,248,.15);
+}
 
 .silence-toggle {
   display: flex;

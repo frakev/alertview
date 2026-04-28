@@ -1,5 +1,6 @@
 use crate::config::{Source, SourceType};
 use anyhow::Result;
+use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -54,7 +55,212 @@ struct AmStatus {
     state: String,
 }
 
+// ── Zabbix JSON-RPC types ────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct ZabbixRpcRequest<'a> {
+    jsonrpc: &'static str,
+    method: &'a str,
+    params: serde_json::Value,
+    id: u32,
+}
+
+#[derive(Deserialize)]
+struct ZabbixRpcResponse<T> {
+    result: Option<T>,
+    error: Option<ZabbixRpcError>,
+}
+
+#[derive(Deserialize)]
+struct ZabbixRpcError {
+    code: i32,
+    message: String,
+    data: String,
+}
+
+#[derive(Deserialize)]
+struct ZabbixProblem {
+    eventid: String,
+    objectid: String, // triggerid
+    name: String,
+    severity: String, // "0"–"5"
+    clock: String,    // Unix timestamp
+    r_clock: String,  // "0" if unresolved
+    suppressed: String,
+    #[serde(default)]
+    tags: Vec<ZabbixTag>,
+}
+
+#[derive(Deserialize)]
+struct ZabbixTag {
+    tag: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct ZabbixTrigger {
+    triggerid: String,
+    #[serde(default)]
+    hosts: Vec<ZabbixHostInfo>,
+    #[serde(default)]
+    groups: Vec<ZabbixGroupInfo>,
+}
+
+#[derive(Deserialize)]
+struct ZabbixHostInfo {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct ZabbixGroupInfo {
+    name: String,
+}
+
+// ── Zabbix helpers ───────────────────────────────────────────────────────────
+
+fn zabbix_severity(s: &str) -> &'static str {
+    match s {
+        "5" => "critical", // Disaster
+        "4" => "high",     // High
+        "3" | "2" => "warning", // Average / Warning
+        "1" => "info",     // Information
+        _ => "none",       // Not classified
+    }
+}
+
+fn unix_ts_to_iso(ts: &str) -> String {
+    ts.parse::<i64>()
+        .ok()
+        .and_then(|secs| chrono::Utc.timestamp_opt(secs, 0).single())
+        .map(|dt| dt.to_rfc3339())
+        .unwrap_or_else(|| ts.to_string())
+}
+
+async fn zabbix_rpc<T>(
+    client: &reqwest::Client,
+    source: &Source,
+    url: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let body = ZabbixRpcRequest { jsonrpc: "2.0", method, params, id: 1 };
+    let mut req = client.post(url).json(&body);
+    if let Some(token) = &source.bearer_token {
+        req = req.bearer_auth(token);
+    }
+    let resp = req.send().await?;
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("HTTP {} from {}", resp.status(), url));
+    }
+    let rpc: ZabbixRpcResponse<T> = resp.json().await?;
+    if let Some(err) = rpc.error {
+        return Err(anyhow::anyhow!(
+            "Zabbix API error {}: {} — {}",
+            err.code,
+            err.message,
+            err.data
+        ));
+    }
+    rpc.result.ok_or_else(|| anyhow::anyhow!("Zabbix API returned empty result"))
+}
+
+async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Result<Vec<Alert>> {
+    let api_url = format!("{}/api_jsonrpc.php", source.url.trim_end_matches('/'));
+
+    // Step 1: active problems
+    let problems: Vec<ZabbixProblem> = zabbix_rpc(
+        client,
+        source,
+        &api_url,
+        "problem.get",
+        serde_json::json!({ "output": "extend", "selectTags": "extend" }),
+    )
+    .await?;
+
+    if problems.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Step 2: enrich with hosts + hostgroups via their trigger
+    let trigger_ids: Vec<&str> = problems.iter().map(|p| p.objectid.as_str()).collect();
+    let triggers: Vec<ZabbixTrigger> = zabbix_rpc(
+        client,
+        source,
+        &api_url,
+        "trigger.get",
+        serde_json::json!({
+            "triggerids": trigger_ids,
+            "output": ["triggerid"],
+            "selectGroups": ["name"],
+            "selectHosts": ["name"]
+        }),
+    )
+    .await?;
+
+    let trigger_map: HashMap<String, ZabbixTrigger> =
+        triggers.into_iter().map(|t| (t.triggerid.clone(), t)).collect();
+
+    let alerts = problems
+        .into_iter()
+        .map(|p| {
+            let severity = zabbix_severity(&p.severity).to_string();
+            let status = if p.suppressed == "1" { "silenced" } else { "firing" }.to_string();
+
+            let mut labels: HashMap<String, String> = HashMap::new();
+
+            if let Some(trigger) = trigger_map.get(&p.objectid) {
+                if let Some(host) = trigger.hosts.first() {
+                    labels.insert("host".to_string(), host.name.clone());
+                }
+                let groups: Vec<String> =
+                    trigger.groups.iter().map(|g| g.name.clone()).collect();
+                if !groups.is_empty() {
+                    labels.insert("hostgroup".to_string(), groups.join(", "));
+                }
+            }
+
+            // Zabbix tags → labels
+            for tag in &p.tags {
+                labels.insert(tag.tag.clone(), tag.value.clone());
+            }
+
+            let mut annotations: HashMap<String, String> = HashMap::new();
+            annotations.insert("summary".to_string(), p.name.clone());
+
+            let ends_at = if p.r_clock != "0" {
+                Some(unix_ts_to_iso(&p.r_clock))
+            } else {
+                None
+            };
+
+            Alert {
+                fingerprint: format!("{}:{}", source.name, p.eventid),
+                source: source.name.clone(),
+                status,
+                severity,
+                name: p.name,
+                labels,
+                annotations,
+                starts_at: unix_ts_to_iso(&p.clock),
+                ends_at,
+                link_url: source.dashboard_url.clone(),
+            }
+        })
+        .collect();
+
+    Ok(alerts)
+}
+
+// ── Main dispatcher ──────────────────────────────────────────────────────────
+
 pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> Result<Vec<Alert>> {
+    if source.source_type == SourceType::Zabbix {
+        return fetch_zabbix_alerts(client, source).await;
+    }
+
     let url = match source.source_type {
         SourceType::Alertmanager => {
             format!("{}/api/v2/alerts", source.url.trim_end_matches('/'))
@@ -63,6 +269,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             "{}/api/alertmanager/grafana/api/v2/alerts",
             source.url.trim_end_matches('/')
         ),
+        SourceType::Zabbix => unreachable!(),
     };
 
     let mut req = client.get(&url);

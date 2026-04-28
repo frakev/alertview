@@ -38,6 +38,7 @@ pub struct Source {
 pub enum SourceType {
     Alertmanager,
     Grafana,
+    Zabbix,
 }
 
 #[derive(Debug, Clone, Deserialize)]
