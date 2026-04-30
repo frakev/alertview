@@ -152,7 +152,7 @@ Run with: `docker compose up -d`
 
 ## Kubernetes Deployment
 
-The `k8s/` directory contains manifests to deploy AlertView into its own namespace using a ConfigMap for configuration.
+The Kubernetes manifests (prefixed with numbers: `01-namespace.yaml`, `02-configmap.yaml`, etc.) deploy AlertView into its own namespace using a ConfigMap for configuration.
 
 ### Prerequisites
 
