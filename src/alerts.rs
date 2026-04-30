@@ -119,12 +119,30 @@ struct ZabbixProblem {
     clock: String,    // Unix timestamp
     r_clock: String,  // "0" if unresolved
     suppressed: String,
-    #[serde(default = "default_acknowledged")]
-    acknowledged: String, // "0" or "1" - whether problem is acknowledged
+    #[serde(default = "default_acknowledged", deserialize_with = "deserialize_acknowledged")]
+    acknowledged: String, // "0" or "1" or true/false - whether problem is acknowledged
     #[serde(default)]
     acknowledgements: Vec<ZabbixAcknowledgement>, // ACK details from Zabbix
     #[serde(default)]
     tags: Vec<ZabbixTag>,
+}
+
+// Handle both string ("0"/"1") and boolean (true/false) for acknowledged field
+fn deserialize_acknowledged<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum AcknowledgedValue {
+        String(String),
+        Bool(bool),
+    }
+    
+    match AcknowledgedValue::deserialize(deserializer)? {
+        AcknowledgedValue::String(s) => Ok(s),
+        AcknowledgedValue::Bool(b) => Ok(if b { "1".to_string() } else { "0".to_string() }),
+    }
 }
 
 fn default_acknowledged() -> String {
@@ -140,7 +158,8 @@ struct ZabbixAcknowledgement {
     user: String,
     #[serde(rename = "clock")]
     timestamp: String,
-    message: Option<String>, // The acknowledgment comment/message
+    #[serde(alias = "message", alias = "comment")]
+    message: Option<String>, // The acknowledgment comment/message (Zabbix may use message or comment)
 }
 
 #[derive(Deserialize)]
@@ -269,7 +288,14 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     };
 
     if problems.is_empty() {
+        tracing::debug!("No Zabbix problems found");
         return Ok(Vec::new());
+    }
+    
+    // Log acknowledged problems for debugging
+    let ack_count = problems.iter().filter(|p| p.acknowledged == "1").count();
+    if ack_count > 0 {
+        tracing::debug!("Found {} acknowledged problems out of {}", ack_count, problems.len());
     }
 
     // Step 2: enrich with hosts + hostgroups via their trigger
@@ -332,18 +358,23 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             annotations.insert("summary".to_string(), p.name.clone());
             
             // If acknowledged in Zabbix, add the ack message and user info to annotations
-            if p.acknowledged == "1" && !p.acknowledgements.is_empty() {
-                // Use the most recent acknowledgement
-                if let Some(latest_ack) = p.acknowledgements.last() {
-                    if let Some(ref msg) = latest_ack.message {
-                        annotations.insert("acknowledgement".to_string(), msg.clone());
-                    } else {
-                        annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+            if p.acknowledged == "1" {
+                tracing::debug!("Zabbix problem {} is acknowledged, acks count: {}", p.name, p.acknowledgements.len());
+                if !p.acknowledgements.is_empty() {
+                    // Use the most recent acknowledgement
+                    if let Some(latest_ack) = p.acknowledgements.last() {
+                        tracing::debug!("Using ACK from user {}: {:?}", latest_ack.user, latest_ack.message);
+                        if let Some(ref msg) = latest_ack.message {
+                            annotations.insert("acknowledgement".to_string(), msg.clone());
+                        } else {
+                            annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+                        }
+                        // Add who acknowledged and when
+                        labels.insert("acknowledged_by".to_string(), latest_ack.user.clone());
+                        labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
                     }
-                    // Add who acknowledged and when
-                    labels.insert("acknowledged_by".to_string(), latest_ack.user.clone());
-                    labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
                 } else {
+                    tracing::debug!("Problem is acknowledged but has no acknowledgements array");
                     annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
                 }
             }
@@ -928,7 +959,7 @@ mod tests {
     fn test_zabbix_acknowledgement_parsing() {
         use serde_json::json;
         
-        // Simule une réponse JSON de l'API Zabbix avec ACK
+        // Test avec acknowledged comme string
         let json_data = json!({
             "eventid": "12345",
             "objectid": "23456",
@@ -951,11 +982,35 @@ mod tests {
         
         let problem: ZabbixProblem = serde_json::from_value(json_data).unwrap();
         
-        // Vérifie que les champs sont bien parsés
         assert_eq!(problem.name, "Linux: Interface virbr0: Link down");
         assert_eq!(problem.acknowledged, "1");
         assert_eq!(problem.acknowledgements.len(), 1);
         assert_eq!(problem.acknowledgements[0].user, "Admin");
         assert_eq!(problem.acknowledgements[0].message, Some("Working on it - scheduled maintenance".to_string()));
+        
+        // Test avec acknowledged comme booléen
+        let json_bool = json!({
+            "eventid": "12346",
+            "objectid": "23457",
+            "name": "Test",
+            "severity": "1",
+            "clock": "1714000000",
+            "r_clock": "0",
+            "suppressed": "0",
+            "acknowledged": true,
+            "acknowledgements": [
+                {
+                    "acknowledgeid": "790",
+                    "useralias": "User",
+                    "clock": "1714000100",
+                    "comment": "Boolean ack test"
+                }
+            ],
+            "tags": []
+        });
+        
+        let problem2: ZabbixProblem = serde_json::from_value(json_bool).unwrap();
+        assert_eq!(problem2.acknowledged, "1");
+        assert_eq!(problem2.acknowledgements[0].message, Some("Boolean ack test".to_string()));
     }
 }
