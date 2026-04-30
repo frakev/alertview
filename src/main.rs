@@ -50,11 +50,18 @@ const MAX_CACHE_ENTRIES: usize = 1000;
 // Maximum number of concurrent SSE connections
 const MAX_SSE_CONNECTIONS: usize = 100;
 
+// SSE Event types
+#[derive(Clone, Debug)]
+enum AppEvent {
+    NewAlert(Alert),
+    ConfigReloaded,
+}
+
 struct AppState {
     config: SharedConfig,
     client: reqwest::Client,
     cache: SharedAlertCache,
-    tx: broadcast::Sender<Alert>,
+    tx: broadcast::Sender<AppEvent>,
     sse_connections: Arc<tokio::sync::RwLock<usize>>,
 }
 
@@ -121,8 +128,8 @@ async fn main() -> anyhow::Result<()> {
     let shared_config = Arc::new(tokio::sync::RwLock::new(config));
     let cache: SharedAlertCache = Arc::new(tokio::sync::RwLock::new(AlertCache::new()));
     
-    // Create broadcast channel for WebSocket notifications
-    let (tx, _rx) = broadcast::channel::<Alert>(100);
+    // Create broadcast channel for SSE notifications
+    let (tx, _rx) = broadcast::channel::<AppEvent>(100);
     
     let state = Arc::new(AppState {
         config: shared_config.clone(),
@@ -133,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Start config file watcher
-    start_config_watcher(shared_config.clone(), config_path, watch_method, poll_interval);
+    start_config_watcher(shared_config.clone(), config_path, watch_method, poll_interval, tx.clone());
 
     // Log cache size limit
     tracing::debug!("Alert cache limited to {} entries", MAX_CACHE_ENTRIES);
@@ -201,12 +208,22 @@ async fn sse_handler(
         let state_clone = state.clone();
         async move {
             match rx.recv().await {
-                Ok(alert) => {
-                    let json = serde_json::to_string(&alert).unwrap_or_default();
-                    let event = Event::default()
-                        .event("new_alert")
-                        .data(json);
-                    Some((event, rx))
+                Ok(event) => {
+                    match event {
+                        AppEvent::NewAlert(alert) => {
+                            let json = serde_json::to_string(&alert).unwrap_or_default();
+                            let event = Event::default()
+                                .event("new_alert")
+                                .data(json);
+                            Some((event, rx))
+                        }
+                        AppEvent::ConfigReloaded => {
+                            let event = Event::default()
+                                .event("config_reloaded")
+                                .data("config reloaded");
+                            Some((event, rx))
+                        }
+                    }
                 }
                 Err(_) => {
                     // Decrement connection counter on error
@@ -327,9 +344,9 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         }
     }
 
-    // Broadcast new alerts to WebSocket clients
+    // Broadcast new alerts to SSE clients
     for alert in new_alerts {
-        let _ = state.tx.send(alert);
+        let _ = state.tx.send(AppEvent::NewAlert(alert));
     }
 
     all_alerts.sort_by(|a, b| {
@@ -413,7 +430,7 @@ async fn fetch_source_alerts_with_retry(
 }
 
 // Function to watch config file for changes (using inotify or polling)
-fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_method: String, poll_interval_secs: u64) {
+fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_method: String, poll_interval_secs: u64, tx: broadcast::Sender<AppEvent>) {
     use std::path::Path;
     use std::{fs, time::SystemTime};
 
@@ -467,6 +484,8 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                                         for s in &cfg.sources {
                                             tracing::info!("  • {} ({})", s.name, s.url);
                                         }
+                                        // Notify frontend via SSE
+                                        let _ = tx.send(AppEvent::ConfigReloaded);
                                     }
                                     Err(e) => {
                                         tracing::error!("Failed to reload config: {}", e);
@@ -483,10 +502,10 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
         });
     } else {
         // Use inotify method (default)
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (debouncer_tx, rx) = std::sync::mpsc::channel();
 
         // Create debouncer with 500ms delay
-        let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
+        let mut debouncer = match new_debouncer(Duration::from_millis(500), debouncer_tx) {
             Ok(d) => d,
             Err(e) => {
                 tracing::error!("Failed to create config watcher debouncer: {}", e);
@@ -494,7 +513,7 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                 // Fallback to polling
                 tracing::info!("Using polling method to watch config file {} (interval: {}s)...", 
                               config_path, poll_interval_secs);
-                start_polling_watcher(shared_config, config_path, poll_interval_secs);
+                start_polling_watcher(shared_config, config_path, poll_interval_secs, tx.clone());
                 return;
             }
         };
@@ -514,11 +533,13 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                 // Fallback to polling
                 tracing::info!("Using polling method to watch config file {} (interval: {}s)...", 
                               config_path, poll_interval_secs);
-                start_polling_watcher(shared_config, config_path, poll_interval_secs);
+                start_polling_watcher(shared_config, config_path, poll_interval_secs, tx.clone());
                 return;
             }
         }
 
+        let tx_clone = tx.clone();
+        
         // Spawn task to handle change events
         tokio::spawn(async move {
             while let Ok(Ok(events)) = rx.recv() {
@@ -535,6 +556,8 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                         for s in &cfg.sources {
                             tracing::info!("  • {} ({})", s.name, s.url);
                         }
+                        // Notify frontend via SSE
+                        let _ = tx_clone.send(AppEvent::ConfigReloaded);
                     }
                     Err(e) => {
                         tracing::error!("Failed to reload config: {}", e);
@@ -546,12 +569,13 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
 }
 
 // Fallback polling watcher function
-fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_interval_secs: u64) {
+fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_interval_secs: u64, tx: broadcast::Sender<AppEvent>) {
     use std::fs;
     use std::time::SystemTime;
     use std::time::Duration;
 
     let poll_interval = Duration::from_secs(poll_interval_secs);
+    let tx_clone = tx.clone();
 
     tokio::spawn(async move {
         let mut last_modified: Option<SystemTime> = None;
@@ -587,6 +611,8 @@ fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_
                                     for s in &cfg.sources {
                                         tracing::info!("  • {} ({})", s.name, s.url);
                                     }
+                                    // Notify frontend via SSE
+                                    let _ = tx_clone.send(AppEvent::ConfigReloaded);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to reload config: {}", e);

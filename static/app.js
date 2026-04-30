@@ -201,6 +201,12 @@ function connectSSE() {
     }
   });
 
+  // Reload config when it changes (e.g., display_labels)
+  eventSource.addEventListener('config_reloaded', () => {
+    console.log('Config reloaded via SSE, refreshing alerts...');
+    fetchAlerts();
+  });
+
   // Store reference for cleanup
   window._eventSource = eventSource;
 }
@@ -617,7 +623,7 @@ function cardHtmlTV(a) {
       <span class="src-chip">${esc(a.source)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${labelsHtml}
-      ${has_hidden_labels ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)" title="Show more labels">▶</button>` : ''}
+      ${has_hidden_labels ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)" title="Show more labels">⋮</button>` : ''}
       ${hiddenLabelsHtml}
       ${genLinkHtml(a.link_url, a.source_type)}
     </div>`;
@@ -669,7 +675,6 @@ const TV = {
     if (hiddenLabels) {
       const isHidden = hiddenLabels.style.display === 'none';
       hiddenLabels.style.display = isHidden ? 'inline' : 'none';
-      button.textContent = isHidden ? '▼' : '▶';
       button.title = isHidden ? 'Hide extra labels' : 'Show more labels';
     }
   },
