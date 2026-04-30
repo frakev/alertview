@@ -260,8 +260,9 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 None
             };
 
-            // Build direct URL to Zabbix alert using eventid
+            // Build direct URL to Zabbix alert using triggerid
             // Try: link_template -> dashboard_url -> default zabbix URL
+            // Note: Zabbix uses triggerids[] parameter to view specific problems
             let link_url = source.link_template.clone().and_then(|t| {
                 apply_link_template(&t, &Alert {
                     fingerprint: format!("{}:{}", source.name, p.eventid),
@@ -278,11 +279,11 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 })
             }).or_else(|| {
                 source.dashboard_url.clone().map(|url| {
-                    // If dashboard_url already contains eventid filter with filter_set, use it as-is
-                    if url.contains("filter_eventid") && url.contains("filter_set=1") {
+                    // If dashboard_url already contains triggerids parameter, use it as-is
+                    if url.contains("triggerids") {
                         url
                     } else {
-                        // Remove any existing query params and rebuild with filter
+                        // Remove any existing query params and rebuild with triggerids
                         let clean_url = url.split_once('?').map(|(base, _)| base.to_string()).unwrap_or(url);
                         let base = if clean_url.contains("zabbix.php") {
                             clean_url
@@ -291,15 +292,15 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                         } else {
                             format!("{}/zabbix.php", clean_url)
                         };
-                        format!("{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}", 
-                            base.trim_end_matches("/zabbix.php"), p.eventid)
+                        format!("{}/zabbix.php?action=problem.view&triggerids[]={}", 
+                            base.trim_end_matches("/zabbix.php"), p.objectid)
                     }
                 })
             }).or_else(|| {
                 Some(format!(
-                    "{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}",
+                    "{}/zabbix.php?action=problem.view&triggerids[]={}",
                     source.url.trim_end_matches('/'),
-                    p.eventid
+                    p.objectid
                 ))
             });
 

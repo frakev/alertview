@@ -251,9 +251,14 @@ Create custom links for your alerts using template variables.
 *AlertView automatically adds these labels for Zabbix alerts:*
 ```
 {{.Labels.eventid}}    # Zabbix event ID
-{{.Labels.triggerid}}  # Zabbix trigger ID
+{{.Labels.triggerid}}  # Zabbix trigger ID (use this for direct links)
 {{.Labels.host}}       # Host name (if available)
 {{.Labels.hostgroup}}  # Host group name (if available)
+```
+
+**Note:** For direct links to Zabbix problems, use `{{.Labels.triggerid}}` with the `triggerids[]` parameter:
+```
+https://your-zabbix-server/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}
 ```
 
 **Grafana-Specific Fields:**
