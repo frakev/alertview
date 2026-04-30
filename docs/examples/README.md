@@ -19,7 +19,7 @@ This directory contains example configurations and use cases for AlertView.
 # config.yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 port: 8080
@@ -60,7 +60,7 @@ services:
 ```yaml
 # 03-deployment.yaml
 apiVersion: apps/v1
-kind: Deployment
+type: Deployment
 metadata:
   name: alertview
 spec:
@@ -89,7 +89,7 @@ spec:
           name: alertview-config
 ---
 apiVersion: v1
-kind: Service
+type: Service
 metadata:
   name: alertview
 spec:
@@ -109,17 +109,17 @@ Aggregate alerts from multiple monitoring systems:
 ```yaml
 sources:
   - name: production-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     timeout: 30
     
   - name: staging-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.staging.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -139,12 +139,12 @@ Create a dashboard for a specific team:
 ```yaml
 sources:
   - name: frontend-alerts
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     link_template: "https://grafana.example.com/d/abc123?var-team=frontend&var-alert={{.Labels.alertname}}"
     
   - name: backend-alerts
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     link_template: "https://grafana.example.com/d/def456?var-team=backend&var-alert={{.Labels.alertname}}"
 
@@ -163,11 +163,11 @@ Create a dashboard for on-call engineers:
 ```yaml
 sources:
   - name: pagerduty
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     
   - name: opsgenie
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
 
 display:
@@ -194,7 +194,7 @@ Embed AlertView in another application:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 display:
@@ -229,7 +229,7 @@ Then embed in your application:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     cache_ttl: 60  # Cache for 60 seconds
 
@@ -242,7 +242,7 @@ cache_ttl: 30
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     retry_policy:
       max_retries: 5
@@ -255,12 +255,12 @@ sources:
 ```yaml
 sources:
   - name: slow-source
-    kind: alertmanager
+    type: alertmanager
     url: http://slow-monitor.example.com
     timeout: 60  # 60 second timeout
     
   - name: fast-source
-    kind: alertmanager
+    type: alertmanager
     url: http://fast-monitor.example.com
     timeout: 10  # 10 second timeout
 ```
@@ -270,14 +270,14 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}/{{.Labels.panel}}?viewPanel={{.Labels.panel_id}}"
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     link_template: "https://grafana.example.com/d/{{.DashboardUID}}/{{.PanelID}}?orgId={{.OrgID}}"
 ```
 
@@ -357,7 +357,7 @@ environment:
 ```yaml
 sources:
   - name: production
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     timeout: 30
     retry_policy:
@@ -395,14 +395,14 @@ log_format: json
 ```yaml
 sources:
   - name: staging-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.staging.example.com
     link_template: "https://grafana.staging.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
     
   - name: staging-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.staging.example.com
-    api_key: "staging-api-key"
+    bearer_token: "staging-api-key"
     link_template: "https://grafana.staging.example.com/d/{{.DashboardUID}}"
 
 display:
@@ -428,15 +428,15 @@ port: 8080
 ```yaml
 sources:
   - name: network
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.noc.example.com
     
   - name: servers
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.noc.example.com
     
   - name: applications
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.noc.example.com
 
 display:
@@ -473,10 +473,9 @@ port: 8080
 ```yaml
 sources:
   - name: grafana-alerts
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    dashboard_uid: "abc123"
+    bearer_token: "your-api-key"
 
 display:
   refresh_interval: 0  # Disable auto-refresh
@@ -543,7 +542,7 @@ yamllint config.yaml
 # Increase timeouts and retries for unreliable sources
 sources:
   - name: unreliable-source
-    kind: alertmanager
+    type: alertmanager
     url: http://unreliable.example.com
     timeout: 120
     retry_policy:
@@ -567,7 +566,7 @@ refresh_interval: 60
 # Short timeouts for fast response
 sources:
   - name: fast-source
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 5
     retry_policy:
@@ -590,7 +589,7 @@ cache_ttl: 0
 # Use environment variables for sensitive data
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     # Don't put credentials in config file!
     # Use environment variables instead
@@ -604,13 +603,11 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     # AlertView automatically validates TLS certificates
     # For self-signed certificates, use:
-    tls:
-      skip_verify: false  # Default is false (verify)
-      # ca_certificate: /path/to/ca.crt  # Custom CA
+    tls_insecure: false  # Set to true to skip TLS verification
 ```
 
 ### Network Isolation
@@ -654,7 +651,7 @@ server {
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 refresh_interval: 30
@@ -667,7 +664,7 @@ port: 8080
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 10
 
@@ -689,7 +686,7 @@ port: 8080
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 display:
@@ -703,7 +700,7 @@ port: 8080
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
 

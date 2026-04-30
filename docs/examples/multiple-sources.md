@@ -7,16 +7,16 @@ This guide covers configuring AlertView to aggregate alerts from multiple monito
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -30,7 +30,7 @@ port: 8080
 sources:
   # Production Alertmanager
   - name: prod-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     timeout: 30
     retry_policy:
@@ -42,23 +42,23 @@ sources:
     
   # Production Grafana
   - name: prod-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.prod.example.com
-    api_key: "prod-api-key"
+    bearer_token: "prod-api-key"
     timeout: 30
     cache_ttl: 60
     link_template: "https://grafana.prod.example.com/d/{{.DashboardUID}}/{{.PanelID}}?viewPanel={{.PanelID}}"
     
   # Staging Alertmanager
   - name: staging-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.staging.example.com
     timeout: 15
     cache_ttl: 30
     
   # Development Zabbix
   - name: dev-zabbix
-    kind: zabbix
+    type: zabbix
     url: http://zabbix.dev.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -91,15 +91,15 @@ log_format: json
 ```yaml
 sources:
   - name: production
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     
   - name: staging
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.staging.example.com
     
   - name: development
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 ```
 
@@ -108,17 +108,17 @@ sources:
 ```yaml
 sources:
   - name: frontend
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     link_template: "https://grafana.example.com/d/frontend-dashboard?var-team=frontend"
     
   - name: backend
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     link_template: "https://grafana.example.com/d/backend-dashboard?var-team=backend"
     
   - name: infrastructure
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     link_template: "https://grafana.example.com/d/infra-dashboard?var-team=infra"
 ```
@@ -128,15 +128,15 @@ sources:
 ```yaml
 sources:
   - name: web-service
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     
   - name: api-service
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     
   - name: database
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
 ```
 
@@ -147,7 +147,7 @@ Each source can have its own configuration:
 ```yaml
 sources:
   - name: fast-source
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 5
     retry_policy:
@@ -157,7 +157,7 @@ sources:
     cache_ttl: 10
     
   - name: slow-source
-    kind: alertmanager
+    type: alertmanager
     url: https://remote.example.com:9093
     timeout: 60
     retry_policy:
@@ -167,7 +167,7 @@ sources:
     cache_ttl: 120
     
   - name: unreliable-source
-    kind: alertmanager
+    type: alertmanager
     url: https://unreliable.example.com:9093
     timeout: 30
     retry_policy:
@@ -184,18 +184,18 @@ Customize link templates for each source:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/alertmanager-dashboard?var-alert={{.Labels.alertname}}"
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     link_template: "https://grafana.example.com/d/{{.DashboardUID}}/{{.PanelID}}?viewPanel={{.PanelID}}"
     
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -207,13 +207,13 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 
 display:
   # Refresh interval in seconds
@@ -253,13 +253,13 @@ AlertView can group alerts by various fields:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 
 display:
   # Group alerts by these fields
@@ -281,15 +281,14 @@ Apply filters globally or per-source:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     # Source-specific filter (if supported by the source)
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 123  # Only alerts from this folder
+    bearer_token: "your-api-key"
 
 display:
   # Global filters (applied to all sources after fetching)
@@ -313,12 +312,12 @@ cache_ttl: 60
 
 sources:
   - name: fast-source
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     cache_ttl: 30  # Override global
     
   - name: slow-source
-    kind: alertmanager
+    type: alertmanager
     url: https://remote.example.com:9093
     cache_ttl: 120  # Override global
 ```
@@ -333,12 +332,12 @@ display:
 # Sources with different update frequencies
 sources:
   - name: critical-source
-    kind: alertmanager
+    type: alertmanager
     url: https://critical.example.com:9093
     # Will be refreshed every 30 seconds (global)
     
   - name: less-important-source
-    kind: alertmanager
+    type: alertmanager
     url: https://less-important.example.com:9093
     # Will also be refreshed every 30 seconds
 ```
@@ -362,15 +361,15 @@ display:
 
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 30
     cache_ttl: 120
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     timeout: 30
     cache_ttl: 120
 ```
@@ -383,19 +382,19 @@ Monitor multiple instances of the same type for redundancy:
 sources:
   # Primary Alertmanager
   - name: alertmanager-primary
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager-primary.example.com
     timeout: 30
     
   # Secondary Alertmanager
   - name: alertmanager-secondary
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager-secondary.example.com
     timeout: 30
     
   # Tertiary Alertmanager
   - name: alertmanager-tertiary
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager-tertiary.example.com
     timeout: 30
 
@@ -413,17 +412,17 @@ Monitor alerts from different regions:
 ```yaml
 sources:
   - name: us-east-1
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.us-east-1.example.com
     link_template: "https://grafana.us-east-1.example.com/d/{{.Labels.dashboard}}?var-region=us-east-1"
     
   - name: us-west-2
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.us-west-2.example.com
     link_template: "https://grafana.us-west-2.example.com/d/{{.Labels.dashboard}}?var-region=us-west-2"
     
   - name: eu-west-1
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.eu-west-1.example.com
     link_template: "https://grafana.eu-west-1.example.com/d/{{.Labels.dashboard}}?var-region=eu-west-1"
 
@@ -487,13 +486,13 @@ Use clear, descriptive names for sources:
 ```yaml
 sources:
   - name: prod-us-east-1-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.us-east-1.example.com
     
   - name: staging-eu-west-1-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.staging.eu-west-1.example.com
-    api_key: "staging-api-key"
+    bearer_token: "staging-api-key"
 ```
 
 ### Source Organization
@@ -504,23 +503,23 @@ Group related sources together in the configuration:
 sources:
   # Production sources
   - name: prod-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     
   - name: prod-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.prod.example.com
-    api_key: "prod-api-key"
+    bearer_token: "prod-api-key"
   
   # Staging sources
   - name: staging-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.staging.example.com
     
   - name: staging-grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.staging.example.com
-    api_key: "staging-api-key"
+    bearer_token: "staging-api-key"
 ```
 
 ### Configuration Management
@@ -535,7 +534,7 @@ For complex setups with many sources:
 ```yaml
 # Production Alertmanager - Primary region
 - name: prod-primary-alertmanager
-  kind: alertmanager
+  type: alertmanager
   url: https://alertmanager.prod.primary.example.com
   timeout: 30
   retry_policy:
@@ -545,7 +544,7 @@ For complex setups with many sources:
 
 # Production Alertmanager - Secondary region
 - name: prod-secondary-alertmanager
-  kind: alertmanager
+  type: alertmanager
   url: https://alertmanager.prod.secondary.example.com
   timeout: 30
   retry_policy:

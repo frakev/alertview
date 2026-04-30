@@ -102,17 +102,20 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Source {
     pub name: String,
-    pub kind: SourceKind,          // alertmanager, grafana, zabbix
+    #[serde(rename = "type")]
+    pub source_type: SourceType,  // alertmanager, grafana, zabbix
     pub url: String,
-    pub timeout: Option<u64>,
+    pub timeout: u64,
     pub link_template: Option<String>,
-    pub retry_policy: Option<RetryPolicy>,
-    // ... kind-specific fields
+    pub retry_policy: RetryPolicy,
+    pub dashboard_url: Option<String>,
+    pub basic_auth: Option<BasicAuth>,
+    pub bearer_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RetryPolicy {
-    pub max_retries: u32,
+    pub max_retries: usize,
     pub initial_delay_ms: u64,
     pub max_delay_ms: u64,
 }

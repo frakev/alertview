@@ -173,16 +173,16 @@ Add multiple entries to the `sources` array:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -250,7 +250,7 @@ Use `link_template` in each source configuration:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
 ```
@@ -267,7 +267,7 @@ cache_ttl: 60  # Cache for 60 seconds
 
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     cache_ttl: 30  # Override global for this source
 ```
@@ -279,7 +279,7 @@ Set `retry_policy` per-source:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     retry_policy:
       max_retries: 3          # Maximum number of retries
@@ -294,7 +294,7 @@ Set `timeout` per-source:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 30  # 30 second timeout
 ```
@@ -305,7 +305,7 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     basic_auth:
       username: api-user
@@ -316,16 +316,16 @@ sources:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 ```
 
 **Zabbix (Username/Password):**
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password
@@ -337,21 +337,13 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
-    tls:
-      skip_verify: true
+    tls_insecure: true
 ```
 
 **Custom CA certificate:**
-```yaml
-sources:
-  - name: alertmanager
-    kind: alertmanager
-    url: https://alertmanager.example.com
-    tls:
-      ca_certificate: /path/to/ca.crt
-```
+Note: AlertView currently only supports `tls_insecure` to skip TLS verification. Custom CA certificates are not yet supported.
 
 ## Usage Questions
 
@@ -777,21 +769,13 @@ See [Troubleshooting Guide](troubleshooting.md) for more details.
    ```yaml
    sources:
      - name: alertmanager
-       kind: alertmanager
+       type: alertmanager
        url: https://alertmanager.example.com
-       tls:
-         skip_verify: true
+       tls_insecure: true
    ```
 
-2. **For production**, use a valid certificate or configure a custom CA:
-   ```yaml
-   sources:
-     - name: alertmanager
-       kind: alertmanager
-       url: https://alertmanager.example.com
-       tls:
-         ca_certificate: /path/to/ca.crt
-   ```
+2. **For production**, use a valid certificate.
+   Note: AlertView currently only supports `tls_insecure` to skip TLS verification. Custom CA certificates are not yet supported.
 
 See [Troubleshooting Guide](troubleshooting.md) for more details.
 
@@ -834,7 +818,7 @@ See [Troubleshooting Guide](troubleshooting.md) for more details.
    ```yaml
    sources:
      - name: alertmanager
-       kind: alertmanager
+       type: alertmanager
        url: http://alertmanager.example.com/api/v2/alerts?active=true
    ```
 
@@ -842,7 +826,7 @@ See [Troubleshooting Guide](troubleshooting.md) for more details.
    ```yaml
    sources:
      - name: alertmanager
-       kind: alertmanager
+       type: alertmanager
        url: http://alertmanager.example.com
        timeout: 60  # 60 second timeout
    ```
@@ -966,7 +950,7 @@ Yes! AlertView is designed to work with Alertmanager. Simply configure Alertmana
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 ```
 

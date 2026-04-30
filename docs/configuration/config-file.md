@@ -75,6 +75,9 @@ display:
   
   # Sound notifications
   play_sounds: false         # Enable sound notifications for new alerts (default: false)
+  
+  # Alert grouping
+  group_by: []              # Labels to group alerts by (e.g., ["namespace", "job"]) (default: [])
 ```
 
 ## Configuration Sections
@@ -160,6 +163,7 @@ The retry delay follows an exponential backoff pattern:
 | `theme` | string | "dark" | Theme: "dark", "light", or CSS URL |
 | `timezone` | string | "local" | Timezone for date display |
 | `play_sounds` | bool | false | Enable sound notifications |
+| `group_by` | array | [] | Labels to group alerts by (e.g., ["namespace", "job"]) |
 
 #### Default Labels
 

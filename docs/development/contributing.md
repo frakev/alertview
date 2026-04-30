@@ -448,7 +448,7 @@ When I try to load a configuration with an invalid timeout value, AlertView pani
    ```yaml
    sources:
      - name: test
-       kind: alertmanager
+       type: alertmanager
        url: http://localhost:9093
        timeout: -1
    ```

@@ -25,7 +25,67 @@ display:
   
   # Sound notifications
   play_sounds: false  # Enable sound notifications for new alerts
+  
+  # Alert grouping
+  group_by: []  # Labels to group alerts by (e.g., ["namespace", "job"])
 ```
+
+## Alert Grouping
+
+AlertView can group alerts by one or more labels for better organization.
+
+### Configuration
+
+```yaml
+display:
+  group_by: ["namespace", "job"]
+```
+
+### How It Works
+
+1. **Group Key**: Alerts are grouped by the combination of label values
+2. **Collapsible Groups**: Groups are displayed as collapsible sections in the UI
+3. **Severity Counts**: Each group shows the count of alerts by severity
+4. **Group Label**: The group header displays the label key=value pairs
+
+### Examples
+
+**Group by namespace only:**
+```yaml
+group_by: ["namespace"]
+```
+- Creates groups like: `namespace=production`, `namespace=staging`
+
+**Group by namespace and job:**
+```yaml
+group_by: ["namespace", "job"]
+```
+- Creates groups like: `namespace=production,job=api`, `namespace=production,job=web`
+
+**Group by multiple labels:**
+```yaml
+group_by: ["cluster", "namespace", "service"]
+```
+- Creates hierarchical groups
+
+### Disabling Grouping
+
+```yaml
+group_by: []  # or omit the field entirely
+```
+
+### Grouping with Missing Labels
+
+If an alert doesn't have one of the `group_by` labels:
+- The label is shown as `<missing>` in the group key
+- The alert is still included in the group
+
+### Best Practices
+
+1. **Start simple**: Begin with one label (e.g., `namespace`)
+2. **Avoid too many labels**: More than 3 labels can create too many groups
+3. **Use meaningful labels**: Choose labels that naturally group your alerts
+4. **Consider cardinality**: Labels with high cardinality (many unique values) create many groups
 
 ## Labels Configuration
 

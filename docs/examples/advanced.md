@@ -424,7 +424,7 @@ timeout: 60
 ```yaml
 # 02-configmap.yaml
 apiVersion: v1
-kind: ConfigMap
+type: ConfigMap
 metadata:
   name: alertview-config
   namespace: alertview

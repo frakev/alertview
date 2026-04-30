@@ -7,10 +7,11 @@ This guide covers configuring AlertView to work with Zabbix.
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
 
 port: 8080
 ```
@@ -20,10 +21,11 @@ port: 8080
 ```yaml
 sources:
   - name: zabbix-production
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.prod.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     
     # Connection settings
     timeout: 30
@@ -41,8 +43,8 @@ sources:
     link_template: "https://zabbix.example.com/monitoring.php?triggerid={{.TriggerID}}"
     
     # TLS settings (optional)
-    tls:
-      skip_verify: false
+    tls_insecure:
+       false
 
 display:
   refresh_interval: 30
@@ -62,10 +64,11 @@ Zabbix uses username/password authentication for its API.
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
 ```
 
 ### Environment Variables
@@ -93,10 +96,11 @@ Customize the URL that opens when clicking a Zabbix alert:
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     link_template: "https://zabbix.example.com/monitoring.php?triggerid={{.TriggerID}}&hostid={{.HostID}}"
 ```
 
@@ -147,19 +151,17 @@ Filter Zabbix triggers by various criteria:
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     
     # Only active triggers
-    only_active: true
     
     # Minimum severity (0-5)
-    min_severity: 2  # Warning and above
     
     # Filter by host group
-    host_group: "Linux servers"
     
     # Filter by host
     host: "web-server-01"
@@ -172,17 +174,19 @@ Monitor multiple Zabbix instances:
 ```yaml
 sources:
   - name: zabbix-production
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.prod.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 30
     
   - name: zabbix-staging
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.staging.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 15
 
 display:
@@ -198,10 +202,11 @@ port: 8080
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.prod.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 30
     retry_policy:
       max_retries: 5
@@ -209,8 +214,6 @@ sources:
       max_delay_ms: 30000
     cache_ttl: 60
     link_template: "https://zabbix.prod.example.com/monitoring.php?triggerid={{.TriggerID}}"
-    only_active: true
-    min_severity: 2
 
 display:
   refresh_interval: 30
@@ -226,10 +229,9 @@ log_format: json
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: http://localhost:8080/api_jsonrpc.php
-    username: Admin
-    password: zabbix
+    bearer_token: "your-zabbix-api-token"
     timeout: 10
     retry_policy:
       max_retries: 2
@@ -315,10 +317,11 @@ In Zabbix:
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://slow-zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 120
 ```
 
@@ -333,12 +336,11 @@ sources:
 ```yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
-    only_active: true
-    min_severity: 2
+    basic_auth:
+      username: api-user
+      password: api-password
     cache_ttl: 60
 
 display:
@@ -354,19 +356,19 @@ display:
 ```yaml
 sources:
   - name: zabbix-web
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
-    host_group: "Web servers"
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 60
     
   - name: zabbix-db
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
-    username: api-user
-    password: api-password
-    host_group: "Database servers"
+    basic_auth:
+      username: api-user
+      password: api-password
     timeout: 60
 ```
 

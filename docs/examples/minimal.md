@@ -10,7 +10,7 @@ The most minimal configuration connects to a single Alertmanager instance:
 # config.yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 port: 8080
@@ -41,9 +41,9 @@ Then open your browser to http://localhost:8080
 # config.yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 
 port: 8080
 ```
@@ -56,7 +56,7 @@ port: 8080
 # config.yaml
 sources:
   - name: zabbix
-    kind: zabbix
+    type: zabbix
     url: https://zabbix.example.com/api_jsonrpc.php
     username: api-user
     password: api-password

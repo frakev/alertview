@@ -267,10 +267,11 @@ alertview --config config.yaml --dry-run
 
 **Solutions:**
 
-- **Self-signed certificate:** Configure `tls.skip_verify: true` (not recommended for production)
-- **Custom CA:** Configure `tls.ca_certificate: /path/to/ca.crt`
+- **Self-signed certificate:** Set `tls_insecure: true` in the source configuration (not recommended for production)
 - **Expired certificate:** Renew the certificate
 - **Invalid hostname:** Use the correct hostname or configure SNI
+
+Note: AlertView currently only supports `tls_insecure` to skip TLS verification. Custom CA certificates are not yet supported.
 
 ### Timeout Errors
 

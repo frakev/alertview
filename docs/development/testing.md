@@ -97,7 +97,7 @@ mod tests {
         let yaml = r#"
             sources:
               - name: test
-                kind: alertmanager
+                type: alertmanager
                 url: http://localhost:9093
             port: 8080
         "#;
@@ -124,7 +124,7 @@ mod tests {
         let yaml = r#"
             sources:
               - name: test
-                kind: invalid
+                type: invalid
                 url: http://localhost
         "#;
 
@@ -253,7 +253,7 @@ async fn test_api_returns_alerts() {
     let config = Config {
         sources: vec![Source {
             name: "test".to_string(),
-            kind: SourceKind::Alertmanager,
+            source_type: SourceType::Alertmanager,
             url: "http://localhost:9093".to_string(),
             ..Default::default()
         }],
@@ -323,7 +323,7 @@ pub fn create_test_config() -> Config {
     Config {
         sources: vec![Source {
             name: "test".to_string(),
-            kind: SourceKind::Alertmanager,
+            source_type: SourceType::Alertmanager,
             url: "http://localhost:9093".to_string(),
             ..Default::default()
         }],
@@ -383,7 +383,7 @@ mod tests {
         // Create a source pointing to the mock server
         let source = Source {
             name: "test".to_string(),
-            kind: SourceKind::Alertmanager,
+            source_type: SourceType::Alertmanager,
             url: server.url(),
             ..Default::default()
         };
@@ -583,7 +583,7 @@ Create a `config.test.yaml` for tests:
 # config.test.yaml
 sources:
   - name: test-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:19093  # Test port
     timeout: 5
     retry_policy:
@@ -804,7 +804,7 @@ mod tests {
         let yaml = r#"
 sources:
   - name: test
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 port: 9090
 "#;
@@ -866,7 +866,7 @@ mod tests {
     #[test]
     fn test_transform_grafana_alert() {
         let grafana_alert = GrafanaAlert {
-            dashboard_uid: "abc123".to_string(),
+            
             panel_id: 1,
             rule_name: "Test Rule".to_string(),
             rule_url: "http://grafana:3000/d/abc123".to_string(),

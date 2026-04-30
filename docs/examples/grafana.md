@@ -7,9 +7,9 @@ This guide covers configuring AlertView to work with Grafana's alerting system.
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 
 port: 8080
 ```
@@ -19,9 +19,9 @@ port: 8080
 ```yaml
 sources:
   - name: grafana-production
-    kind: grafana
+    type: grafana
     url: https://grafana.prod.example.com
-    api_key: "your-production-api-key"
+    bearer_token: "your-production-api-key"
     
     # Connection settings
     timeout: 30
@@ -39,11 +39,10 @@ sources:
     link_template: "https://grafana.example.com/d/{{.DashboardUID}}/{{.PanelID}}?viewPanel={{.PanelID}}&orgId={{.OrgID}}&from=now-1h&to=now"
     
     # TLS settings (optional)
-    tls:
-      skip_verify: false
+    tls_insecure:
+       false
     
     # Folder ID to fetch alerts from (optional)
-    folder_id: 0  # 0 = root folder
 
 display:
   refresh_interval: 30
@@ -71,9 +70,9 @@ Grafana requires an API key for authentication. You can create one in Grafana:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
 ```
 
 ### Using API Key via Environment Variable
@@ -87,7 +86,7 @@ Then in your config:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
     # api_key will be read from environment variable
 ```
@@ -108,9 +107,9 @@ Grafana v8 introduced a new unified alerting system. AlertView supports both:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     # Uses /api/v1/alerts for Grafana v8+
 ```
 
@@ -121,9 +120,9 @@ For Grafana v7, AlertView uses the legacy API:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     # Uses /api/alerts for Grafana v7
 ```
 
@@ -134,10 +133,9 @@ Grafana organizes dashboards and alerts into folders. You can specify which fold
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 123  # Specific folder ID
+    bearer_token: "your-api-key"
 ```
 
 To get folder IDs:
@@ -160,16 +158,14 @@ To monitor alerts from multiple folders, create multiple Grafana sources:
 ```yaml
 sources:
   - name: grafana-frontend
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 1  # Frontend folder
+    bearer_token: "your-api-key"
     
   - name: grafana-backend
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 2  # Backend folder
+    bearer_token: "your-api-key"
 ```
 
 ## Link Templates
@@ -179,9 +175,9 @@ Customize the URL that opens when clicking a Grafana alert:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     link_template: "https://grafana.example.com/d/{{.DashboardUID}}/{{.PanelID}}?viewPanel={{.PanelID}}&orgId={{.OrgID}}&from=now-1h&to=now"
 ```
 
@@ -235,9 +231,9 @@ Configure how AlertView retries failed requests to Grafana:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     retry_policy:
       max_retries: 5
       initial_delay_ms: 2000
@@ -251,9 +247,9 @@ Enable caching to reduce load on Grafana:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     cache_ttl: 60  # Cache for 60 seconds
 
 # Global cache TTL
@@ -267,9 +263,9 @@ Set request timeout for Grafana API calls:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     timeout: 30  # 30 second timeout
 ```
 
@@ -280,11 +276,11 @@ sources:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    tls:
-      skip_verify: true
+    bearer_token: "your-api-key"
+    tls_insecure:
+       true
 ```
 
 ### Custom CA Certificate
@@ -292,11 +288,10 @@ sources:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    tls:
-      ca_certificate: /path/to/ca.crt
+    bearer_token: "your-api-key"
+    tls_insecure:
 ```
 
 ## Multiple Grafana Sources
@@ -306,21 +301,21 @@ Monitor multiple Grafana instances:
 ```yaml
 sources:
   - name: grafana-production
-    kind: grafana
+    type: grafana
     url: https://grafana.prod.example.com
-    api_key: "prod-api-key"
+    bearer_token: "prod-api-key"
     timeout: 30
     
   - name: grafana-staging
-    kind: grafana
+    type: grafana
     url: https://grafana.staging.example.com
-    api_key: "staging-api-key"
+    bearer_token: "staging-api-key"
     timeout: 15
     
   - name: grafana-local
-    kind: grafana
+    type: grafana
     url: http://localhost:3000
-    api_key: "local-api-key"
+    bearer_token: "local-api-key"
     timeout: 10
 
 display:
@@ -336,9 +331,9 @@ AlertView works with Grafana Cloud:
 ```yaml
 sources:
   - name: grafana-cloud
-    kind: grafana
+    type: grafana
     url: https://your-instance.grafana.net
-    api_key: "your-cloud-api-key"
+    bearer_token: "your-cloud-api-key"
     timeout: 30
 ```
 
@@ -351,9 +346,9 @@ sources:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.prod.example.com
-    api_key: "your-production-api-key"
+    bearer_token: "your-production-api-key"
     timeout: 30
     retry_policy:
       max_retries: 5
@@ -376,9 +371,9 @@ log_format: json
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: http://localhost:3000
-    api_key: "local-api-key"
+    bearer_token: "local-api-key"
     timeout: 10
     retry_policy:
       max_retries: 2
@@ -474,9 +469,9 @@ AlertView automatically detects the Grafana version and uses the appropriate API
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://slow-grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     timeout: 120  # 2 minute timeout
 ```
 
@@ -491,10 +486,9 @@ sources:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 123  # Specific folder
+    bearer_token: "your-api-key"
     cache_ttl: 60
 
 display:
@@ -510,10 +504,9 @@ display:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
-    folder_id: 1  # Only one folder
+    bearer_token: "your-api-key"
     timeout: 60
     cache_ttl: 120
 ```
@@ -527,9 +520,9 @@ Link AlertView alerts to Prometheus queries (if Grafana alerts are based on Prom
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     link_template: "https://prometheus.example.com/graph?g0.range_input=1h&g0.expr={{.Annotations.promql}}"
 ```
 
@@ -540,9 +533,9 @@ If you use both Grafana and Alertmanager, you can link them together:
 ```yaml
 sources:
   - name: grafana
-    kind: grafana
+    type: grafana
     url: https://grafana.example.com
-    api_key: "your-api-key"
+    bearer_token: "your-api-key"
     link_template: "https://alertmanager.example.com/#/alerts?search={{.RuleName}}"
 ```
 

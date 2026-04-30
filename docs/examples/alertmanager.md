@@ -7,7 +7,7 @@ This guide covers configuring AlertView to work with Alertmanager, including adv
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 
 port: 8080
@@ -18,7 +18,7 @@ port: 8080
 ```yaml
 sources:
   - name: production-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     
     # Connection settings
@@ -37,9 +37,8 @@ sources:
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
     
     # TLS settings (optional)
-    tls:
-      skip_verify: false
-      # ca_certificate: /path/to/ca.crt
+    tls_insecure:
+       false
     
     # Authentication (optional)
     # basic_auth:
@@ -66,7 +65,7 @@ The URL to your Alertmanager API endpoint:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
 ```
 
@@ -83,7 +82,7 @@ Request timeout in seconds (default: 15):
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 30  # 30 second timeout
 ```
@@ -95,7 +94,7 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     basic_auth:
       username: api-user
@@ -113,7 +112,7 @@ export ALERTMANAGER_BASIC_AUTH=api-user:api-password
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     bearer_token: "your-bearer-token"
 ```
@@ -131,10 +130,10 @@ export ALERTMANAGER_BEARER_TOKEN=your-bearer-token
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
-    tls:
-      skip_verify: true
+    tls_insecure:
+       true
 ```
 
 #### Custom CA Certificate
@@ -142,10 +141,9 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
-    tls:
-      ca_certificate: /path/to/ca.crt
+    tls_insecure:
 ```
 
 ## Retry Policy
@@ -155,7 +153,7 @@ Configure how AlertView retries failed requests:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     retry_policy:
       max_retries: 5          # Maximum number of retries (default: 3)
@@ -177,7 +175,7 @@ Enable caching to reduce load on Alertmanager:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     cache_ttl: 60  # Cache for 60 seconds
 
@@ -194,7 +192,7 @@ Customize the URL that opens when clicking an alert:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}/{{.Labels.panel}}?viewPanel={{.Labels.panel_id}}"
 ```
@@ -228,17 +226,17 @@ Monitor multiple Alertmanager instances:
 ```yaml
 sources:
   - name: production
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     timeout: 30
     
   - name: staging
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.staging.example.com
     timeout: 15
     
   - name: development
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 10
 
@@ -255,11 +253,11 @@ Filter alerts at the source level (before they reach AlertView):
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?active=true  # Only active alerts
     
   - name: alertmanager-silenced
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?silenced=true  # Only silenced alerts
 ```
 
@@ -277,7 +275,7 @@ To use API v1 (not recommended):
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v1/alerts
 ```
 
@@ -288,7 +286,7 @@ If you're using Alertmanager with Prometheus, you can link directly to Prometheu
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://prometheus.example.com/graph?g0.range_input=1h&g0.expr={{.Annotations.promql}}&g0.tab=0"
 ```
@@ -300,7 +298,7 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://alertmanager-operated:9093
 ```
 
@@ -309,7 +307,7 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
     bearer_token: "your-service-account-token"
 ```
@@ -330,7 +328,7 @@ kubectl create secret generic alertview-token --from-file=token=/var/run/secrets
 ```yaml
 sources:
   - name: production-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.prod.example.com
     timeout: 30
     retry_policy:
@@ -339,8 +337,8 @@ sources:
       max_delay_ms: 30000
     cache_ttl: 60
     link_template: "https://grafana.prod.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
-    tls:
-      skip_verify: false
+    tls_insecure:
+       false
     bearer_token: "your-production-token"
 
 display:
@@ -358,7 +356,7 @@ log_format: json
 ```yaml
 sources:
   - name: local-alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     timeout: 10
     retry_policy:
@@ -382,12 +380,12 @@ log_format: text
 ```yaml
 sources:
   - name: alertmanager-primary
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager-primary.example.com
     timeout: 30
     
   - name: alertmanager-secondary
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager-secondary.example.com
     timeout: 30
 
@@ -457,7 +455,7 @@ web:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://slow-alertmanager.example.com
     timeout: 120  # 2 minute timeout
 ```
@@ -474,10 +472,10 @@ sources:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: https://alertmanager.example.com
-    tls:
-      skip_verify: true  # Only for testing!
+    tls_insecure:
+       true  # Only for testing!
 ```
 
 ## Alertmanager-Specific Features
@@ -491,7 +489,7 @@ To fetch only silenced alerts:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?silenced=true
 ```
 
@@ -504,7 +502,7 @@ To fetch only inhibited alerts:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?inhibited=true
 ```
 
@@ -530,7 +528,7 @@ AlertView includes the `generator_url` from Alertmanager, which links back to th
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?active=true  # Only active alerts
     cache_ttl: 60
 
@@ -547,7 +545,7 @@ display:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093/api/v2/alerts?filter=team=frontend
     timeout: 60
 ```
@@ -561,7 +559,7 @@ Link AlertView alerts to Prometheus queries:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://prometheus.example.com/graph?g0.range_input=1h&g0.expr={{.Annotations.promql}}"
 ```
@@ -573,7 +571,7 @@ Link AlertView alerts to Grafana dashboards:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://grafana.example.com/d/{{.Labels.dashboard}}?var-alert={{.Labels.alertname}}"
 ```
@@ -585,7 +583,7 @@ If you use PagerDuty with Alertmanager, you can link to PagerDuty incidents:
 ```yaml
 sources:
   - name: alertmanager
-    kind: alertmanager
+    type: alertmanager
     url: http://localhost:9093
     link_template: "https://your-account.pagerduty.com/incidents/{{.Annotations.pagerduty_incident_id}}"
 ```
