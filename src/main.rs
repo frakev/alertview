@@ -451,7 +451,7 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                 match fs::metadata(&config_path_clone) {
                     Ok(metadata) => {
                         if let Ok(modified) = metadata.modified() {
-                            if last_modified.as_ref().map_or(true, |&last| modified > last) {
+                            if last_modified.as_ref().is_none_or(|&last| modified > last) {
                                 // File was modified
                                 tracing::info!("Config file {} modified, reloading...", config_path_clone);
                                 last_modified = Some(modified);
@@ -571,7 +571,7 @@ fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_
             match fs::metadata(&config_path_clone) {
                 Ok(metadata) => {
                     if let Ok(modified) = metadata.modified() {
-                        if last_modified.as_ref().map_or(true, |&last| modified > last) {
+                        if last_modified.as_ref().is_none_or(|&last| modified > last) {
                             // File was modified
                             tracing::info!("Config file {} modified, reloading...", config_path_clone);
                             last_modified = Some(modified);

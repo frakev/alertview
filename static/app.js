@@ -585,6 +585,28 @@ function cardHtml(a) {
 function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
   const summary = a.annotations?.summary || '';
+  
+  // Prepare labels for TV mode
+  const display_labels = App.data?.display_labels ?? [];
+  const visible_labels = display_labels.slice(0, 2); // Show first 2 labels by default
+  const hidden_labels = display_labels.slice(2); // Rest are hidden
+  const has_hidden_labels = hidden_labels.length > 0;
+  
+  // Generate label HTML for visible labels
+  const labelsHtml = visible_labels
+    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
+    .map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`)
+    .join('');
+  
+  // Generate hidden labels HTML (initially hidden)
+  const hiddenLabelsHtml = has_hidden_labels ? 
+    `<span class="tv-hidden-labels" style="display:none;">` +
+    hidden_labels
+      .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
+      .map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`)
+      .join('') +
+    `</span>` : '';
+
   return `
     <div class="alert-card alert-row sev-${sev}" data-fp="${esc(a.fingerprint)}">
       <span class="sev-dot sev-${sev}"></span>
@@ -594,6 +616,9 @@ function cardHtmlTV(a) {
       <span class="row-summary">${esc(summary)}</span>
       <span class="src-chip">${esc(a.source)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
+      ${labelsHtml}
+      ${has_hidden_labels ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)" title="Show more labels">▶</button>` : ''}
+      ${hiddenLabelsHtml}
       ${genLinkHtml(a.link_url, a.source_type)}
     </div>`;
 }
@@ -636,6 +661,17 @@ const TV = {
     this.active = !this.active;
     localStorage.setItem('av-tv', this.active);
     this._apply();
+  },
+
+  // Toggle labels visibility in TV mode
+  toggleLabels(button) {
+    const hiddenLabels = button.parentElement.querySelector('.tv-hidden-labels');
+    if (hiddenLabels) {
+      const isHidden = hiddenLabels.style.display === 'none';
+      hiddenLabels.style.display = isHidden ? 'inline' : 'none';
+      button.textContent = isHidden ? '▼' : '▶';
+      button.title = isHidden ? 'Hide extra labels' : 'Show more labels';
+    }
   },
 
   _apply() {
