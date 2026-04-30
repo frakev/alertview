@@ -382,12 +382,81 @@ function renderAlerts() {
     return;
   }
 
-  listEl.innerHTML = filtered.map(cardHtml).join('');
+  // Check if grouping is enabled and we have groups
+  const groups = App.data?.groups || [];
+  const groupBy = App.data?.group_by || [];
+  
+  if (groups.length > 0 && groupBy.length > 0) {
+    // Render grouped view
+    listEl.innerHTML = groups.map(group => groupHtml(group, filtered)).join('');
+  } else {
+    // Render flat list
+    listEl.innerHTML = filtered.map(cardHtml).join('');
+  }
 
   if (App.freshFps.size) {
     listEl.querySelectorAll('.alert-card').forEach(el => {
       if (App.freshFps.has(el.dataset.fp)) el.classList.add('new');
     });
+  }
+}
+
+function groupHtml(group, filteredAlerts) {
+  // Filter alerts that belong to this group
+  const groupAlerts = filteredAlerts.filter(a => {
+    const groupKeys = group.key.split(',').map(k => {
+      const [key, value] = k.split('=');
+      return { key, value };
+    });
+    
+    return groupKeys.every(({ key, value }) => {
+      return a.labels?.[key] === value;
+    });
+  });
+  
+  if (groupAlerts.length === 0) return '';
+  
+  const sevCounts = group.severity_counts || {};
+  const sevBadges = Object.entries(sevCounts)
+    .sort(([a], [b]) => severityOrder(a) - severityOrder(b))
+    .map(([sev, count]) => `<span class="sev-badge sev-${sev}">${count} ${sev}</span>`)
+    .join('');
+  
+  // Extract group label for display
+  const groupLabel = group.key.split(',').map(k => {
+    const [key, value] = k.split('=');
+    return `<span class="lbl">${esc(key)}=<b>${esc(value)}</b></span>`;
+  }).join('');
+  
+  return `
+    <div class="alert-group" data-group-key="${esc(group.key)}">
+      <div class="group-header" onclick="toggleGroup('${esc(group.key)}')">
+        <span class="group-toggle">▶</span>
+        <span class="group-label">${groupLabel}</span>
+        <span class="group-count">${groupAlerts.length} alerte${groupAlerts.length !== 1 ? 's' : ''}</span>
+        <span class="group-severities">${sevBadges}</span>
+      </div>
+      <div class="group-alerts" id="group-${esc(group.key)}" style="display: none;">
+        ${groupAlerts.map(cardHtml).join('')}
+      </div>
+    </div>`;
+}
+
+function severityOrder(sev) {
+  const order = { critical: 0, high: 1, warning: 2, warn: 2, info: 3, none: 4 };
+  return order[sev] ?? 5;
+}
+
+function toggleGroup(groupKey) {
+  const groupEl = document.getElementById('group-' + groupKey);
+  const toggleEl = groupEl.previousElementSibling.querySelector('.group-toggle');
+  
+  if (groupEl.style.display === 'none') {
+    groupEl.style.display = 'block';
+    toggleEl.textContent = '▼';
+  } else {
+    groupEl.style.display = 'none';
+    toggleEl.textContent = '▶';
   }
 }
 

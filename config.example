@@ -73,6 +73,9 @@ display:
   
   # Enable sound notifications for new alerts
   # play_sounds: false
+  
+  # Group alerts by labels (e.g., ["namespace", "job"])
+  # group_by: ["namespace"]
 
 # Environment variables that can be used instead of config file:
 # ALERTVIEW_PORT=8080

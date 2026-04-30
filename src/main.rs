@@ -186,6 +186,13 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
             .then_with(|| b.starts_at.cmp(&a.starts_at))
     });
 
+    // Group alerts if group_by is configured
+    let groups = if !config.display.group_by.is_empty() {
+        alerts::group_alerts(&all_alerts, &config.display.group_by)
+    } else {
+        vec![]
+    };
+
     Json(AlertsResponse {
         alerts: all_alerts,
         sources: source_statuses,
@@ -194,6 +201,8 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         timezone: Some(config.display.timezone.clone()),
         theme: config.display.theme.clone(),
         play_sounds: config.display.play_sounds,
+        groups,
+        group_by: config.display.group_by.clone(),
     })
 }
 

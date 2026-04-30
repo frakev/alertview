@@ -582,3 +582,72 @@ a { color: inherit; }
 }
 .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
 .alert-row .src-chip { font-size: 10px; }
+
+/* ── Alert Groups ── */
+.alert-group {
+  margin-bottom: .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem .75rem;
+  background: var(--surface2);
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.group-header:hover {
+  background: var(--surface);
+}
+
+.group-toggle {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform .15s ease;
+  width: 16px;
+  text-align: center;
+}
+
+.group-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  flex: 1;
+  font-size: 12px;
+}
+
+.group-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.group-severities {
+  display: flex;
+  gap: .3rem;
+}
+
+.group-severities .sev-badge {
+  font-size: 10px;
+  padding: 2px 4px;
+}
+
+.group-alerts {
+  padding: .5rem;
+  background: var(--surface);
+}
+
+.group-alerts .alert-card {
+  margin-bottom: .5rem;
+}
+
+.group-alerts .alert-card:last-child {
+  margin-bottom: 0;
+}

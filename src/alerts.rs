@@ -40,6 +40,19 @@ pub struct AlertsResponse {
     pub theme: Option<String>,
     #[serde(default)]
     pub play_sounds: bool,
+    #[serde(default)]
+    pub groups: Vec<AlertGroup>,
+    #[serde(default)]
+    pub group_by: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AlertGroup {
+    pub key: String,
+    pub labels: std::collections::HashMap<String, String>,
+    pub alerts: Vec<Alert>,
+    pub count: usize,
+    pub severity_counts: std::collections::HashMap<String, usize>,
 }
 
 // Alertmanager v2 API wire types
@@ -573,4 +586,188 @@ mod tests {
         let result = apply_link_template(template, &alert).unwrap();
         assert_eq!(result, "https://example.com/{{.Labels.nonexistent}}");
     }
+
+    #[test]
+    fn test_group_alerts_by_namespace() {
+        let alerts = vec![
+            Alert {
+                fingerprint: "1".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "critical".to_string(),
+                name: "Alert1".to_string(),
+                labels: HashMap::from([("namespace".to_string(), "prod".to_string())]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+            Alert {
+                fingerprint: "2".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "high".to_string(),
+                name: "Alert2".to_string(),
+                labels: HashMap::from([("namespace".to_string(), "prod".to_string())]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+            Alert {
+                fingerprint: "3".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "warning".to_string(),
+                name: "Alert3".to_string(),
+                labels: HashMap::from([("namespace".to_string(), "dev".to_string())]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+        ];
+
+        let groups = group_alerts(&alerts, &vec!["namespace".to_string()]);
+        assert_eq!(groups.len(), 2);
+        
+        // Find prod and dev groups
+        let prod_group = groups.iter().find(|g| g.key == "namespace=prod").unwrap();
+        let dev_group = groups.iter().find(|g| g.key == "namespace=dev").unwrap();
+        
+        assert_eq!(prod_group.count, 2);
+        assert_eq!(dev_group.count, 1);
+    }
+
+    #[test]
+    fn test_group_alerts_multiple_labels() {
+        let alerts = vec![
+            Alert {
+                fingerprint: "1".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "critical".to_string(),
+                name: "Alert1".to_string(),
+                labels: HashMap::from([
+                    ("namespace".to_string(), "prod".to_string()),
+                    ("job".to_string(), "api".to_string()),
+                ]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+            Alert {
+                fingerprint: "2".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "high".to_string(),
+                name: "Alert2".to_string(),
+                labels: HashMap::from([
+                    ("namespace".to_string(), "prod".to_string()),
+                    ("job".to_string(), "web".to_string()),
+                ]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+        ];
+
+        let groups = group_alerts(&alerts, &vec!["namespace".to_string(), "job".to_string()]);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "namespace=prod,job=api");
+        assert_eq!(groups[1].key, "namespace=prod,job=web");
+    }
+
+    #[test]
+    fn test_group_alerts_empty_group_by() {
+        let alerts = vec![
+            Alert {
+                fingerprint: "1".to_string(),
+                source: "test".to_string(),
+                source_type: "alertmanager".to_string(),
+                status: "firing".to_string(),
+                severity: "critical".to_string(),
+                name: "Alert1".to_string(),
+                labels: HashMap::from([("namespace".to_string(), "prod".to_string())]),
+                annotations: HashMap::new(),
+                starts_at: "2024-01-01T00:00:00Z".to_string(),
+                ends_at: None,
+                link_url: None,
+            },
+        ];
+
+        let groups = group_alerts(&alerts, &vec![]);
+        assert_eq!(groups.len(), 0);
+    }
+}
+
+/// Group alerts by specified labels
+pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
+    if group_by.is_empty() {
+        return vec![];
+    }
+
+    use std::collections::HashMap;
+
+    let mut groups_map: HashMap<String, Vec<Alert>> = HashMap::new();
+
+    for alert in alerts {
+        let mut group_key_parts: Vec<String> = Vec::new();
+
+        for label_key in group_by {
+            if let Some(label_value) = alert.labels.get(label_key) {
+                group_key_parts.push(format!("{}={}", label_key, label_value));
+            } else {
+                group_key_parts.push(format!("{}=<missing>", label_key));
+            }
+        }
+
+        let group_key = group_key_parts.join(",");
+        groups_map.entry(group_key).or_default().push(alert.clone());
+    }
+
+    let mut groups: Vec<AlertGroup> = groups_map
+        .into_iter()
+        .map(|(key, alerts)| {
+            let severity_counts = count_severities(&alerts);
+            // Extract labels from the first alert in the group (they should all have the same group_by labels)
+            let mut labels = HashMap::new();
+            if let Some(first_alert) = alerts.first() {
+                for label_key in group_by {
+                    if let Some(label_value) = first_alert.labels.get(label_key) {
+                        labels.insert(label_key.clone(), label_value.clone());
+                    } else {
+                        labels.insert(label_key.clone(), "<missing>".to_string());
+                    }
+                }
+            }
+            AlertGroup {
+                key,
+                labels,
+                alerts: alerts.clone(),
+                count: alerts.len(),
+                severity_counts,
+            }
+        })
+        .collect();
+
+    // Sort groups by key
+    groups.sort_by(|a, b| a.key.cmp(&b.key));
+
+    groups
+}
+
+fn count_severities(alerts: &[Alert]) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for alert in alerts {
+        *counts.entry(alert.severity.clone()).or_insert(0) += 1;
+    }
+    counts
 }

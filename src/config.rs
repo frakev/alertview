@@ -226,6 +226,8 @@ pub struct DisplayConfig {
     pub timezone: String, // "local", "UTC", or IANA timezone (e.g., "Europe/Paris")
     #[serde(default)]
     pub play_sounds: bool,
+    #[serde(default)]
+    pub group_by: Vec<String>, // Labels to group alerts by (e.g., ["namespace", "job"])
 }
 
 fn default_labels() -> Vec<String> {
