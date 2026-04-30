@@ -12,6 +12,15 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - Direct links to specific alerts (Zabbix uses `filter_eventid`, Alertmanager/Grafana use `generator_url`)
 - TV mode for wall displays — full-screen, auto-refresh, URL-persisted filters
 - Dark/light theme
+- **Automatic config reload** — changes to the config file are detected and applied without restart
+
+## Table of Contents
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [Running Locally](#running-locally)
+- [Docker](#docker)
+- [Kubernetes Deployment](#kubernetes-deployment)
+- [API](#api)
 
 ## Requirements
 
@@ -20,7 +29,9 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 
 ## Configuration
 
-Copy `config.example` to `config.yaml` and edit it:
+Copy `config.example` to `config.yaml` and edit it. The config file is automatically reloaded when modified.
+
+### Full Configuration Example
 
 ```yaml
 port: 8080
@@ -54,6 +65,34 @@ display:
     - hostgroup
 ```
 
+### Minimal Configuration Examples
+
+**Alertmanager only:**
+```yaml
+sources:
+  - name: "Alertmanager"
+    type: alertmanager
+    url: "http://localhost:9093"
+```
+
+**Grafana only:**
+```yaml
+sources:
+  - name: "Grafana"
+    type: grafana
+    url: "http://localhost:3000"
+    bearer_token: "your_token_here"
+```
+
+**Zabbix only:**
+```yaml
+sources:
+  - name: "Zabbix"
+    type: zabbix
+    url: "http://zabbix-server/zabbix"
+    bearer_token: "your_zabbix_token"
+```
+
 > **Note for Zabbix**: Direct alert links require `filter_set=1&filter_eventid=<ID>` parameters, which are automatically added by AlertView.
 
 > `config.yaml` is gitignored — never commit credentials.
@@ -69,33 +108,71 @@ cargo run -- config.yaml
 
 ## Docker
 
+### Build and Run
+
 ```bash
-# Build
+# Build the image
 docker build -t alertview .
 
-# Run
-docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml alertview
+# Run with config file mounted (use :rw for auto-reload to work)
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw alertview
 ```
+
+> **Note:** Use `:rw` (read-write) mount option to enable automatic config reload. With `:ro` (read-only), config changes won't be detected.
+
+### Pre-built Images
 
 The image is also published automatically to GHCR on every push to `main`:
 
 ```bash
+# Pull the latest image
 docker pull ghcr.io/frakev/alertview:latest
+
+# Run it
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:latest
 ```
 
-## Kubernetes deployment
+### Docker Compose
 
-The `k8s/` manifests deploy AlertView into its own namespace using a ConfigMap for configuration.
+Example `docker-compose.yml`:
 
-**1. Edit the manifests**
+```yaml
+version: '3.8'
+services:
+  alertview:
+    image: ghcr.io/frakev/alertview:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config/config.yaml:rw
+    restart: unless-stopped
+```
 
-| File | What to change |
-|---|---|
-| `02-configmap.yaml` | Alertmanager/Grafana/Zabbix URLs, dashboard links, tokens |
-| `05-ingress.yaml` | Your domain, TLS secret name, middlewares |
+Run with: `docker compose up -d`
 
-**2. Apply**
+## Kubernetes Deployment
 
+The `k8s/` directory contains manifests to deploy AlertView into its own namespace using a ConfigMap for configuration.
+
+### Prerequisites
+
+- Kubernetes cluster
+- `kubectl` configured to access your cluster
+- (Optional) Ingress controller if using the ingress manifest
+
+### Configuration Files
+
+| File | Purpose | What to change |
+|---|---|---|
+| `01-namespace.yaml` | Creates the `alertview` namespace | Usually no changes needed |
+| `02-configmap.yaml` | Configuration (sources, tokens, URLs) | Alertmanager/Grafana/Zabbix URLs, dashboard links, tokens |
+| `03-deployment.yaml` | Deployment configuration | Resource limits, replicas |
+| `04-service.yaml` | Service (ClusterIP) | Port, service type |
+| `05-ingress.yaml` | Ingress for external access | Your domain, TLS secret name, annotations |
+
+### Deploy
+
+**Method 1: Apply manifests individually**
 ```bash
 kubectl apply -f 01-namespace.yaml
 kubectl apply -f 02-configmap.yaml
@@ -104,21 +181,46 @@ kubectl apply -f 04-service.yaml
 kubectl apply -f 05-ingress.yaml
 ```
 
-Or with the Makefile (requires `kubectl` in PATH, or override `KUBECTL=microk8s kubectl`):
-
+**Method 2: Use the Makefile**
 ```bash
+# For standard kubectl
 make deploy
+
+# For microk8s
+KUBECTL=microk8s kubectl make deploy
+
+# For other custom kubectl
+KUBECTL=/path/to/your/kubectl make deploy
 ```
 
-**3. Update after a config change**
+### Update Configuration
 
 For local deployments (binary or Docker), the config file is automatically reloaded when modified.
 
-For Kubernetes deployments, you need to restart:
+**For Kubernetes deployments**, since ConfigMaps are mounted as read-only volumes, you need to restart the deployment after changing the ConfigMap:
+
 ```bash
+# Apply the updated configmap
+kubectl apply -f 02-configmap.yaml
+
+# Restart the deployment to pick up changes
 kubectl rollout restart deployment/alertview -n alertview
-# or:
+
+# Or use the Makefile
 make restart
+```
+
+> **Note:** The automatic config reload feature does not work with Kubernetes ConfigMaps because they are mounted as read-only. Consider using a sidecar like `configmap-reload` or mounting the config from an emptyDir volume with an initContainer that copies from the ConfigMap.
+
+### Access the Dashboard
+
+After deployment:
+- **Internal access**: `http://alertview.alertview.svc.cluster.local:8080`
+- **External access** (if ingress configured): `https://your-domain.com`
+
+Check pods and service:
+```bash
+kubectl get all -n alertview
 ```
 
 ## CI/CD
@@ -134,7 +236,78 @@ The workflow targets a `self-hosted` runner labeled `k8s-home`. Change `runs-on`
 
 ## API
 
-| Endpoint | Description |
-|---|---|
-| `GET /` | Web UI |
-| `GET /api/alerts` | JSON — all alerts aggregated from all sources |
+AlertView provides a simple REST API for programmatic access to alerts.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Web UI dashboard |
+| `GET` | `/api/alerts` | JSON — all alerts aggregated from all configured sources |
+| `GET` | `/style.css` | Dashboard stylesheet |
+| `GET` | `/app.js` | Dashboard JavaScript |
+
+### `/api/alerts` Response Format
+
+```json
+{
+  "alerts": [
+    {
+      "fingerprint": "source1:abc123",
+      "source": "Alertmanager",
+      "source_type": "alertmanager",
+      "status": "firing",
+      "severity": "critical",
+      "name": "HighCPUUsage",
+      "labels": {
+        "namespace": "production",
+        "job": "node-exporter",
+        "instance": "server-1"
+      },
+      "annotations": {
+        "summary": "High CPU usage detected",
+        "description": "CPU usage is above 90% for 5 minutes"
+      },
+      "starts_at": "2024-01-15T10:30:00Z",
+      "ends_at": null,
+      "link_url": "https://grafana.example.com/alerting/list"
+    }
+  ],
+  "sources": [
+    {
+      "name": "Alertmanager",
+      "status": "ok",
+      "alert_count": 5,
+      "error": null
+    }
+  ],
+  "refresh_interval": 30,
+  "display_labels": ["namespace", "job", "instance"]
+}
+```
+
+### Response Fields
+
+**Alert object:**
+- `fingerprint`: Unique identifier (format: `{source}:{internal_id}`)
+- `source`: Name of the source as configured
+- `source_type`: One of `alertmanager`, `grafana`, `zabbix`
+- `status`: One of `firing`, `silenced`, `pending`, `resolved`
+- `severity`: One of `critical`, `high`, `warning`, `info`, `none`
+- `name`: Alert name
+- `labels`: Object with alert labels
+- `annotations`: Object with alert annotations
+- `starts_at`: RFC3339 timestamp when alert started
+- `ends_at`: RFC3339 timestamp when alert ended (null if still active)
+- `link_url`: Direct link to the alert in the source dashboard (if configured)
+
+**SourceStatus object:**
+- `name`: Source name
+- `status`: `ok` or `error`
+- `alert_count`: Number of alerts from this source
+- `error`: Error message if status is `error`, otherwise null
+
+### HTTP Status Codes
+
+- `200 OK`: Success
+- `500 Internal Server Error`: Failed to fetch from one or more sources (partial results may still be returned)
