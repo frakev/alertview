@@ -74,6 +74,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::load(&config_path)?;
     let port = config.port;
+    
+    // Extract config watch settings before moving config
+    let watch_method = config.config_watch_method.clone();
+    let poll_interval = config.config_poll_interval;
 
     // Configure logging format from config or env
     let use_json_logs = config.log_format == "json";
@@ -129,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Start config file watcher
-    start_config_watcher(shared_config, config_path);
+    start_config_watcher(shared_config.clone(), config_path, watch_method, poll_interval);
 
     // Log cache size limit
     tracing::debug!("Alert cache limited to {} entries", MAX_CACHE_ENTRIES);
@@ -408,9 +412,12 @@ async fn fetch_source_alerts_with_retry(
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error after {} retries", max_retries)))
 }
 
-// Function to watch config file for changes
-fn start_config_watcher(shared_config: SharedConfig, config_path: String) {
+// Function to watch config file for changes (using inotify or polling)
+fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_method: String, poll_interval_secs: u64) {
     use std::path::Path;
+    use std::{fs, time::SystemTime};
+
+    let poll_interval = Duration::from_secs(poll_interval_secs);
 
     // Check if config file exists before watching
     if !Path::new(&config_path).exists() {
@@ -419,54 +426,177 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String) {
         return;
     }
 
-    let (tx, rx) = std::sync::mpsc::channel();
-
-    // Create debouncer with 500ms delay
-    let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::error!("Failed to create config watcher debouncer: {}", e);
-            tracing::error!("Config auto-reload is DISABLED.");
-            return;
-        }
-    };
-
-    // Watch config file
-    let config_path_clone = config_path.clone();
-    match debouncer
-        .watcher()
-        .watch(Path::new(&config_path), RecursiveMode::NonRecursive)
-    {
-        Ok(_) => {
-            tracing::info!("Watching config file {} for changes...", config_path);
-        }
-        Err(e) => {
-            tracing::error!("Failed to watch config file {}: {}", config_path_clone, e);
-            tracing::error!("Config auto-reload is DISABLED. Changes to config file will not be detected.");
-            return;
-        }
-    }
-
-    // Spawn task to handle change events
     let config_path_for_task = config_path.clone();
+
+    if watch_method == "polling" {
+        tracing::info!("Using polling method to watch config file {} (interval: {}s)...", 
+                      config_path, poll_interval_secs);
+        
+        // Use polling method
+        tokio::spawn(async move {
+            let mut last_modified: Option<SystemTime> = None;
+            
+            // Get initial modification time
+            if let Ok(metadata) = fs::metadata(&config_path_for_task) {
+                last_modified = Some(metadata.modified().ok().unwrap_or(SystemTime::now()));
+            }
+            
+            let shared_config_clone = shared_config.clone();
+            let config_path_clone = config_path_for_task.clone();
+            
+            loop {
+                tokio::time::sleep(poll_interval).await;
+                
+                // Check if file was modified
+                match fs::metadata(&config_path_clone) {
+                    Ok(metadata) => {
+                        if let Ok(modified) = metadata.modified() {
+                            if last_modified.as_ref().map_or(true, |&last| modified > last) {
+                                // File was modified
+                                tracing::info!("Config file {} modified, reloading...", config_path_clone);
+                                last_modified = Some(modified);
+                                
+                                match Config::load_async(&config_path_clone).await {
+                                    Ok(new_config) => {
+                                        let mut cfg = shared_config_clone.write().await;
+                                        *cfg = new_config;
+                                        tracing::info!(
+                                            "Config reloaded successfully with {} source(s)",
+                                            cfg.sources.len()
+                                        );
+                                        for s in &cfg.sources {
+                                            tracing::info!("  • {} ({})", s.name, s.url);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to reload config: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Could not read config file metadata: {}", e);
+                    }
+                }
+            }
+        });
+    } else {
+        // Use inotify method (default)
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        // Create debouncer with 500ms delay
+        let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!("Failed to create config watcher debouncer: {}", e);
+                tracing::error!("Falling back to polling method...");
+                // Fallback to polling
+                tracing::info!("Using polling method to watch config file {} (interval: {}s)...", 
+                              config_path, poll_interval_secs);
+                start_polling_watcher(shared_config, config_path, poll_interval_secs);
+                return;
+            }
+        };
+
+        // Watch config file
+        let config_path_clone = config_path.clone();
+        match debouncer
+            .watcher()
+            .watch(Path::new(&config_path), RecursiveMode::NonRecursive)
+        {
+            Ok(_) => {
+                tracing::info!("Watching config file {} for changes using inotify...", config_path);
+            }
+            Err(e) => {
+                tracing::error!("Failed to watch config file {}: {}", config_path_clone, e);
+                tracing::error!("Falling back to polling method...");
+                // Fallback to polling
+                tracing::info!("Using polling method to watch config file {} (interval: {}s)...", 
+                              config_path, poll_interval_secs);
+                start_polling_watcher(shared_config, config_path, poll_interval_secs);
+                return;
+            }
+        }
+
+        // Spawn task to handle change events
+        tokio::spawn(async move {
+            while let Ok(Ok(events)) = rx.recv() {
+                // Debouncer emits event for any modification
+                tracing::info!("Detected {} file change event(s) for {}, reloading...", events.len(), config_path_for_task);
+                match Config::load_async(&config_path_for_task).await {
+                    Ok(new_config) => {
+                        let mut cfg = shared_config.write().await;
+                        *cfg = new_config;
+                        tracing::info!(
+                            "Config reloaded successfully with {} source(s)",
+                            cfg.sources.len()
+                        );
+                        for s in &cfg.sources {
+                            tracing::info!("  • {} ({})", s.name, s.url);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to reload config: {}", e);
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Fallback polling watcher function
+fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_interval_secs: u64) {
+    use std::fs;
+    use std::time::SystemTime;
+    use std::time::Duration;
+
+    let poll_interval = Duration::from_secs(poll_interval_secs);
+
     tokio::spawn(async move {
-        while let Ok(Ok(events)) = rx.recv() {
-            // Debouncer emits event for any modification
-            tracing::info!("Detected {} file change event(s) for {}, reloading...", events.len(), config_path_for_task);
-            match Config::load_async(&config_path_for_task).await {
-                Ok(new_config) => {
-                    let mut config = shared_config.write().await;
-                    *config = new_config;
-                    tracing::info!(
-                        "Config reloaded successfully with {} source(s)",
-                        config.sources.len()
-                    );
-                    for s in &config.sources {
-                        tracing::info!("  • {} ({})", s.name, s.url);
+        let mut last_modified: Option<SystemTime> = None;
+        
+        // Get initial modification time
+        if let Ok(metadata) = fs::metadata(&config_path) {
+            last_modified = Some(metadata.modified().ok().unwrap_or(SystemTime::now()));
+        }
+        
+        let shared_config_clone = shared_config.clone();
+        let config_path_clone = config_path.clone();
+        
+        loop {
+            tokio::time::sleep(poll_interval).await;
+            
+            // Check if file was modified
+            match fs::metadata(&config_path_clone) {
+                Ok(metadata) => {
+                    if let Ok(modified) = metadata.modified() {
+                        if last_modified.as_ref().map_or(true, |&last| modified > last) {
+                            // File was modified
+                            tracing::info!("Config file {} modified, reloading...", config_path_clone);
+                            last_modified = Some(modified);
+                            
+                            match Config::load_async(&config_path_clone).await {
+                                Ok(new_config) => {
+                                    let mut cfg = shared_config_clone.write().await;
+                                    *cfg = new_config;
+                                    tracing::info!(
+                                        "Config reloaded successfully with {} source(s)",
+                                        cfg.sources.len()
+                                    );
+                                    for s in &cfg.sources {
+                                        tracing::info!("  • {} ({})", s.name, s.url);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to reload config: {}", e);
+                                }
+                            }
+                        }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to reload config: {}", e);
+                    tracing::warn!("Could not read config file metadata: {}", e);
                 }
             }
         }

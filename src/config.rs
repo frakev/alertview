@@ -19,6 +19,23 @@ pub struct Config {
     pub display: DisplayConfig,
     #[serde(default = "default_log_format")]
     pub log_format: String,
+    #[serde(default = "default_config_watch_method")]
+    pub config_watch_method: String, // "inotify" or "polling"
+    #[serde(default = "default_config_poll_interval")]
+    pub config_poll_interval: u64, // seconds, only used with polling method
+}
+
+fn default_config_watch_method() -> String {
+    std::env::var("ALERTVIEW_CONFIG_WATCH_METHOD")
+        .ok()
+        .unwrap_or_else(|| "inotify".to_string())
+}
+
+fn default_config_poll_interval() -> u64 {
+    std::env::var("ALERTVIEW_CONFIG_POLL_INTERVAL")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10) // 10 seconds by default
 }
 
 fn default_log_format() -> String {
