@@ -11,16 +11,24 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - Multi-source filter chips
 - Direct links to specific alerts (Zabbix uses `filter_eventid`, Alertmanager/Grafana use `generator_url`)
 - TV mode for wall displays — full-screen, auto-refresh, URL-persisted filters
-- Dark/light theme
+- Dark/light theme with **custom CSS support**
 - **Automatic config reload** — changes to the config file are detected and applied without restart
+- **Sound notifications** for new alerts (using Web Audio API)
+- **Timezone support** (local, UTC, or any IANA timezone)
+- **Response caching** with configurable TTL
+- **Retry logic** with exponential backoff per source
+- **Gzip compression** for API responses
+- **Health check endpoint** (`/health`)
 
 ## Table of Contents
 - [Requirements](#requirements)
 - [Configuration](#configuration)
+- [Environment Variables](#environment-variables)
 - [Running Locally](#running-locally)
 - [Docker](#docker)
 - [Kubernetes Deployment](#kubernetes-deployment)
 - [API](#api)
+- [Tests](#tests)
 
 ## Requirements
 
@@ -32,6 +40,8 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 Copy `config.example` to `config.yaml` and edit it. The config file is automatically reloaded when modified.
 
 ### Full Configuration Example
+
+This example shows all available options:
 
 ```yaml
 port: 8080
@@ -95,7 +105,85 @@ sources:
 
 > **Note for Zabbix**: Direct alert links require `filter_set=1&filter_eventid=<ID>` parameters, which are automatically added by AlertView.
 
+### Display Configuration
+
+Customize the display of alerts:
+
+```yaml
+display:
+  # Labels to show on each alert card
+  labels:
+    - namespace
+    - job
+    - instance
+    - host
+    - hostgroup
+  
+  # Theme: "dark", "light", or URL to custom CSS file
+  # theme: "dark"
+  
+  # Timezone: "local", "UTC", or any IANA timezone (e.g., "Europe/Paris", "America/New_York")
+  # timezone: "local"
+  
+  # Enable sound notifications for new alerts (uses Web Audio API)
+  # Different sounds for each severity level (critical, high, warning, info)
+  # play_sounds: false
+```
+
+### Per-Source Configuration
+
+Each source supports additional configuration:
+
+```yaml
+sources:
+  - name: "Alertmanager"
+    type: alertmanager
+    url: "http://alertmanager.example.com:9093"
+    timeout: 30  # seconds (default: 15)
+    link_template: "https://grafana.com/alerts?query={{.Labels.alertname}}"
+    retry_policy:
+      max_retries: 5  # default: 3
+      initial_delay_ms: 2000  # default: 1000 (1 second)
+      max_delay_ms: 60000  # default: 30000 (30 seconds)
+```
+
+**Link Template Variables:**
+- `{{.Labels.<key>}}` - Any label value (e.g., `{{.Labels.namespace}}`)
+- `{{.Annotations.<key>}}` - Any annotation value (e.g., `{{.Annotations.summary}}`)
+- `{{.Fingerprint}}` - Alert fingerprint
+- `{{.Source}}`, `{{.SourceType}}`, `{{.Status}}`, `{{.Severity}}`, `{{.Name}}`
+- `{{.StartsAt}}`, `{{.EndsAt}}` - Timestamps
+
+### Caching
+
+Enable response caching to reduce load on your alert sources:
+
+```yaml
+# Global cache TTL in seconds (0 = disabled)
+cache_ttl_seconds: 60
+```
+
 > `config.yaml` is gitignored — never commit credentials.
+
+## Environment Variables
+
+AlertView can be configured entirely through environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ALERTVIEW_PORT` | 8080 | Port to listen on |
+| `ALERTVIEW_REFRESH_INTERVAL` | 30 | Seconds between auto-refreshes |
+| `ALERTVIEW_CACHE_TTL` | 0 | Cache TTL in seconds (0 = disabled) |
+| `ALERTVIEW_LOG_FORMAT` | text | Log format: `text` or `json` |
+
+**Example:**
+```bash
+# Run with environment variables
+ALERTVIEW_PORT=9090 ALERTVIEW_LOG_FORMAT=json cargo run
+
+# Or with Docker
+docker run -e ALERTVIEW_PORT=9090 -e ALERTVIEW_LOG_FORMAT=json -p 9090:9090 alertview
+```
 
 ## Running locally
 
@@ -244,8 +332,11 @@ AlertView provides a simple REST API for programmatic access to alerts.
 |---|---|---|
 | `GET` | `/` | Web UI dashboard |
 | `GET` | `/api/alerts` | JSON — all alerts aggregated from all configured sources |
+| `GET` | `/health` | Health check endpoint (returns "OK") |
 | `GET` | `/style.css` | Dashboard stylesheet |
 | `GET` | `/app.js` | Dashboard JavaScript |
+
+> **Note:** All endpoints except `/health` support gzip compression automatically.
 
 ### `/api/alerts` Response Format
 
@@ -282,9 +373,17 @@ AlertView provides a simple REST API for programmatic access to alerts.
     }
   ],
   "refresh_interval": 30,
-  "display_labels": ["namespace", "job", "instance"]
+  "display_labels": ["namespace", "job", "instance"],
+  "timezone": "local",
+  "theme": null,
+  "play_sounds": false
 }
 ```
+
+**Additional response fields:**
+- `timezone`: Current timezone setting (from config)
+- `theme`: Current theme setting (from config, null if default)
+- `play_sounds`: Whether sound notifications are enabled
 
 ### Response Fields
 
@@ -311,3 +410,22 @@ AlertView provides a simple REST API for programmatic access to alerts.
 
 - `200 OK`: Success
 - `500 Internal Server Error`: Failed to fetch from one or more sources (partial results may still be returned)
+
+## Tests
+
+AlertView includes unit tests for configuration parsing and link template rendering:
+
+```bash
+# Run all tests
+cargo test
+
+# Run with coverage (requires cargo-tarpaulin)
+cargo tarpaulin --out Html
+```
+
+The tests verify:
+- Configuration file loading and parsing
+- Default values for all config options
+- Source-specific configuration (timeout, retry policy)
+- Link template rendering with various placeholders
+- Display configuration (theme, timezone, labels)
