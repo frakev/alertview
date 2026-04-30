@@ -412,41 +412,61 @@ async fn fetch_source_alerts_with_retry(
 fn start_config_watcher(shared_config: SharedConfig, config_path: String) {
     use std::path::Path;
 
+    // Check if config file exists before watching
+    if !Path::new(&config_path).exists() {
+        tracing::error!("Config file {} does not exist. Auto-reload is DISABLED.", config_path);
+        tracing::error!("Changes to config file will not be detected.");
+        return;
+    }
+
     let (tx, rx) = std::sync::mpsc::channel();
 
     // Create debouncer with 500ms delay
-    let mut debouncer = new_debouncer(Duration::from_millis(500), tx)
-        .expect("Failed to create config watcher debouncer");
+    let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("Failed to create config watcher debouncer: {}", e);
+            tracing::error!("Config auto-reload is DISABLED.");
+            return;
+        }
+    };
 
     // Watch config file
-    debouncer
+    let config_path_clone = config_path.clone();
+    match debouncer
         .watcher()
         .watch(Path::new(&config_path), RecursiveMode::NonRecursive)
-        .expect("Failed to watch config file");
-
-    tracing::info!("Watching config file {} for changes...", config_path);
+    {
+        Ok(_) => {
+            tracing::info!("Watching config file {} for changes...", config_path);
+        }
+        Err(e) => {
+            tracing::error!("Failed to watch config file {}: {}", config_path_clone, e);
+            tracing::error!("Config auto-reload is DISABLED. Changes to config file will not be detected.");
+            return;
+        }
+    }
 
     // Spawn task to handle change events
+    let config_path_for_task = config_path.clone();
     tokio::spawn(async move {
         while let Ok(Ok(events)) = rx.recv() {
             // Debouncer emits event for any modification
-            if !events.is_empty() {
-                tracing::info!("Config file changed, reloading...");
-                match Config::load_async(&config_path).await {
-                    Ok(new_config) => {
-                        let mut config = shared_config.write().await;
-                        *config = new_config;
-                        tracing::info!(
-                            "Config reloaded successfully with {} source(s)",
-                            config.sources.len()
-                        );
-                        for s in &config.sources {
-                            tracing::info!("  • {} ({})", s.name, s.url);
-                        }
+            tracing::info!("Detected {} file change event(s) for {}, reloading...", events.len(), config_path_for_task);
+            match Config::load_async(&config_path_for_task).await {
+                Ok(new_config) => {
+                    let mut config = shared_config.write().await;
+                    *config = new_config;
+                    tracing::info!(
+                        "Config reloaded successfully with {} source(s)",
+                        config.sources.len()
+                    );
+                    for s in &config.sources {
+                        tracing::info!("  • {} ({})", s.name, s.url);
                     }
-                    Err(e) => {
-                        tracing::error!("Failed to reload config: {}", e);
-                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to reload config: {}", e);
                 }
             }
         }
