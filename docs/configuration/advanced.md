@@ -287,7 +287,7 @@ link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?view
 
 **Zabbix Problem Link:**
 ```yaml
-link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
 
 **Custom Alert URL:**
@@ -306,9 +306,9 @@ link_template: "https://example.com/alerts?source={{.Source}}&severity={{.Severi
 
 **Direct link to Zabbix problem:**
 ```yaml
-link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
-*Note: Zabbix automatically includes `eventid` in alert labels*
+*Note: Zabbix automatically includes `triggerid` and `eventid` in alert labels*
 
 **Link to specific host:**
 ```yaml

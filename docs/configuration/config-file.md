@@ -215,7 +215,7 @@ link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?view
 
 **Zabbix with event ID:**
 ```yaml
-link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
 
 ### Priority Order

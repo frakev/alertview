@@ -95,7 +95,7 @@ sources:
     # cache_ttl_seconds: 60
     
     # Link template - use standard alert fields
-    link_template: "https://zabbix.prod.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+    link_template: "https://zabbix.prod.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
     
     # Dashboard URL
     dashboard_url: "https://zabbix.prod.example.com/zabbix/zabbix.php?action=problem.view"
@@ -290,7 +290,7 @@ link_template: "https://alertmanager.example.com/#/alerts?query={{.Labels.alertn
 ### Zabbix
 
 ```yaml
-link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
 
 ### Custom with Multiple Variables

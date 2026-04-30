@@ -177,7 +177,7 @@ Zabbix integration uses the Zabbix JSON-RPC API to fetch problems (triggered eve
   
   # Optional: Display settings
   dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
-  link_template: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+  link_template: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
   
   # Optional: Performance settings
   timeout: 45  # Zabbix API can be slower
@@ -239,7 +239,7 @@ Zabbix severities are mapped to AlertView severities:
 
 ```yaml
 # Link directly to the problem in Zabbix
-link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_set=1&filter_eventid={{.Labels.eventid}}"
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
 
 ## Comparison Table
