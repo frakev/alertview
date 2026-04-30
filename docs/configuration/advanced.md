@@ -236,14 +236,15 @@ Create custom links for your alerts using template variables.
 
 **Alert Fields:**
 ```
-{{.Fingerprint}}   # Unique alert ID
-{{.Source}}        # Source name
-{{.SourceType}}    # alertmanager, grafana, zabbix
-{{.Status}}        # firing, silenced, pending
-{{.Severity}}      # critical, high, warning, info, none
-{{.Name}}          # Alert name
-{{.StartsAt}}      # Start time (RFC3339)
-{{.EndsAt}}        # End time (RFC3339, if resolved)
+{{.Id}}            # Unique alert fingerprint (alias for {{.Fingerprint}})
+{{.Fingerprint}}   # Unique alert fingerprint
+{{.Source}}       # Source name
+{{.SourceType}}   # alertmanager, grafana, zabbix
+{{.Status}}       # firing, silenced, pending
+{{.Severity}}     # critical, high, warning, info, none
+{{.Name}}         # Alert name
+{{.StartsAt}}     # Start time (RFC3339)
+{{.EndsAt}}       # End time (RFC3339, if resolved)
 ```
 
 ### Examples

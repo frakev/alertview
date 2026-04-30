@@ -449,6 +449,7 @@ pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     }
     
     // Remplacer les variables standards
+    result = result.replace("{{.Id}}", &alert.fingerprint);
     result = result.replace("{{.Fingerprint}}", &alert.fingerprint);
     result = result.replace("{{.Source}}", &alert.source);
     result = result.replace("{{.SourceType}}", &alert.source_type);
