@@ -65,6 +65,8 @@ cargo run -- config.yaml
 # open http://localhost:8080
 ```
 
+**Note:** The config file is automatically reloaded when modified. No restart needed.
+
 ## Docker
 
 ```bash
@@ -110,6 +112,9 @@ make deploy
 
 **3. Update after a config change**
 
+For local deployments (binary or Docker), the config file is automatically reloaded when modified.
+
+For Kubernetes deployments, you need to restart:
 ```bash
 kubectl rollout restart deployment/alertview -n alertview
 # or:
