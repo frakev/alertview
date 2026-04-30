@@ -292,7 +292,7 @@ AlertView provides a simple REST API for programmatic access to alerts.
 - `fingerprint`: Unique identifier (format: `{source}:{internal_id}`)
 - `source`: Name of the source as configured
 - `source_type`: One of `alertmanager`, `grafana`, `zabbix`
-- `status`: One of `firing`, `silenced`, `pending`, `resolved`
+- `status`: One of `firing`, `silenced`, `pending`
 - `severity`: One of `critical`, `high`, `warning`, `info`, `none`
 - `name`: Alert name
 - `labels`: Object with alert labels
