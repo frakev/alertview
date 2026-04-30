@@ -1,38 +1,59 @@
 # AlertView configuration
+# All fields are optional except for sources
+
+# Server configuration
 port: 8080
-refresh_interval: 30   # secondes entre chaque actualisation automatique
-tls_insecure: false    # true pour ignorer les erreurs de certificat (self-signed)
+refresh_interval: 30   # seconds between each auto-refresh
+
+# Global timeout for all sources (can be overridden per source)
+tls_insecure: false    # true to ignore TLS certificate errors (self-signed certs)
+
+# Cache configuration (0 = disabled)
+cache_ttl_seconds: 0
+
+# Logging configuration
+# Set ALERTVIEW_LOG_FORMAT=json environment variable for JSON logs
 
 sources:
   - name: "Alertmanager"
     type: alertmanager
     url: "http://alertmanager.example.com:9093"
     dashboard_url: "https://grafana.example.com/alerting/list"
+    timeout: 15  # seconds (default: 15)
+    # link_template: "https://grafana.example.com/alerts?query={{.Labels.alertname}}"
     # basic_auth:
     #   username: admin
     #   password: secret
     # bearer_token: "YOUR_TOKEN_HERE"
+    # retry_policy:
+    #   max_retries: 3
+    #   initial_delay_ms: 1000
+    #   max_delay_ms: 30000
 
   - name: "Grafana"
     type: grafana
     url: "http://grafana.example.com:3000"
     dashboard_url: "https://grafana.example.com/"
-    # bearer_token est le Service Account token Grafana (recommandé)
+    timeout: 15
+    # bearer_token is Grafana Service Account token (recommended)
     # bearer_token: "YOUR_GRAFANA_TOKEN_HERE"
-    # ou basic_auth avec un compte admin :
+    # or basic_auth with admin account:
     # basic_auth:
     #   username: admin
     #   password: secret
+    # link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}"
 
   - name: "Zabbix"
     type: zabbix
     url: "https://zabbix.example.com/zabbix"
     dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
-    # Token API Zabbix
+    timeout: 15
+    # Zabbix API token
     # bearer_token: "YOUR_ZABBIX_TOKEN_HERE"
+    # link_template: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
 
 display:
-  # Labels affichés sur chaque carte (severity et alertname sont toujours affichés en badge)
+  # Labels to show on each alert card (severity and alertname are always shown as badges)
   labels:
     - namespace
     - job
@@ -42,3 +63,18 @@ display:
     - pod
     - host
     - hostgroup
+  
+  # Theme: "dark", "light", or URL to custom CSS file
+  # theme: "dark"
+  
+  # Timezone: "local", "UTC", or any IANA timezone (e.g., "Europe/Paris", "America/New_York")
+  # timezone: "local"
+  
+  # Enable sound notifications for new alerts
+  # play_sounds: false
+
+# Environment variables that can be used instead of config file:
+# ALERTVIEW_PORT=8080
+# ALERTVIEW_REFRESH_INTERVAL=30
+# ALERTVIEW_CACHE_TTL=60
+# ALERTVIEW_LOG_FORMAT=json

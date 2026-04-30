@@ -34,6 +34,12 @@ pub struct AlertsResponse {
     pub sources: Vec<SourceStatus>,
     pub refresh_interval: u64,
     pub display_labels: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub play_sounds: bool,
 }
 
 // Alertmanager v2 API wire types
@@ -238,24 +244,40 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             };
 
             // Build direct URL to Zabbix alert using eventid
-            // Zabbix requires filter_set=1 for filter_eventid to work
-            let link_url = source.dashboard_url.clone().map(|url| {
-                // If dashboard_url already contains eventid filter with filter_set, use it as-is
-                if url.contains("filter_eventid") && url.contains("filter_set=1") {
-                    url
-                } else {
-                    // Remove any existing query params and rebuild with filter
-                    let clean_url = url.split_once('?').map(|(base, _)| base.to_string()).unwrap_or(url);
-                    let base = if clean_url.contains("zabbix.php") {
-                        clean_url
-                    } else if clean_url.ends_with('/') {
-                        format!("{}/zabbix.php", clean_url.trim_end_matches('/'))
+            // Try: link_template -> dashboard_url -> default zabbix URL
+            let link_url = source.link_template.clone().and_then(|t| {
+                apply_link_template(&t, &Alert {
+                    fingerprint: format!("{}:{}", source.name, p.eventid),
+                    source: source.name.clone(),
+                    source_type: "zabbix".to_string(),
+                    status: status.clone(),
+                    severity: severity.clone(),
+                    name: p.name.clone(),
+                    labels: labels.clone(),
+                    annotations: annotations.clone(),
+                    starts_at: unix_ts_to_iso(&p.clock),
+                    ends_at: ends_at.clone(),
+                    link_url: None,
+                })
+            }).or_else(|| {
+                source.dashboard_url.clone().map(|url| {
+                    // If dashboard_url already contains eventid filter with filter_set, use it as-is
+                    if url.contains("filter_eventid") && url.contains("filter_set=1") {
+                        url
                     } else {
-                        format!("{}/zabbix.php", clean_url)
-                    };
-                    format!("{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}", 
-                        base.trim_end_matches("/zabbix.php"), p.eventid)
-                }
+                        // Remove any existing query params and rebuild with filter
+                        let clean_url = url.split_once('?').map(|(base, _)| base.to_string()).unwrap_or(url);
+                        let base = if clean_url.contains("zabbix.php") {
+                            clean_url
+                        } else if clean_url.ends_with('/') {
+                            format!("{}/zabbix.php", clean_url.trim_end_matches('/'))
+                        } else {
+                            format!("{}/zabbix.php", clean_url)
+                        };
+                        format!("{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}", 
+                            base.trim_end_matches("/zabbix.php"), p.eventid)
+                    }
+                })
             }).or_else(|| {
                 Some(format!(
                     "{}/zabbix.php?action=problem.view&filter_set=1&filter_eventid={}",
@@ -354,13 +376,28 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             .to_string();
 
             // dashboard_url from config takes priority over the internal generator_url
-            let link_url = source.dashboard_url.clone().or_else(|| {
-                if a.generator_url.is_empty() {
-                    None
-                } else {
-                    Some(a.generator_url)
-                }
-            });
+            // Then try link_template, then generator_url
+            let link_url = source.dashboard_url.clone()
+                .or_else(|| source.link_template.clone().and_then(|t| apply_link_template(&t, &Alert {
+                    fingerprint: format!("{}:{}", source.name, a.fingerprint),
+                    source: source.name.clone(),
+                    source_type: source_type_str.clone(),
+                    status: status.clone(),
+                    severity: severity.clone(),
+                    name: name.clone(),
+                    labels: a.labels.clone(),
+                    annotations: a.annotations.clone(),
+                    starts_at: a.starts_at.clone(),
+                    ends_at: ends_at.clone(),
+                    link_url: None,
+                })))
+                .or_else(|| {
+                    if a.generator_url.is_empty() {
+                        None
+                    } else {
+                        Some(a.generator_url)
+                    }
+                });
 
             Alert {
                 fingerprint: format!("{}:{}", source.name, a.fingerprint),
@@ -388,5 +425,151 @@ pub fn severity_order(severity: &str) -> u8 {
         "warning" | "warn" => 2,
         "info" | "information" => 3,
         _ => 4,
+    }
+}
+
+/// Applique un template de lien avec les variables de l'alerte
+pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
+    if template.is_empty() {
+        return None;
+    }
+    
+    let mut result = template.to_string();
+    
+    // Remplacer les variables de labels
+    for (key, value) in &alert.labels {
+        let placeholder = format!("{{{{.Labels.{}}}}}", key);
+        result = result.replace(&placeholder, value);
+    }
+    
+    // Remplacer les variables d'annotations
+    for (key, value) in &alert.annotations {
+        let placeholder = format!("{{{{.Annotations.{}}}}}", key);
+        result = result.replace(&placeholder, value);
+    }
+    
+    // Remplacer les variables standards
+    result = result.replace("{{.Fingerprint}}", &alert.fingerprint);
+    result = result.replace("{{.Source}}", &alert.source);
+    result = result.replace("{{.SourceType}}", &alert.source_type);
+    result = result.replace("{{.Status}}", &alert.status);
+    result = result.replace("{{.Severity}}", &alert.severity);
+    result = result.replace("{{.Name}}", &alert.name);
+    result = result.replace("{{.StartsAt}}", &alert.starts_at);
+    
+    if let Some(ends_at) = &alert.ends_at {
+        result = result.replace("{{.EndsAt}}", ends_at);
+    }
+    
+    Some(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_alert() -> Alert {
+        let labels: HashMap<String, String> = [
+            ("alertname".to_string(), "HighCPU".to_string()),
+            ("namespace".to_string(), "production".to_string()),
+        ].into();
+        
+        let annotations: HashMap<String, String> = [
+            ("summary".to_string(), "CPU is high".to_string()),
+        ].into();
+        
+        Alert {
+            fingerprint: "test:123".to_string(),
+            source: "test".to_string(),
+            source_type: "alertmanager".to_string(),
+            status: "firing".to_string(),
+            severity: "critical".to_string(),
+            name: "HighCPU".to_string(),
+            labels,
+            annotations,
+            starts_at: "2024-01-01T00:00:00Z".to_string(),
+            ends_at: None,
+            link_url: None,
+        }
+    }
+
+    #[test]
+    fn test_apply_link_template_basic() {
+        let alert = create_test_alert();
+        
+        // Test basic template
+        let template = "https://example.com/alerts?query={{.Labels.alertname}}";
+        let result = apply_link_template(template, &alert).unwrap();
+        assert_eq!(result, "https://example.com/alerts?query=HighCPU");
+        
+        // Test with namespace
+        let template = "https://example.com/ns/{{.Labels.namespace}}/alerts/{{.Labels.alertname}}";
+        let result = apply_link_template(template, &alert).unwrap();
+        assert_eq!(result, "https://example.com/ns/production/alerts/HighCPU");
+    }
+
+    #[test]
+    fn test_apply_link_template_annotations() {
+        let labels: HashMap<String, String> = HashMap::new();
+        let annotations: HashMap<String, String> = [
+            ("dashboardUid".to_string(), "abc123".to_string()),
+            ("panelId".to_string(), "42".to_string()),
+        ].into();
+        
+        let alert = Alert {
+            fingerprint: "test:123".to_string(),
+            source: "test".to_string(),
+            source_type: "grafana".to_string(),
+            status: "firing".to_string(),
+            severity: "high".to_string(),
+            name: "TestAlert".to_string(),
+            labels,
+            annotations,
+            starts_at: "2024-01-01T00:00:00Z".to_string(),
+            ends_at: None,
+            link_url: None,
+        };
+        
+        let template = "https://grafana.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}";
+        let result = apply_link_template(template, &alert).unwrap();
+        assert_eq!(result, "https://grafana.com/d/abc123?viewPanel=42");
+    }
+
+    #[test]
+    fn test_apply_link_template_standard_vars() {
+        let alert = Alert {
+            fingerprint: "source1:abc123".to_string(),
+            source: "Alertmanager".to_string(),
+            source_type: "alertmanager".to_string(),
+            status: "firing".to_string(),
+            severity: "critical".to_string(),
+            name: "MyAlert".to_string(),
+            labels: HashMap::new(),
+            annotations: HashMap::new(),
+            starts_at: "2024-01-01T12:30:00Z".to_string(),
+            ends_at: Some("2024-01-01T13:00:00Z".to_string()),
+            link_url: None,
+        };
+        
+        let template = "{{.Source}}/{{.Name}}?severity={{.Severity}}&status={{.Status}}";
+        let result = apply_link_template(template, &alert).unwrap();
+        assert_eq!(result, "Alertmanager/MyAlert?severity=critical&status=firing");
+    }
+
+    #[test]
+    fn test_apply_link_template_empty() {
+        let alert = create_test_alert();
+        let result = apply_link_template("", &alert);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_apply_link_template_missing_var() {
+        let alert = create_test_alert();
+        // Variable doesn't exist - should leave placeholder
+        let template = "https://example.com/{{.Labels.nonexistent}}";
+        let result = apply_link_template(template, &alert).unwrap();
+        assert_eq!(result, "https://example.com/{{.Labels.nonexistent}}");
     }
 }

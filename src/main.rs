@@ -1,12 +1,14 @@
-use alerts::{fetch_source_alerts, severity_order, AlertsResponse, SourceStatus};
+use alerts::{severity_order, AlertsResponse, SourceStatus};
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 use config::{Config, SharedConfig};
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tower_http::compression::CompressionLayer;
 
-mod alerts;
-mod config;
+pub mod alerts;
+pub mod config;
 
 static INDEX_HTML: &str = include_str!("../static/index.html");
 static STYLE_CSS: &str  = include_str!("../static/style.css");
@@ -15,16 +17,30 @@ static APP_JS: &str     = include_str!("../static/app.js");
 struct AppState {
     config: SharedConfig,
     client: reqwest::Client,
+    cache: Arc<tokio::sync::RwLock<HashMap<String, (Vec<alerts::Alert>, Instant)>>>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    // Configure logging format from env
+    let use_json_logs = std::env::var("ALERTVIEW_LOG_FORMAT").as_deref() == Ok("json");
+    
+    if use_json_logs {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .init();
+    }
 
     let config_path = std::env::args()
         .nth(1)
@@ -48,9 +64,11 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     let shared_config = Arc::new(tokio::sync::RwLock::new(config));
+    let cache = Arc::new(tokio::sync::RwLock::new(HashMap::new()));
     let state = Arc::new(AppState {
         config: shared_config.clone(),
         client,
+        cache,
     });
 
     // Démarrer le watcher de fichier de config
@@ -61,6 +79,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js))
         .route("/api/alerts", get(get_alerts))
+        .route("/health", get(health_check))
+        .layer(CompressionLayer::new())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
@@ -82,16 +102,64 @@ async fn serve_js() -> ([(&'static str, &'static str); 1], &'static str) {
     ([("content-type", "application/javascript; charset=utf-8")], APP_JS)
 }
 
+async fn health_check() -> &'static str {
+    "OK"
+}
+
 async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> {
     let mut all_alerts = Vec::new();
     let mut source_statuses = Vec::new();
 
     let config = state.config.read().await;
+    let cache_ttl = Duration::from_secs(config.cache_ttl_seconds);
+    let use_cache = cache_ttl > Duration::from_secs(0);
+
     for source in &config.sources {
-        match fetch_source_alerts(&state.client, source).await {
+        // Generate cache key based on source config
+        let cache_key = format!("{}:{}:{:?}", source.name, source.url, source.source_type);
+        
+        // Try to get from cache
+        let cached_data = if use_cache {
+            let cache = state.cache.read().await;
+            cache.get(&cache_key).and_then(|(alerts, timestamp)| {
+                if timestamp.elapsed() < cache_ttl {
+                    Some(alerts.clone())
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+
+        match cached_data {
+            Some(alerts) => {
+                tracing::debug!("Cache hit for source {}", source.name);
+                source_statuses.push(SourceStatus {
+                    name: source.name.clone(),
+                    status: "ok".to_string(),
+                    alert_count: alerts.len(),
+                    error: None,
+                });
+                all_alerts.extend(alerts);
+                continue;
+            }
+            None => {
+                tracing::debug!("Fetching from source {}", source.name);
+            }
+        }
+
+        match fetch_source_alerts_with_retry(&state.client, source).await {
             Ok(mut alerts) => {
                 let count = alerts.len();
                 tracing::debug!("Fetched {} alerts from {}", count, source.name);
+                
+                // Cache the results if caching is enabled
+                if use_cache {
+                    let mut cache = state.cache.write().await;
+                    cache.insert(cache_key, (alerts.clone(), Instant::now()));
+                }
+                
                 source_statuses.push(SourceStatus {
                     name: source.name.clone(),
                     status: "ok".to_string(),
@@ -123,7 +191,63 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         sources: source_statuses,
         refresh_interval: config.refresh_interval,
         display_labels: config.display.labels.clone(),
+        timezone: Some(config.display.timezone.clone()),
+        theme: config.display.theme.clone(),
+        play_sounds: config.display.play_sounds,
     })
+}
+
+// Fonction pour fetch avec retry et timeout par source
+async fn fetch_source_alerts_with_retry(
+    client: &reqwest::Client,
+    source: &config::Source,
+) -> Result<Vec<alerts::Alert>, anyhow::Error> {
+    let max_retries = source.retry_policy.max_retries;
+    let mut last_error: Option<anyhow::Error> = None;
+    
+    for attempt in 0..=max_retries {
+        let timeout = Duration::from_secs(source.timeout);
+        
+        // Calculer le délai avant la tentative (exponentiel)
+        if attempt > 0 {
+            let delay_ms = source.retry_policy.initial_delay_ms * (1 << (attempt - 1)).min(source.retry_policy.max_delay_ms);
+            tracing::warn!(
+                "Retry attempt {}/{} for {} after {}ms delay (error: {})",
+                attempt,
+                max_retries,
+                source.name,
+                delay_ms,
+                last_error.as_ref().map(|e| e.to_string()).unwrap_or_default()
+            );
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
+        
+        let result = tokio::time::timeout(
+            timeout,
+            alerts::fetch_source_alerts(client, source)
+        ).await;
+        
+        match result {
+            Ok(Ok(alerts)) => return Ok(alerts),
+            Ok(Err(e)) => {
+                last_error = Some(e);
+                // Pour les erreurs HTTP 4xx, on ne retry pas
+                if let Some(status_code) = last_error.as_ref().and_then(|e| {
+                    e.to_string().split_whitespace().next()
+                        .and_then(|s| s.parse::<u16>().ok())
+                }) {
+                    if (400..500).contains(&status_code) {
+                        return Err(last_error.unwrap());
+                    }
+                }
+            }
+            Err(_) => {
+                last_error = Some(anyhow::anyhow!("Timeout after {}s", source.timeout));
+            }
+        }
+    }
+    
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")))
 }
 
 // Fonction pour watcher les changements du fichier de config

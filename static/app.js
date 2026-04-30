@@ -20,19 +20,83 @@ function relTime(iso) {
 }
 
 function absTime(iso) {
-  try { return new Date(iso).toLocaleString('fr-FR'); }
-  catch { return iso; }
+  try {
+    const date = new Date(iso);
+    if (AppConfig.timezone === 'local' || AppConfig.timezone === 'UTC') {
+      return date.toLocaleString('fr-FR', { timeZone: AppConfig.timezone === 'UTC' ? 'UTC' : undefined });
+    }
+    return date.toLocaleString('fr-FR', { timeZone: AppConfig.timezone });
+  } catch { return iso; }
 }
 
 /* ── Theme ── */
 const SUN  = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
 const MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
 
+// Sounds context
+const AudioContext = (() => {
+  let ctx = null;
+  return {
+    get: () => {
+      if (!ctx) {
+        try {
+          ctx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+          console.warn('Web Audio API not available:', e);
+          return null;
+        }
+      }
+      return ctx;
+    },
+    playBeep: (frequency = 440, duration = 200) => {
+      const ctx = AudioContext.get();
+      if (!ctx) return;
+      
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      oscillator.frequency.value = frequency;
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration / 1000);
+      
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + duration / 1000);
+    }
+  };
+})();
+
+// Sound presets by severity
+const SOUND_PRESETS = {
+  critical: () => { AudioContext.playBeep(800, 300); AudioContext.playBeep(600, 300); },
+  high:     () => { AudioContext.playBeep(600, 200); AudioContext.playBeep(500, 200); },
+  warning:  () => { AudioContext.playBeep(400, 150); },
+  info:     () => { AudioContext.playBeep(300, 100); }
+};
+
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('av-theme', t);
   document.getElementById('theme-ico').innerHTML    = t === 'dark' ? MOON : SUN;
   document.getElementById('tv-theme-ico').innerHTML = t === 'dark' ? MOON : SUN;
+}
+
+// Apply custom theme CSS if provided
+function applyCustomTheme(cssUrl) {
+  const existing = document.getElementById('custom-theme-css');
+  if (existing) existing.remove();
+  
+  if (cssUrl && cssUrl !== 'dark' && cssUrl !== 'light') {
+    const link = document.createElement('link');
+    link.id = 'custom-theme-css';
+    link.rel = 'stylesheet';
+    link.href = cssUrl;
+    document.head.appendChild(link);
+  }
 }
 
 applyTheme(localStorage.getItem('av-theme') || 'dark');
@@ -79,6 +143,27 @@ NotifBtn.addEventListener('click', async () => {
   updateNotifBtn();
 });
 updateNotifBtn();
+
+// Global state for sounds and timezone
+let AppConfig = {
+  playSounds: false,
+  timezone: 'local'
+};
+
+function playSoundForAlerts(newAlerts) {
+  if (!AppConfig.playSounds || !newAlerts.length) return;
+  
+  // Play sound for the highest severity
+  const severities = ['critical', 'high', 'warning', 'info'];
+  for (const sev of severities) {
+    if (newAlerts.some(a => a.severity === sev)) {
+      if (SOUND_PRESETS[sev]) {
+        SOUND_PRESETS[sev]();
+      }
+      break; // Only play for the highest severity
+    }
+  }
+}
 
 function sendNotif(newAlerts) {
   if (Notification?.permission !== 'granted' || !newAlerts.length) return;
@@ -184,10 +269,20 @@ async function fetchAlerts() {
     App.freshFps = new Set();
     if (App.knownFps !== null) {
       const newAlerts = data.alerts.filter(a => !App.knownFps.has(a.fingerprint));
-      if (newAlerts.length) { sendNotif(newAlerts); newAlerts.forEach(a => App.freshFps.add(a.fingerprint)); }
+      if (newAlerts.length) { 
+        sendNotif(newAlerts); 
+        playSoundForAlerts(newAlerts);
+        newAlerts.forEach(a => App.freshFps.add(a.fingerprint)); 
+      }
     }
     App.knownFps = curFps;
     saveKnownFps(curFps);
+    
+    // Update config from API response
+    if (data.timezone) AppConfig.timezone = data.timezone;
+    if (data.theme) applyCustomTheme(data.theme);
+    if (data.play_sounds !== undefined) AppConfig.playSounds = data.play_sounds;
+    
     App.data = data;
 
     render();
@@ -427,8 +522,12 @@ const TV = {
   },
   stopClock() { clearInterval(this.clockTimer); },
   updateClock() {
+    const options = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    if (AppConfig.timezone !== 'local') {
+      options.timeZone = AppConfig.timezone;
+    }
     document.getElementById('tv-clock').textContent =
-      new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      new Date().toLocaleTimeString('fr-FR', options);
   },
 
   showBar() {
