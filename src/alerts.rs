@@ -231,6 +231,10 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
 
             let mut labels: HashMap<String, String> = HashMap::new();
 
+            // Add Zabbix event and trigger IDs for template usage
+            labels.insert("eventid".to_string(), p.eventid.clone());
+            labels.insert("triggerid".to_string(), p.objectid.clone());
+
             if let Some(trigger) = trigger_map.get(&p.objectid) {
                 if let Some(host) = trigger.hosts.first() {
                     labels.insert("host".to_string(), host.name.clone());

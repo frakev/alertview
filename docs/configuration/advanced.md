@@ -298,6 +298,7 @@ link_template: "https://zabbix.example.com/zabbix.php?action=host.view&hostid={{
 ```yaml
 link_template: "https://zabbix.example.com/zabbix.php?action=trigger.view&triggerid={{.Labels.triggerid}}"
 ```
+*AlertView automatically includes both `eventid` and `triggerid` in Zabbix alert labels*
 
 #### Grafana Examples
 
