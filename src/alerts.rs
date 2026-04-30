@@ -219,7 +219,9 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     let api_url = format!("{}/api_jsonrpc.php", source.url.trim_end_matches('/'));
 
     // Step 1: active problems (with acknowledgements to get ACK messages)
-    let problems: Vec<ZabbixProblem> = zabbix_rpc(
+    // Try selectAcknowledgements first (Zabbix 6.0+), fall back to select_acknowledges (Zabbix 5.x)
+    // If both fail, try without acknowledgement selection (older versions)
+    let problems: Vec<ZabbixProblem> = match zabbix_rpc(
         client,
         source,
         &api_url,
@@ -229,8 +231,38 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             "selectTags": "extend",
             "selectAcknowledgements": true 
         }),
-    )
-    .await?;
+    ).await {
+        Ok(p) => p,
+        Err(_) => {
+            // Fallback for older Zabbix versions
+            match zabbix_rpc(
+                client,
+                source,
+                &api_url,
+                "problem.get",
+                serde_json::json!({ 
+                    "output": "extend", 
+                    "selectTags": "extend",
+                    "select_acknowledges": true 
+                }),
+            ).await {
+                Ok(p) => p,
+                Err(_) => {
+                    // Fallback to basic query without acknowledgements
+                    zabbix_rpc(
+                        client,
+                        source,
+                        &api_url,
+                        "problem.get",
+                        serde_json::json!({ 
+                            "output": "extend", 
+                            "selectTags": "extend"
+                        }),
+                    ).await?
+                }
+            }
+        }
+    };
 
     if problems.is_empty() {
         return Ok(Vec::new());
