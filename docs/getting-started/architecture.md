@@ -277,7 +277,7 @@ const App = {
 ### Authentication
 - **Source Auth**: Basic auth and bearer tokens supported
 - **TLS**: Secure connections with configurable verification
-- **No User Auth**: Currently no authentication for the UI (planned)
+- **No User Auth**: Currently no authentication for the UI
 
 ### Isolation
 - **Per-Source**: Each source has its own configuration
@@ -290,28 +290,6 @@ const App = {
 - **Monolithic**: All functionality in main binary
 - **Modular Code**: Separate modules for config, alerts, etc.
 - **Public Modules**: `config` and `alerts` are public for testing
-
-### Future Plugin System
-The planned plugin system will allow:
-
-1. **Custom Sources**: Add support for new alert sources
-2. **Custom Actions**: Add custom alert actions (ack, snooze, etc.)
-3. **Custom Displays**: Create custom display components
-4. **Custom Processing**: Add custom alert processing logic
-
-**Plugin Interface (Planned):**
-```rust
-pub trait AlertSource {
-    fn name(&self) -> &str;
-    fn source_type(&self) -> SourceType;
-    async fn fetch_alerts(&self, client: &reqwest::Client) -> Result<Vec<Alert>>;
-}
-
-pub trait AlertAction {
-    fn name(&self) -> &str;
-    fn apply(&self, alert: &Alert) -> Result<()>;
-}
-```
 
 ## Technology Stack
 

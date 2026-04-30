@@ -466,8 +466,7 @@ bearer_token: "${ALERTMANAGER_TOKEN}"  # From environment
 1. **Firewall Rules**: Restrict access to AlertView
 2. **Network Policies**: Limit which pods can access AlertView in Kubernetes
 3. **HTTPS**: Always use HTTPS in production
-4. **Authentication**: Consider adding authentication to AlertView (planned feature)
-5. **Rate Limiting**: Consider adding rate limiting (planned feature)
+4. **Reverse Proxy**: Use a reverse proxy (Nginx, Apache) for additional security layers
 
 ### Data Security
 
@@ -501,15 +500,6 @@ RUST_LOG=info ALERTVIEW_LOG_FORMAT=json cargo run -- config.yaml
 ```bash
 RUST_LOG=debug cargo run -- config.yaml
 ```
-
-### Metrics (Planned)
-
-Future versions will include a `/metrics` endpoint with Prometheus metrics:
-- `alertview_up` - Whether AlertView is running
-- `alertview_alerts_total` - Total number of alerts
-- `alertview_sources_up` - Number of healthy sources
-- `alertview_fetch_duration_seconds` - Time to fetch from each source
-- `alertview_cache_hits_total` - Number of cache hits
 
 ### AlertView as a Source
 

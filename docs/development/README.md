@@ -9,10 +9,6 @@ This section covers everything you need to know to develop, build, test, and con
 - **[Testing](testing.md)** - Running tests and writing new ones
 - **[Contributing](contributing.md)** - How to contribute to the project
 
-## Architecture
-
-- **[Plugins](plugins.md)** - Plugin system architecture and development
-
 ## Reference
 
 - **[API Documentation](../../api.md)** - REST API reference

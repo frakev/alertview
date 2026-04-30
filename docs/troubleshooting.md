@@ -870,20 +870,6 @@ RUST_LOG=info alertview --config config.yaml > alertview.log 2>&1
 
 Use a process manager or logrotate to manage log files.
 
-### Metrics (Future Feature)
-
-AlertView may expose Prometheus metrics in the future:
-
-```
-# HELP alertview_alerts_total Total number of alerts
-# TYPE alertview_alerts_total gauge
-alertview_alerts_total{source="alertmanager",severity="critical"} 5
-
-# HELP alertview_fetch_duration_seconds Time spent fetching alerts
-# TYPE alertview_fetch_duration_seconds histogram
-alertview_fetch_duration_seconds_bucket{source="alertmanager",le="0.1"} 10
-```
-
 ### Health Check
 
 Check AlertView health:

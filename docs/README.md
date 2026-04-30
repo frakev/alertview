@@ -28,7 +28,7 @@ Welcome to the AlertView documentation! This directory contains detailed guides,
   - [Building from Source](./development/building.md)
   - [Running Tests](./development/testing.md)
   - [Contributing](./development/contributing.md)
-  - [Plugin System](./development/plugins.md)
+
 
 - [Examples](./examples/README.md)
   - [Alertmanager Configuration](./examples/alertmanager.md)

@@ -18,7 +18,6 @@ This section covers various ways to deploy AlertView in different environments.
 | Docker | Single server, Production | ⭐⭐ | ⭐⭐ |
 | Docker Compose | Multi-container, Development | ⭐⭐ | ⭐⭐ |
 | Kubernetes | Production, Scalability | ⭐⭐⭐ | ⭐⭐⭐ |
-| Systemd | Production (bare metal) | ⭐⭐ | ⭐⭐ |
 
 ## Common Deployment Scenarios
 
@@ -39,8 +38,8 @@ This section covers various ways to deploy AlertView in different environments.
 
 ### Scenario 4: Production at Scale
 **Goal**: High-availability production deployment
-**Method**: Kubernetes with Helm
-**Files**: Kubernetes manifests, Helm chart
+**Method**: Kubernetes
+**Files**: Kubernetes manifests
 
 ### Scenario 5: NOC Wall Display
 **Goal**: Large screen display for operations center

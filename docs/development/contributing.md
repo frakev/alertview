@@ -29,7 +29,6 @@ There are many ways to contribute to AlertView:
 - **Spread the word**: Share AlertView with others
 - **Write blog posts**: Blog about your experience with AlertView
 - **Give talks**: Present AlertView at meetups or conferences
-- **Create plugins**: Build and share plugins
 - **Create integrations**: Build integrations with other tools
 
 ## Getting Started

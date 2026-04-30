@@ -112,19 +112,7 @@ server {
 }
 ```
 
-**Important:** When using path-based routing, you must configure AlertView with the base path:
-
-```yaml
-# In your AlertView config
-display:
-  base_path: /alertview
-```
-
-Or via environment variable:
-
-```bash
-ALERTVIEW_BASE_PATH=/alertview
-```
+**Note:** AlertView currently does not support serving under a subpath. All requests must be proxied to the root path.
 
 ### Gzip Compression
 
@@ -149,29 +137,7 @@ server {
 }
 ```
 
-### WebSocket Support
 
-If you use WebSocket connections (for real-time updates):
-
-```nginx
-server {
-    listen 80;
-    server_name alertview.example.com;
-
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
 
 ## Apache HTTP Server
 

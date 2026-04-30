@@ -223,23 +223,10 @@ display:
     recent: "#ffff00"
     old: "#ff0000"
 
-# Plugin configuration (future feature)
-plugins:
-  directory: /etc/alertview/plugins
-  enabled:
-    - my-custom-source
-    - slack-notifier
-
 # Health check endpoint
 health:
   enabled: true
   path: /health
-  port: 8080
-
-# Metrics endpoint (future feature)
-metrics:
-  enabled: false
-  path: /metrics
   port: 8080
 
 # API configuration
@@ -251,18 +238,7 @@ api:
     methods: [GET, POST, OPTIONS]
     headers: [Content-Type, Authorization]
   
-  # Rate limiting
-  rate_limit:
-    enabled: false
-    requests_per_minute: 60
-  
-  # Authentication (future feature)
-  auth:
-    enabled: false
-    type: basic  # or: bearer, token
-    users:
-      - username: admin
-        password: admin
+
 ```
 
 ## Environment Variables
@@ -634,15 +610,6 @@ RUST_LOG=info
 RUST_LOG=debug,alertview::config=trace
 ```
 
-### Metrics (Future Feature)
-
-```yaml
-metrics:
-  enabled: true
-  path: /metrics
-  port: 8080
-```
-
 ## Docker Configuration
 
 ### Docker Compose
@@ -808,13 +775,6 @@ alertview --config config.yaml
 
 # With debug logging to see validation details
 RUST_LOG=debug alertview --config config.yaml
-```
-
-### Schema Validation (Future Feature)
-
-```bash
-# Validate against JSON schema
-ajv validate -s alertview-schema.json -d config.yaml
 ```
 
 ## Configuration Examples by Use Case

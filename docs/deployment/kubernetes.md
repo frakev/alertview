@@ -6,7 +6,6 @@ This guide covers deploying AlertView on Kubernetes, including configuration opt
 
 - Kubernetes cluster (v1.20+)
 - `kubectl` configured to access your cluster
-- Helm (optional, for Helm chart installation)
 
 ## Quick Start
 
@@ -50,13 +49,6 @@ kubectl get svc -n alertview
 
 # Or if using ingress, check your ingress controller
 kubectl get ingress -n alertview
-```
-
-### Using Helm (if available)
-
-```bash
-helm repo add alertview https://your-org.github.io/alertview
-helm install alertview alertview/alertview -n alertview -f values.yaml
 ```
 
 ## Kubernetes Manifests
@@ -362,7 +354,7 @@ spec:
 
 ### Persistent Storage
 
-If you need to persist data (e.g., for plugins or custom storage):
+If you need to persist data:
 
 ```yaml
 volumes:
@@ -546,12 +538,6 @@ image: ghcr.io/your-org/alertview:v1.2.0
 kubectl apply -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 ```
 
-### Using Helm
-
-```bash
-helm upgrade alertview alertview/alertview -n alertview -f values.yaml --version 1.2.0
-```
-
 ### Rolling Updates
 
 Kubernetes will automatically perform a rolling update. To monitor:
@@ -613,7 +599,4 @@ kubectl delete namespace alertview
 
 - [Kubernetes Documentation](https://kubernetes.io/docs/home/)
 - [microk8s Documentation](https://microk8s.io/docs)
-- [Helm Documentation](https://helm.sh/docs/)
 - [AlertView Configuration](../configuration/config-file.md)
-config-file.md)
-config-file.md)

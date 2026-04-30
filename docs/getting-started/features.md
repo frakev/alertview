@@ -38,7 +38,6 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 - **Auto-Reload**: Configuration files are automatically reloaded when changed
 - **Per-Source Settings**: Individual timeout, retry, and link settings per source
 - **Display Customization**: Configure which labels to display
-
 ### 🔄 Resilience
 - **Retry Logic**: Exponential backoff for failed requests
 - **Timeout Configuration**: Configurable timeouts per source
@@ -49,29 +48,14 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 ### 📊 Observability
 - **Structured Logging**: JSON or text log format
 - **Log Levels**: Configurable log verbosity
-- **Metrics**: Built-in caching metrics (more coming soon)
 - **Debug Mode**: Detailed logging for troubleshooting
 
 ### 🎯 Alert Management
 
-#### Alert Grouping (Coming Soon)
+#### Alert Grouping ✅
 - Group alerts by label (namespace, job, etc.)
 - Collapsible groups for better organization
-- Group-level actions (ack, snooze)
-
-#### Alert Actions (Planned)
-- **Acknowledge**: Mark alerts as acknowledged
-- **Snooze**: Temporarily silence alerts
-- **Resolve**: Manually resolve alerts
-- **Assign**: Assign alerts to team members
-
-### 🔌 Extensibility
-
-#### Plugin System (Coming Soon)
-- **Custom Sources**: Add support for new alert sources
-- **Custom Actions**: Add custom alert actions
-- **Custom Displays**: Create custom display components
-- **Easy Integration**: Simple API for plugin development
+- Configure via `group_by` in display configuration
 
 ## Technical Features
 
@@ -91,7 +75,7 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 ### Deployment
 - **Single Binary**: Easy to deploy anywhere
 - **Docker Support**: Official Docker images available
-- **Kubernetes Ready**: Helm charts and manifests included
+- **Kubernetes Ready**: Manifests included for easy deployment
 - **Multi-Arch**: Support for x86_64, arm64, and more
 - **No Dependencies**: Zero runtime dependencies
 
@@ -106,9 +90,9 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 | No Database | ✅ Yes | ❌ No | ✅ Yes |
 | TV Mode | ✅ Yes | ❌ No | ❌ No |
 | Sound Notifications | ✅ Yes | ❌ No | ❌ No |
-| Plugin System | 🟡 Coming | ✅ Yes | ❌ No |
-| Alert Grouping | 🟡 Coming | ✅ Yes | ❌ No |
-| Alert Actions | 🟡 Coming | ✅ Yes | ❌ No |
+| Plugin System | ❌ No | ✅ Yes | ❌ No |
+| Alert Grouping | ✅ Yes | ✅ Yes | ❌ No |
+| Alert Actions | ❌ No | ✅ Yes | ❌ No |
 
 ## Use Cases
 
@@ -137,9 +121,7 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 Check out our [GitHub Issues](https://github.com/frakev/alertview/issues) for planned features and enhancements.
 
 ### Upcoming Features
-- [ ] Alert grouping by labels
 - [ ] Alert acknowledgment and snoozing
-- [ ] Plugin system for custom sources
 - [ ] Prometheus metrics endpoint
 - [ ] Basic authentication
 - [ ] Webhook source support
@@ -147,7 +129,6 @@ Check out our [GitHub Issues](https://github.com/frakev/alertview/issues) for pl
 
 ### Long-term Vision
 - Full-featured alert management platform
-- Extensible plugin ecosystem
 - Advanced alert correlation
 - Machine learning for anomaly detection
 - Multi-tenancy support

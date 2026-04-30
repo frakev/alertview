@@ -29,13 +29,7 @@ Currently supported:
 - **Grafana** (Grafana Alerting)
 - **Zabbix** (Zabbix triggers)
 
-Planned for future releases:
-- Prometheus Alerts (direct)
-- Datadog
-- New Relic
-- PagerDuty
-- Opsgenie
-- Custom sources via plugins
+
 
 ### Is AlertView a replacement for Alertmanager/Grafana?
 
@@ -84,7 +78,6 @@ See the [Getting Started](getting-started/quick-start.md) guide for installation
 
 No. You only need Rust if you want to:
 - Build AlertView from source
-- Develop plugins
 - Contribute to the project
 
 Pre-built binaries and Docker images are available for users.
@@ -430,15 +423,11 @@ Acknowledgment is not currently supported in AlertView. You need to:
 - Acknowledge in your monitoring system (Alertmanager, Grafana, Zabbix)
 - Use the link template to open the alert in the source system
 
-This feature is planned for a future release.
-
 ### How do I silence alerts?
 
 Silencing is not currently supported in AlertView. You need to:
 - Silence in your monitoring system
 - Use the link template to open the alert in the source system
-
-This feature is planned for a future release.
 
 ### How do I view alert history?
 
@@ -475,9 +464,8 @@ You can customize:
 - Filters
 
 For deeper customization, you can:
-- Use custom CSS via the `custom_css` option
+- Use custom CSS via the `theme` option
 - Modify the static files and rebuild
-- Create a plugin (future feature)
 
 ### How do I disable auto-refresh?
 
@@ -680,7 +668,6 @@ spec:
 ```
 
 **Note:** Each instance fetches alerts independently. Consider:
-- Using a shared cache (future feature)
 - Reducing refresh interval
 - Using a load balancer
 
@@ -691,11 +678,6 @@ spec:
 curl http://localhost:8080/health
 ```
 
-**Metrics (Future Feature):**
-```
-curl http://localhost:8080/metrics
-```
-
 **Logging:**
 ```bash
 # View logs
@@ -703,16 +685,6 @@ journalctl -u alertview -f
 
 # Or with Docker
 docker logs alertview -f
-```
-
-**Prometheus (Future Feature):**
-```yaml
-# prometheus.yml
-scrape_configs:
-  - job_name: 'alertview'
-    static_configs:
-      - targets: ['alertview.example.com:8080']
-    metrics_path: '/metrics'
 ```
 
 ## Troubleshooting Questions
@@ -924,17 +896,6 @@ See [Contributing Guide](development/contributing.md) for details.
 8. Push to your fork
 9. Open a pull request
 
-### How do I create a plugin?
-
-See [Plugin System](development/plugins.md) for details.
-
-**Quick Start:**
-1. Create a new Rust crate
-2. Add AlertView as a dependency
-3. Implement the Plugin trait
-4. Build as a dynamic library
-5. Load in AlertView
-
 ### How do I report a bug?
 
 1. Check if the bug has already been reported
@@ -1036,13 +997,12 @@ Prometheus -> Alertmanager -> AlertView
 See the [GitHub Issues](https://github.com/your-org/alertview/issues) for planned features.
 
 **Some planned features:**
-- Alert grouping
-- Plugin system
 - Authentication
 - Metrics endpoint
-- WebSocket support for real-time updates
+
 - More source types (Datadog, New Relic, etc.)
 - Alert actions (acknowledge, silence, resolve)
+
 
 ### When will the next version be released?
 
