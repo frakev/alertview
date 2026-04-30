@@ -14,6 +14,30 @@ static INDEX_HTML: &str = include_str!("../static/index.html");
 static STYLE_CSS: &str  = include_str!("../static/style.css");
 static APP_JS: &str     = include_str!("../static/app.js");
 
+fn print_help() {
+    println!("AlertView - Alert Aggregation Dashboard");
+    println!();
+    println!("Usage:");
+    println!("  alertview [OPTIONS] [CONFIG_FILE]");
+    println!();
+    println!("Arguments:");
+    println!("  CONFIG_FILE    Path to the configuration file (default: config.yaml)");
+    println!();
+    println!("Options:");
+    println!("  -h, --help     Show this help message and exit");
+    println!();
+    println!("Environment Variables:");
+    println!("  ALERTVIEW_CONFIG    Path to the configuration file");
+    println!("  ALERTVIEW_PORT      Port to listen on (default: 8080)");
+    println!("  ALERTVIEW_LOG_FORMAT Log format: 'text' or 'json' (default: text)");
+    println!("  RUST_LOG           Log level: error, warn, info, debug, trace");
+    println!();
+    println!("Examples:");
+    println!("  alertview                          # Use default config.yaml");
+    println!("  alertview /etc/alertview/config.yaml");
+    println!("  alertview --help");
+}
+
 struct AppState {
     config: SharedConfig,
     client: reqwest::Client,
@@ -22,8 +46,16 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config_path = std::env::args()
-        .nth(1)
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        print_help();
+        std::process::exit(0);
+    }
+
+    let config_path = args
+        .get(1)
+        .cloned()
         .unwrap_or_else(|| "config.yaml".to_string());
 
     let config = Config::load(&config_path)?;

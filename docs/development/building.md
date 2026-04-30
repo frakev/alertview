@@ -244,16 +244,30 @@ RUST_LOG=info cargo run
 
 ### Command Line Arguments
 
+AlertView supports the following command line arguments:
+
 ```bash
 # Show help
 cargo run -- --help
+# or
+cargo run -- -h
 
 # Specify config file
-cargo run -- --config /path/to/config.yaml
+cargo run -- /path/to/config.yaml
 
-# Specify port
-cargo run -- --port 9090
+# Specify port via environment variable
+ALERTVIEW_PORT=9090 cargo run
 ```
+
+**Available Options:**
+- `-h, --help` - Show help message and exit
+- `CONFIG_FILE` - Path to the configuration file (default: `config.yaml`)
+
+**Environment Variables:**
+- `ALERTVIEW_CONFIG` - Path to the configuration file
+- `ALERTVIEW_PORT` - Port to listen on (default: 8080)
+- `ALERTVIEW_LOG_FORMAT` - Log format: `text` or `json` (default: text)
+- `RUST_LOG` - Log level: `error`, `warn`, `info`, `debug`, `trace`
 
 ## Docker Build
 

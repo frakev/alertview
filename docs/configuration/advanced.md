@@ -247,6 +247,22 @@ Create custom links for your alerts using template variables.
 {{.EndsAt}}       # End time (RFC3339, if resolved)
 ```
 
+**Zabbix-Specific Fields:**
+*AlertView automatically adds these labels for Zabbix alerts:*
+```
+{{.Labels.eventid}}    # Zabbix event ID
+{{.Labels.triggerid}}  # Zabbix trigger ID
+{{.Labels.host}}       # Host name (if available)
+{{.Labels.hostgroup}}  # Host group name (if available)
+```
+
+**Grafana-Specific Fields:**
+*AlertView automatically includes these in Grafana alerts:*
+```
+{{.Annotations.dashboardUid}}  # Grafana dashboard UID
+{{.Annotations.panelId}}       # Grafana panel ID
+```
+
 ### Examples
 
 **Basic Grafana Link:**
