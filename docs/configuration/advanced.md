@@ -279,6 +279,49 @@ link_template: "https://my-monitoring.example.com/alerts/{{.Fingerprint}}"
 link_template: "https://example.com/alerts?source={{.Source}}&severity={{.Severity}}&name={{.Name}}"
 ```
 
+### Source-Specific Examples
+
+#### Zabbix Examples
+
+**Direct link to Zabbix problem:**
+```yaml
+link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+```
+*Note: Zabbix automatically includes `eventid` in alert labels*
+
+**Link to specific host:**
+```yaml
+link_template: "https://zabbix.example.com/zabbix.php?action=host.view&hostid={{.Labels.hostid}}"
+```
+
+**Link to trigger:**
+```yaml
+link_template: "https://zabbix.example.com/zabbix.php?action=trigger.view&triggerid={{.Labels.triggerid}}"
+```
+
+#### Grafana Examples
+
+**Dashboard with template variables:**
+```yaml
+link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?var-alertname={{.Labels.alertname}}&var-namespace={{.Labels.namespace}}"
+```
+*Note: Grafana automatically includes `dashboardUid` in alert annotations*
+
+**Direct link to panel:**
+```yaml
+link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}&orgId=1"
+```
+
+**Link to Grafana alert list:**
+```yaml
+link_template: "https://grafana.example.com/alerting/list?search={{.Labels.alertname}}"
+```
+
+**Prometheus query via Grafana Explore:**
+```yaml
+link_template: "https://grafana.example.com/explore?left=[\"now-1h\",\"now\",\"Prometheus\",{\"expr\":\"{{.Labels.alertname}}\"}]"
+```
+
 ### Priority Order
 
 AlertView tries link generation methods in this order:
