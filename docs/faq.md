@@ -569,7 +569,7 @@ See [Kubernetes Deployment](deployment/kubernetes.md) for details.
 kubectl create configmap alertview-config --from-file=config.yaml -n alertview
 
 # Deploy
-kubectl apply -f k8s/ -n alertview
+kubectl apply -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 ```
 
 ### How do I deploy AlertView behind a reverse proxy?

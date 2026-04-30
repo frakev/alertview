@@ -58,7 +58,7 @@ services:
 ### Kubernetes Example
 
 ```yaml
-# k8s/alertview.yaml
+# 03-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:

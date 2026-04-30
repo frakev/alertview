@@ -34,7 +34,7 @@ kubectl create configmap alertview-config --from-file=config.yaml -n alertview
 4. **Deploy AlertView:**
 
 ```bash
-kubectl apply -f k8s/ -n alertview
+kubectl apply -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 ```
 
 This creates:
@@ -65,7 +65,11 @@ The repository includes the following Kubernetes manifests at the root level:
 
 ```
 .
-├── k8s/
+├── 01-namespace.yaml       # Namespace configuration
+├── 02-configmap.yaml       # ConfigMap for AlertView configuration
+├── 03-deployment.yaml      # Deployment configuration
+├── 04-service.yaml         # Service configuration
+└── 05-ingress.yaml
 │   ├── deployment.yaml      # Deployment configuration
 │   ├── service.yaml         # Service configuration
 │   └── ingress.yaml         # Ingress configuration
@@ -292,7 +296,7 @@ microk8s kubectl create configmap alertview-config --from-file=config.yaml -n al
 3. Deploy AlertView:
 
 ```bash
-microk8s kubectl apply -f k8s/ -n alertview
+microk8s kubectl apply -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 ```
 
 4. Access AlertView:
@@ -539,7 +543,7 @@ image: ghcr.io/your-org/alertview:v1.2.0
 2. Apply the changes:
 
 ```bash
-kubectl apply -f k8s/ -n alertview
+kubectl apply -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 ```
 
 ### Using Helm
@@ -600,7 +604,7 @@ spec:
 ## Uninstalling
 
 ```bash
-kubectl delete -f k8s/ -n alertview
+kubectl delete -f 01-namespace.yaml -f 02-configmap.yaml -f 03-deployment.yaml -f 04-service.yaml -f 05-ingress.yaml -n alertview
 kubectl delete configmap alertview-config -n alertview
 kubectl delete namespace alertview
 ```
@@ -611,3 +615,5 @@ kubectl delete namespace alertview
 - [microk8s Documentation](https://microk8s.io/docs)
 - [Helm Documentation](https://helm.sh/docs/)
 - [AlertView Configuration](../configuration/config-file.md)
+config-file.md)
+config-file.md)

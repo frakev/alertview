@@ -82,7 +82,11 @@ alertview/
 │   ├── app.js            # Frontend JavaScript
 │   └── style.css         # Stylesheet
 ├── docs/                 # Documentation
-├── k8s/                 # Kubernetes manifests
+├── 01-namespace.yaml    # Kubernetes namespace manifest
+├── 02-configmap.yaml    # Kubernetes ConfigMap manifest
+├── 03-deployment.yaml   # Kubernetes Deployment manifest
+├── 04-service.yaml      # Kubernetes Service manifest
+├── 05-ingress.yaml      # Kubernetes Ingress manifest
 ├── Cargo.toml            # Rust package manifest
 ├── Cargo.lock            # Dependency lock file
 ├── config.example        # Example configuration

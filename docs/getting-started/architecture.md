@@ -344,12 +344,11 @@ alertview/
 │       ├── style.css
 │       └── app.js
 ├── config.example       # Example configuration
-├── k8s/                # Kubernetes manifests (deprecated - see root .yaml files)
-│   ├── 01-namespace.yaml
-│   ├── 02-configmap.yaml
-│   ├── 03-deployment.yaml
-│   ├── 04-service.yaml
-│   └── 05-ingress.yaml
+├── 01-namespace.yaml    # Kubernetes namespace manifest
+├── 02-configmap.yaml    # Kubernetes ConfigMap manifest
+├── 03-deployment.yaml   # Kubernetes Deployment manifest
+├── 04-service.yaml      # Kubernetes Service manifest
+├── 05-ingress.yaml      # Kubernetes Ingress manifest
 ├── Dockerfile           # Docker build configuration
 ├── README.md           # Main readme
 ├── CHANGELOG.md        # Change log

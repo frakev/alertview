@@ -25,11 +25,11 @@ alertview/
 │   ├── deployment/               # Deployment guides
 │   └── development/              # Development documentation
 │
-├── k8s/                         # Kubernetes manifests
-│   ├── deployment.yaml           # Deployment configuration
-│   ├── service.yaml              # Service configuration
-│   └── ingress.yaml              # Ingress configuration
-│
+├── 01-namespace.yaml            # Kubernetes namespace
+├── 02-configmap.yaml            # Kubernetes ConfigMap
+├── 03-deployment.yaml           # Kubernetes Deployment
+├── 04-service.yaml              # Kubernetes Service
+├── 05-ingress.yaml              # Kubernetes Ingress
 ├── .github/                      # GitHub configuration
 │   └── workflows/                # GitHub Actions workflows
 │       └── ci.yml                # CI/CD pipeline
