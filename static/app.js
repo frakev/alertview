@@ -144,6 +144,71 @@ NotifBtn.addEventListener('click', async () => {
 });
 updateNotifBtn();
 
+/* ── Server-Sent Events (SSE) for real-time notifications ── */
+let sseConnected = false;
+let sseRetryCount = 0;
+const maxSseRetries = 5;
+
+function connectSSE() {
+  if (!('EventSource' in window)) {
+    console.log('SSE not supported in this browser');
+    return;
+  }
+
+  const eventSource = new EventSource('/events');
+  
+  eventSource.onopen = () => {
+    sseConnected = true;
+    sseRetryCount = 0;
+    console.log('SSE connection opened');
+  };
+
+  eventSource.onerror = () => {
+    sseConnected = false;
+    console.log('SSE connection error');
+    eventSource.close();
+    
+    // Retry with exponential backoff
+    if (sseRetryCount < maxSseRetries) {
+      const delay = Math.pow(2, sseRetryCount) * 1000; // 2, 4, 8, 16, 32 seconds
+      sseRetryCount++;
+      console.log(`SSE reconnecting in ${delay}ms (attempt ${sseRetryCount}/${maxSseRetries})`);
+      setTimeout(connectSSE, delay);
+    }
+  };
+
+  eventSource.addEventListener('new_alert', (event) => {
+    try {
+      const alert = JSON.parse(event.data);
+      console.log('New alert received via SSE:', alert);
+      
+      // Play sound if enabled
+      if (AppConfig.playSounds) {
+        playSoundForAlerts([alert]);
+      }
+      
+      // Show desktop notification if permitted
+      if (Notification?.permission === 'granted') {
+        sendNotif([alert]);
+      }
+      
+      // Refresh the alerts list
+      fetchAlerts();
+    } catch (e) {
+      console.error('Error processing SSE event:', e);
+    }
+  });
+
+  // Store reference for cleanup
+  window._eventSource = eventSource;
+}
+
+// Connect to SSE when page loads
+if ('EventSource' in window) {
+  // Wait a bit for the page to be ready
+  setTimeout(connectSSE, 1000);
+}
+
 // Global state for sounds and timezone
 let AppConfig = {
   playSounds: false,

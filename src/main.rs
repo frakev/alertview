@@ -1,10 +1,12 @@
-use alerts::{severity_order, AlertsResponse, SourceStatus};
+use alerts::{severity_order, Alert, AlertsResponse, SourceStatus};
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 use config::{Config, SharedConfig};
+use futures::stream;
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::broadcast;
 use tower_http::compression::CompressionLayer;
 
 pub mod alerts;
@@ -42,6 +44,7 @@ struct AppState {
     config: SharedConfig,
     client: reqwest::Client,
     cache: Arc<tokio::sync::RwLock<HashMap<String, (Vec<alerts::Alert>, Instant)>>>,
+    tx: broadcast::Sender<Alert>,
 }
 
 #[tokio::main]
@@ -97,10 +100,15 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_config = Arc::new(tokio::sync::RwLock::new(config));
     let cache = Arc::new(tokio::sync::RwLock::new(HashMap::new()));
+    
+    // Create broadcast channel for WebSocket notifications
+    let (tx, _rx) = broadcast::channel::<Alert>(100);
+    
     let state = Arc::new(AppState {
         config: shared_config.clone(),
         client,
         cache,
+        tx: tx.clone(),
     });
 
     // Démarrer le watcher de fichier de config
@@ -112,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/app.js", get(serve_js))
         .route("/api/alerts", get(get_alerts))
         .route("/health", get(health_check))
+        .route("/events", get(sse_handler))
         .layer(CompressionLayer::new())
         .with_state(state);
 
@@ -138,13 +147,54 @@ async fn health_check() -> &'static str {
     "OK"
 }
 
+// Server-Sent Events handler for real-time alert notifications
+async fn sse_handler(
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+    use axum::response::sse::{Event, KeepAlive};
+    use futures::stream::StreamExt as _;
+    
+    let rx = state.tx.subscribe();
+    
+    // Create a stream of SSE events from the broadcast channel
+    let event_stream = stream::unfold(rx, move |mut rx| {
+        async move {
+            match rx.recv().await {
+                Ok(alert) => {
+                    let json = serde_json::to_string(&alert).unwrap_or_default();
+                    let event = Event::default()
+                        .event("new_alert")
+                        .data(json);
+                    Some((event, rx))
+                }
+                Err(_) => None, // Channel closed
+            }
+        }
+    });
+    
+    // Convert to Result stream (SSE requires Result)
+    let event_stream = event_stream.map(Ok);
+    
+    axum::response::Sse::new(event_stream)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(30)))
+}
+
 async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> {
     let mut all_alerts = Vec::new();
     let mut source_statuses = Vec::new();
+    let mut new_alerts = Vec::new();
 
     let config = state.config.read().await;
     let cache_ttl = Duration::from_secs(config.cache_ttl_seconds);
     let use_cache = cache_ttl > Duration::from_secs(0);
+    
+    // Get previous fingerprints to detect new alerts
+    let prev_fingerprints: HashSet<String> = {
+        let cache = state.cache.read().await;
+        cache.iter()
+            .flat_map(|(_, (alerts, _))| alerts.iter().map(|a| a.fingerprint.clone()))
+            .collect()
+    };
 
     for source in &config.sources {
         // Generate cache key based on source config
@@ -186,6 +236,13 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 let count = alerts.len();
                 tracing::debug!("Fetched {} alerts from {}", count, source.name);
                 
+                // Detect new alerts and broadcast them
+                for alert in &alerts {
+                    if !prev_fingerprints.contains(&alert.fingerprint) {
+                        new_alerts.push(alert.clone());
+                    }
+                }
+                
                 // Cache the results if caching is enabled
                 if use_cache {
                     let mut cache = state.cache.write().await;
@@ -210,6 +267,11 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 });
             }
         }
+    }
+
+    // Broadcast new alerts to WebSocket clients
+    for alert in new_alerts {
+        let _ = state.tx.send(alert);
     }
 
     all_alerts.sort_by(|a, b| {

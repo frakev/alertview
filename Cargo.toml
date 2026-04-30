@@ -17,3 +17,4 @@ chrono = { version = "0.4", features = ["serde"] }
 notify = "6"
 notify-debouncer-mini = "0.4"
 tower-http = { version = "0.5", features = ["compression-gzip"] }
+futures = "0.3"

@@ -269,6 +269,11 @@ ALERTVIEW_PORT=9090 cargo run
 - `ALERTVIEW_LOG_FORMAT` - Log format: `text` or `json` (default: text)
 - `RUST_LOG` - Log level: `error`, `warn`, `info`, `debug`, `trace`
 
+**Real-time Features:**
+- Server-Sent Events (SSE) endpoint at `/events` for real-time alert notifications
+- Desktop notifications via browser Notification API (requires permission)
+- Sound notifications for new alerts (configurable via `play_sounds`)
+
 ## Docker Build
 
 ### Build Docker Image

@@ -8,6 +8,8 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 - **Multi-Source Support**: Aggregate alerts from Alertmanager, Grafana, and Zabbix
 - **Unified View**: All alerts displayed in a single, consistent interface
 - **Real-time Updates**: Automatic refresh with configurable interval
+- **Server-Sent Events (SSE)**: Real-time push notifications for new alerts via `/events` endpoint
+- **Desktop Notifications**: Browser-based notifications for new alerts (requires permission)
 - **Source Status**: Visual indication of each source's health
 
 ### 🎨 User Interface
