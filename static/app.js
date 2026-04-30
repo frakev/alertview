@@ -163,9 +163,9 @@ function connectSSE() {
     console.log('SSE connection opened');
   };
 
-  eventSource.onerror = () => {
+  eventSource.onerror = (err) => {
     sseConnected = false;
-    console.log('SSE connection error');
+    console.log('SSE connection error:', err);
     eventSource.close();
     
     // Retry with exponential backoff
@@ -174,6 +174,8 @@ function connectSSE() {
       sseRetryCount++;
       console.log(`SSE reconnecting in ${delay}ms (attempt ${sseRetryCount}/${maxSseRetries})`);
       setTimeout(connectSSE, delay);
+    } else {
+      console.warn('SSE max retries reached, giving up');
     }
   };
 
