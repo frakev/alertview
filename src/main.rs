@@ -40,11 +40,22 @@ fn print_help() {
     println!("  alertview --help");
 }
 
+// Type aliases for cleaner code
+type AlertCache = HashMap<String, (Vec<alerts::Alert>, Instant)>;
+type SharedAlertCache = Arc<tokio::sync::RwLock<AlertCache>>;
+
+// Maximum cache size to prevent memory exhaustion
+const MAX_CACHE_ENTRIES: usize = 1000;
+
+// Maximum number of concurrent SSE connections
+const MAX_SSE_CONNECTIONS: usize = 100;
+
 struct AppState {
     config: SharedConfig,
     client: reqwest::Client,
-    cache: Arc<tokio::sync::RwLock<HashMap<String, (Vec<alerts::Alert>, Instant)>>>,
+    cache: SharedAlertCache,
     tx: broadcast::Sender<Alert>,
+    sse_connections: Arc<tokio::sync::RwLock<usize>>,
 }
 
 #[tokio::main]
@@ -92,6 +103,11 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("  • {} ({})", s.name, s.url);
     }
 
+    // Warn if TLS verification is disabled
+    if config.tls_insecure {
+        tracing::warn!("TLS certificate verification is DISABLED - this is insecure for production!");
+    }
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(config.tls_insecure)
         .timeout(std::time::Duration::from_secs(15))
@@ -99,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     let shared_config = Arc::new(tokio::sync::RwLock::new(config));
-    let cache = Arc::new(tokio::sync::RwLock::new(HashMap::new()));
+    let cache: SharedAlertCache = Arc::new(tokio::sync::RwLock::new(AlertCache::new()));
     
     // Create broadcast channel for WebSocket notifications
     let (tx, _rx) = broadcast::channel::<Alert>(100);
@@ -109,10 +125,14 @@ async fn main() -> anyhow::Result<()> {
         client,
         cache,
         tx: tx.clone(),
+        sse_connections: Arc::new(tokio::sync::RwLock::new(0)),
     });
 
-    // Démarrer le watcher de fichier de config
+    // Start config file watcher
     start_config_watcher(shared_config, config_path);
+
+    // Log cache size limit
+    tracing::debug!("Alert cache limited to {} entries", MAX_CACHE_ENTRIES);
 
     let app = Router::new()
         .route("/", get(serve_index))
@@ -150,14 +170,31 @@ async fn health_check() -> &'static str {
 // Server-Sent Events handler for real-time alert notifications
 async fn sse_handler(
     State(state): State<Arc<AppState>>,
-) -> axum::response::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+) -> Result<axum::response::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, axum::http::StatusCode> {
     use axum::response::sse::{Event, KeepAlive};
     use futures::stream::StreamExt as _;
+    
+    // Check connection limit
+    {
+        let connections = state.sse_connections.read().await;
+        if *connections >= MAX_SSE_CONNECTIONS {
+            tracing::warn!("SSE connection limit reached ({}/{})", *connections, MAX_SSE_CONNECTIONS);
+            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
+        }
+    }
+    
+    // Increment connection counter
+    {
+        let mut connections = state.sse_connections.write().await;
+        *connections += 1;
+        tracing::debug!("SSE connection opened (total: {})", *connections);
+    }
     
     let rx = state.tx.subscribe();
     
     // Create a stream of SSE events from the broadcast channel
     let event_stream = stream::unfold(rx, move |mut rx| {
+        let state_clone = state.clone();
         async move {
             match rx.recv().await {
                 Ok(alert) => {
@@ -167,7 +204,13 @@ async fn sse_handler(
                         .data(json);
                     Some((event, rx))
                 }
-                Err(_) => None, // Channel closed
+                Err(_) => {
+                    // Decrement connection counter on error
+                    let mut connections = state_clone.sse_connections.write().await;
+                    *connections = connections.saturating_sub(1);
+                    tracing::debug!("SSE connection closed (total: {})", *connections);
+                    None // Channel closed
+                }
             }
         }
     });
@@ -175,8 +218,8 @@ async fn sse_handler(
     // Convert to Result stream (SSE requires Result)
     let event_stream = event_stream.map(Ok);
     
-    axum::response::Sse::new(event_stream)
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(30)))
+    Ok(axum::response::Sse::new(event_stream)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(30))))
 }
 
 async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> {
@@ -247,6 +290,17 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 if use_cache {
                     let mut cache = state.cache.write().await;
                     cache.insert(cache_key, (alerts.clone(), Instant::now()));
+                    
+                    // Limit cache size to prevent memory exhaustion
+                    if cache.len() > MAX_CACHE_ENTRIES {
+                        // Remove oldest entries (simple strategy: remove first N)
+                        let keys_to_remove: Vec<String> = cache.keys().take(cache.len() - MAX_CACHE_ENTRIES).cloned().collect();
+                        let count = keys_to_remove.len();
+                        for key in &keys_to_remove {
+                            cache.remove(key);
+                        }
+                        tracing::warn!("Cache size limit reached, removed {} entries", count);
+                    }
                 }
                 
                 source_statuses.push(SourceStatus {
@@ -300,7 +354,7 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
     })
 }
 
-// Fonction pour fetch avec retry et timeout par source
+// Fetch alerts from a source with retry logic and per-source timeout
 async fn fetch_source_alerts_with_retry(
     client: &reqwest::Client,
     source: &config::Source,
@@ -311,7 +365,7 @@ async fn fetch_source_alerts_with_retry(
     for attempt in 0..=max_retries {
         let timeout = Duration::from_secs(source.timeout);
         
-        // Calculer le délai avant la tentative (exponentiel)
+        // Calculate exponential backoff delay
         if attempt > 0 {
             let delay_ms = source.retry_policy.initial_delay_ms * (1 << (attempt - 1)).min(source.retry_policy.max_delay_ms);
             tracing::warn!(
@@ -334,7 +388,7 @@ async fn fetch_source_alerts_with_retry(
             Ok(Ok(alerts)) => return Ok(alerts),
             Ok(Err(e)) => {
                 last_error = Some(e);
-                // Pour les erreurs HTTP 4xx, on ne retry pas
+                // Don't retry on HTTP 4xx client errors
                 if let Some(status_code) = last_error.as_ref().and_then(|e| {
                     e.to_string().split_whitespace().next()
                         .and_then(|s| s.parse::<u16>().ok())
@@ -350,20 +404,21 @@ async fn fetch_source_alerts_with_retry(
         }
     }
     
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")))
+    // Return the last error, or a generic error if none (shouldn't happen)
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error after {} retries", max_retries)))
 }
 
-// Fonction pour watcher les changements du fichier de config
+// Function to watch config file for changes
 fn start_config_watcher(shared_config: SharedConfig, config_path: String) {
     use std::path::Path;
 
     let (tx, rx) = std::sync::mpsc::channel();
 
-    // Créer le debouncer avec un délai de 500ms
+    // Create debouncer with 500ms delay
     let mut debouncer = new_debouncer(Duration::from_millis(500), tx)
         .expect("Failed to create config watcher debouncer");
 
-    // Watcher le fichier de config
+    // Watch config file
     debouncer
         .watcher()
         .watch(Path::new(&config_path), RecursiveMode::NonRecursive)
@@ -371,10 +426,10 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String) {
 
     tracing::info!("Watching config file {} for changes...", config_path);
 
-    // Lancer une tâche tokio pour gérer les événements de changement
+    // Spawn task to handle change events
     tokio::spawn(async move {
         while let Ok(Ok(events)) = rx.recv() {
-            // Le debouncer émet un événement pour toute modification
+            // Debouncer emits event for any modification
             if !events.is_empty() {
                 tracing::info!("Config file changed, reloading...");
                 match Config::load_async(&config_path).await {

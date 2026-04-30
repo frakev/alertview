@@ -89,7 +89,7 @@ display:
 | `port` | u16 | 8080 | Port number to listen on |
 | `refresh_interval` | u64 | 30 | Seconds between auto-refreshes |
 | `tls_insecure` | bool | false | Skip TLS certificate verification |
-| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled) |
+| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). Maximum 1000 cached entries |
 | `log_format` | string | "text" | Log format: "text" or "json" |
 
 ### Sources Configuration

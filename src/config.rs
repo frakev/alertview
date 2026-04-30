@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_display_config_defaults() {
         let display: DisplayConfig = serde_yaml::from_str("labels: [namespace, job]").expect("Failed to parse display");
-        assert_eq!(display.labels, vec!["namespace", "job"]);
+        assert_eq!(display.labels, ["namespace", "job"]);
         assert_eq!(display.theme, None);
         assert_eq!(display.timezone, "local");
         assert!(!display.play_sounds);
@@ -119,7 +119,7 @@ mod tests {
             play_sounds: true
         "#).expect("Failed to parse display");
         
-        assert_eq!(display.labels, vec!["namespace", "pod"]);
+        assert_eq!(display.labels, ["namespace", "pod"]);
         assert_eq!(display.theme, Some("dark".to_string()));
         assert_eq!(display.timezone, "Europe/Paris");
         assert!(display.play_sounds);
@@ -164,6 +164,32 @@ pub struct Source {
     pub timeout: u64,
     #[serde(default)]
     pub retry_policy: RetryPolicy,
+}
+
+impl Source {
+    /// Validate the source configuration
+    pub fn validate(&self) -> Result<()> {
+        // Validate URL is not empty
+        if self.url.is_empty() {
+            anyhow::bail!("URL cannot be empty");
+        }
+        
+        // Validate timeout is reasonable
+        if self.timeout == 0 {
+            anyhow::bail!("timeout cannot be 0");
+        }
+        
+        // Validate retry policy
+        if self.retry_policy.initial_delay_ms == 0 {
+            anyhow::bail!("initial_delay_ms cannot be 0");
+        }
+        
+        if self.retry_policy.max_delay_ms < self.retry_policy.initial_delay_ms {
+            anyhow::bail!("max_delay_ms must be >= initial_delay_ms");
+        }
+        
+        Ok(())
+    }
 }
 
 fn default_source_timeout() -> u64 {
@@ -250,6 +276,7 @@ impl Config {
         let content = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Cannot read {:?}: {}", path, e))?;
         let config: Config = serde_yaml::from_str(&content)?;
+        config.validate()?;
         Ok(config)
     }
 
@@ -259,9 +286,30 @@ impl Config {
             .await
             .map_err(|e| anyhow::anyhow!("Cannot read {:?}: {}", path, e))?;
         let config: Config = serde_yaml::from_str(&content)?;
+        config.validate()?;
         Ok(config)
+    }
+
+    /// Validate the configuration
+    pub fn validate(&self) -> Result<()> {
+        // Validate port range
+        if self.port == 0 {
+            anyhow::bail!("Port cannot be 0");
+        }
+        
+        // Validate refresh interval
+        if self.refresh_interval == 0 {
+            anyhow::bail!("refresh_interval cannot be 0");
+        }
+        
+        // Validate each source
+        for (i, source) in self.sources.iter().enumerate() {
+            source.validate().with_context(|| format!("Invalid configuration for source at index {}", i))?;
+        }
+        
+        Ok(())
     }
 }
 
-// Type pour stocker la config avec possibilité de reload
+// Type to store config with reload capability
 pub type SharedConfig = Arc<RwLock<Config>>;

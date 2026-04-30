@@ -201,7 +201,7 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     .await?;
 
     if problems.is_empty() {
-        return Ok(vec![]);
+        return Ok(Vec::new());
     }
 
     // Step 2: enrich with hosts + hostgroups via their trigger
@@ -395,7 +395,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             // dashboard_url from config takes priority over the internal generator_url
             // Then try link_template, then generator_url
             let link_url = source.dashboard_url.clone()
-                .or_else(|| source.link_template.clone().and_then(|t| apply_link_template(&t, &Alert {
+                .or(source.link_template.clone().and_then(|t| apply_link_template(&t, &Alert {
                     fingerprint: format!("{}:{}", source.name, a.fingerprint),
                     source: source.name.clone(),
                     source_type: source_type_str.clone(),
@@ -408,12 +408,10 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                     ends_at: ends_at.clone(),
                     link_url: None,
                 })))
-                .or_else(|| {
-                    if a.generator_url.is_empty() {
-                        None
-                    } else {
-                        Some(a.generator_url)
-                    }
+                .or(if a.generator_url.is_empty() {
+                    None
+                } else {
+                    Some(a.generator_url)
                 });
 
             Alert {
@@ -480,6 +478,70 @@ pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     }
     
     Some(result)
+}
+
+/// Group alerts by specified labels
+pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
+    if group_by.is_empty() {
+        return Vec::new();
+    }
+
+    use std::collections::HashMap;
+
+    let mut groups_map: HashMap<String, Vec<Alert>> = HashMap::new();
+
+    for alert in alerts {
+        let mut group_key_parts: Vec<String> = Vec::new();
+
+        for label_key in group_by {
+            if let Some(label_value) = alert.labels.get(label_key) {
+                group_key_parts.push(format!("{}={}", label_key, label_value));
+            } else {
+                group_key_parts.push(format!("{}=<missing>", label_key));
+            }
+        }
+
+        let group_key = group_key_parts.join(",");
+        groups_map.entry(group_key).or_default().push(alert.clone());
+    }
+
+    let mut groups: Vec<AlertGroup> = groups_map
+        .into_iter()
+        .map(|(key, alerts)| {
+            let severity_counts = count_severities(&alerts);
+            // Extract labels from the first alert in the group (they should all have the same group_by labels)
+            let mut labels = HashMap::new();
+            if let Some(first_alert) = alerts.first() {
+                for label_key in group_by {
+                    if let Some(label_value) = first_alert.labels.get(label_key) {
+                        labels.insert(label_key.clone(), label_value.clone());
+                    } else {
+                        labels.insert(label_key.clone(), "<missing>".to_string());
+                    }
+                }
+            }
+            AlertGroup {
+                key,
+                labels,
+                alerts: alerts.clone(),
+                count: alerts.len(),
+                severity_counts,
+            }
+        })
+        .collect();
+
+    // Sort groups by key
+    groups.sort_by(|a, b| a.key.cmp(&b.key));
+
+    groups
+}
+
+fn count_severities(alerts: &[Alert]) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for alert in alerts {
+        *counts.entry(alert.severity.clone()).or_insert(0) += 1;
+    }
+    counts
 }
 
 #[cfg(test)]
@@ -635,7 +697,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &vec!["namespace".to_string()]);
+        let groups = group_alerts(&alerts, &["namespace".to_string()]);
         assert_eq!(groups.len(), 2);
         
         // Find prod and dev groups
@@ -683,7 +745,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &vec!["namespace".to_string(), "job".to_string()]);
+        let groups = group_alerts(&alerts, &["namespace".to_string(), "job".to_string()]);
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].key, "namespace=prod,job=api");
         assert_eq!(groups[1].key, "namespace=prod,job=web");
@@ -707,71 +769,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &vec![]);
+        let groups = group_alerts(&alerts, &[]);
         assert_eq!(groups.len(), 0);
     }
-}
-
-/// Group alerts by specified labels
-pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
-    if group_by.is_empty() {
-        return vec![];
-    }
-
-    use std::collections::HashMap;
-
-    let mut groups_map: HashMap<String, Vec<Alert>> = HashMap::new();
-
-    for alert in alerts {
-        let mut group_key_parts: Vec<String> = Vec::new();
-
-        for label_key in group_by {
-            if let Some(label_value) = alert.labels.get(label_key) {
-                group_key_parts.push(format!("{}={}", label_key, label_value));
-            } else {
-                group_key_parts.push(format!("{}=<missing>", label_key));
-            }
-        }
-
-        let group_key = group_key_parts.join(",");
-        groups_map.entry(group_key).or_default().push(alert.clone());
-    }
-
-    let mut groups: Vec<AlertGroup> = groups_map
-        .into_iter()
-        .map(|(key, alerts)| {
-            let severity_counts = count_severities(&alerts);
-            // Extract labels from the first alert in the group (they should all have the same group_by labels)
-            let mut labels = HashMap::new();
-            if let Some(first_alert) = alerts.first() {
-                for label_key in group_by {
-                    if let Some(label_value) = first_alert.labels.get(label_key) {
-                        labels.insert(label_key.clone(), label_value.clone());
-                    } else {
-                        labels.insert(label_key.clone(), "<missing>".to_string());
-                    }
-                }
-            }
-            AlertGroup {
-                key,
-                labels,
-                alerts: alerts.clone(),
-                count: alerts.len(),
-                severity_counts,
-            }
-        })
-        .collect();
-
-    // Sort groups by key
-    groups.sort_by(|a, b| a.key.cmp(&b.key));
-
-    groups
-}
-
-fn count_severities(alerts: &[Alert]) -> HashMap<String, usize> {
-    let mut counts = HashMap::new();
-    for alert in alerts {
-        *counts.entry(alert.severity.clone()).or_insert(0) += 1;
-    }
-    counts
 }

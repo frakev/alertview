@@ -202,3 +202,53 @@ After deployment:
 2. [Customize display](../configuration/display-options.md)
 3. [Set up monitoring](#monitoring-alertview)
 4. [Train your team](https://github.com/frakev/alertview#readme)
+
+## Security Considerations
+
+### TLS Certificate Verification
+
+By default, AlertView verifies TLS certificates when connecting to alert sources. If you need to disable this (e.g., for self-signed certificates in development):
+
+```yaml
+# In config.yaml
+tls_insecure: true
+```
+
+**Warning**: This will log a warning message and is not recommended for production environments.
+
+### Rate Limiting and Resource Limits
+
+AlertView includes several built-in limits to prevent resource exhaustion:
+
+- **Cache Size**: Maximum 1000 cached entries. When exceeded, oldest entries are removed.
+- **SSE Connections**: Maximum 100 concurrent Server-Sent Events connections. Additional connections receive HTTP 429 (Too Many Requests).
+- **Configuration Validation**: Port, timeout, and retry settings are validated on startup.
+
+### Configuration Validation
+
+AlertView validates configuration on startup:
+
+- Port cannot be 0
+- `refresh_interval` cannot be 0
+- Source URLs cannot be empty
+- Timeout cannot be 0
+- Retry policy delays must be valid (initial_delay_ms > 0, max_delay_ms >= initial_delay_ms)
+
+If validation fails, AlertView will refuse to start with an error message indicating the problem.
+
+### Network Security
+
+- AlertView only makes outbound HTTP/HTTPS requests to configured sources
+- No inbound connections are made except for the web interface and SSE endpoint
+- Consider using a reverse proxy with authentication for production deployments
+- Use HTTPS for all external connections
+
+### Authentication
+
+**Note**: AlertView does not currently support authentication for its web interface. If you need authentication:
+
+1. Use a reverse proxy (Nginx, Apache) with basic auth or OAuth
+2. Deploy AlertView on an internal network only
+3. Use network-level firewalls to restrict access
+
+See the [Reverse Proxy](./reverse-proxy.md) documentation for examples.
