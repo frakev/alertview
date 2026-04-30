@@ -566,6 +566,9 @@ function cardHtml(a) {
   const summary  = a.annotations?.summary || '';
   const desc     = a.annotations?.description || '';
   const showDesc = desc && desc !== summary;
+  
+  // Check for silence/acknowledgement comments
+  const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
 
   return `
     <div class="alert-card sev-${sev}" data-fp="${esc(a.fingerprint)}">
@@ -584,6 +587,7 @@ function cardHtml(a) {
       </div>
       ${summary  ? `<div class="card-summary">${esc(summary)}</div>` : ''}
       ${showDesc ? `<div class="card-desc">${esc(desc)}</div>` : ''}
+      ${ackComment ? `<div class="card-ack-comment"><strong>Comment:</strong> ${esc(ackComment)}</div>` : ''}
       ${labels   ? `<div class="label-chips">${labels}</div>` : ''}
     </div>`;
 }
@@ -591,6 +595,7 @@ function cardHtml(a) {
 function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
   const summary = a.annotations?.summary || '';
+  const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
   
   // Prepare labels for TV mode
   const display_labels = App.data?.display_labels ?? [];
@@ -622,6 +627,7 @@ function cardHtmlTV(a) {
       <span class="row-summary">${esc(summary)}</span>
       <span class="src-chip">${esc(a.source)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
+      ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
       ${labelsHtml}
       ${has_hidden_labels ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)" title="Show more labels">⋮</button>` : ''}
       ${hiddenLabelsHtml}

@@ -119,12 +119,16 @@ struct ZabbixProblem {
     clock: String,    // Unix timestamp
     r_clock: String,  // "0" if unresolved
     suppressed: String,
-    #[serde(default)]
+    #[serde(default = "default_acknowledged")]
     acknowledged: String, // "0" or "1" - whether problem is acknowledged
     #[serde(default)]
     acknowledgements: Vec<ZabbixAcknowledgement>, // ACK details from Zabbix
     #[serde(default)]
     tags: Vec<ZabbixTag>,
+}
+
+fn default_acknowledged() -> String {
+    "0".to_string()
 }
 
 #[derive(Deserialize)]
@@ -918,5 +922,40 @@ mod tests {
 
         let groups = group_alerts(&alerts, &[]);
         assert_eq!(groups.len(), 0);
+    }
+
+    #[test]
+    fn test_zabbix_acknowledgement_parsing() {
+        use serde_json::json;
+        
+        // Simule une réponse JSON de l'API Zabbix avec ACK
+        let json_data = json!({
+            "eventid": "12345",
+            "objectid": "23456",
+            "name": "Linux: Interface virbr0: Link down",
+            "severity": "2",
+            "clock": "1714000000",
+            "r_clock": "0",
+            "suppressed": "0",
+            "acknowledged": "1",
+            "acknowledgements": [
+                {
+                    "acknowledgeid": "789",
+                    "useralias": "Admin",
+                    "clock": "1714000100",
+                    "message": "Working on it - scheduled maintenance"
+                }
+            ],
+            "tags": []
+        });
+        
+        let problem: ZabbixProblem = serde_json::from_value(json_data).unwrap();
+        
+        // Vérifie que les champs sont bien parsés
+        assert_eq!(problem.name, "Linux: Interface virbr0: Link down");
+        assert_eq!(problem.acknowledged, "1");
+        assert_eq!(problem.acknowledgements.len(), 1);
+        assert_eq!(problem.acknowledgements[0].user, "Admin");
+        assert_eq!(problem.acknowledgements[0].message, Some("Working on it - scheduled maintenance".to_string()));
     }
 }
