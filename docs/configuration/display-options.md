@@ -346,6 +346,56 @@ To customize sounds, you would need to modify the JavaScript in `static/app.js`.
 - Adjust your system volume
 - The sounds are intentionally subtle (volume ~0.1)
 
+### Real-time Notifications
+
+AlertView supports **Server-Sent Events (SSE)** for real-time push notifications of new alerts.
+
+#### How It Works
+
+1. **SSE Connection**: When the page loads, AlertView automatically connects to the `/events` endpoint
+2. **New Alert Detection**: The server detects new alerts (not previously seen in cache)
+3. **Push Notification**: New alerts are pushed to all connected clients via SSE
+4. **Desktop Notification**: If browser notifications are enabled, a desktop notification is shown
+5. **Sound Notification**: If `play_sounds` is enabled, a sound is played
+6. **Auto-Refresh**: The alert list is automatically refreshed
+
+#### Browser Notifications
+
+AlertView can show **desktop notifications** for new alerts:
+
+1. **Permission Required**: Click the 🔔 button to grant notification permission
+2. **Notification Content**: Shows alert count, severity, and names
+3. **Click Behavior**: Clicking a notification focuses the AlertView window
+4. **Auto-Close**: Notifications auto-close after 9 seconds
+
+**Browser Support:**
+- ✅ Chrome
+- ✅ Firefox
+- ✅ Edge
+- ✅ Safari
+- ❌ Some mobile browsers (limited support)
+
+**Troubleshooting Notifications:**
+- If notifications don't appear, check browser permission settings
+- Notifications are blocked if permission was previously denied
+- To reset: Clear site permissions in browser settings
+
+#### SSE Connection Details
+
+- **Endpoint**: `/events`
+- **Protocol**: Server-Sent Events (SSE)
+- **Event Type**: `new_alert`
+- **Data Format**: JSON (complete alert object)
+- **Reconnection**: Automatic with exponential backoff (2s, 4s, 8s, 16s, 32s)
+- **Max Retries**: 5 attempts before giving up
+
+#### Disabling Real-time Features
+
+To disable real-time notifications:
+1. **Disable SSE**: Not configurable (always enabled when supported)
+2. **Disable Sounds**: Set `play_sounds: false` in config
+3. **Disable Desktop Notifications**: Click the 🔔 button to revoke permission
+
 ## Complete Display Configuration Example
 
 ```yaml

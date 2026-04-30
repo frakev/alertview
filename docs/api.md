@@ -132,6 +132,43 @@ OK
 
 - `200 OK`: Healthy
 
+### GET /events
+
+Server-Sent Events (SSE) endpoint for real-time alert notifications.
+
+**Request:**
+
+```
+GET /events HTTP/1.1
+Host: localhost:8080
+Accept: text/event-stream
+```
+
+**Response:**
+
+Stream of SSE events with the following format:
+
+```
+event: new_alert
+data: {"fingerprint":"alertmanager:abc123","labels":{"alertname":"HighCPUUsage","severity":"critical"},"annotations":{"summary":"High CPU usage"},"starts_at":"2024-01-15T10:30:00Z","status":"firing","severity":"critical","name":"HighCPUUsage","source":"alertmanager","source_type":"alertmanager","link_url":"http://prometheus.example.com/..."}
+
+```
+
+**Event Types:**
+
+- `new_alert`: A new alert has been detected (not previously seen)
+
+**Notes:**
+
+- The connection remains open and sends events as new alerts arrive
+- Automatic reconnection with exponential backoff is handled client-side
+- Each event contains a complete alert object in JSON format
+- Only alerts that are **new** (not previously seen in cache) trigger events
+
+**Status Codes:**
+
+- `200 OK`: Connection established, event stream begins
+
 ## Error Handling
 
 AlertView returns appropriate HTTP status codes:
@@ -161,6 +198,36 @@ curl http://localhost:8080/api/alerts
 
 ```bash
 curl http://localhost:8080/health
+```
+
+### Stream Real-time Events
+
+```bash
+# Using curl (will hang and print events as they arrive)
+curl -N http://localhost:8080/events
+
+# Using curl with timeout
+curl -N --max-time 10 http://localhost:8080/events
+```
+
+### JavaScript Example
+
+```javascript
+// Connect to SSE endpoint
+const eventSource = new EventSource('http://localhost:8080/events');
+
+eventSource.onopen = () => {
+  console.log('Connection to server opened');
+};
+
+eventSource.onerror = () => {
+  console.log('EventSource failed.');
+};
+
+eventSource.addEventListener('new_alert', (event) => {
+  const alert = JSON.parse(event.data);
+  console.log('New alert:', alert);
+});
 ```
 
 ## Additional Resources
