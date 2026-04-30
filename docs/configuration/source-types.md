@@ -221,6 +221,13 @@ Zabbix alerts include these special fields:
 - `host` - Host name
 - `hostgroup` - Host group
 - `severity` - Zabbix severity (0-5, mapped to: none, info, warning, high, critical)
+- `acknowledged` - Whether the alert is acknowledged in Zabbix ("0" or "1")
+- `acknowledgement` - Acknowledgment message/comment from Zabbix (if available)
+
+**Alert Status Handling:**
+- Alerts with `suppressed: "1"` (manually silenced in Zabbix) are displayed as **silenced**
+- Alerts with `acknowledged: "1"` (ACK'd in Zabbix) are also displayed as **silenced**
+- The acknowledgment message is available in the `acknowledgement` annotation
 
 ### Severity Mapping
 

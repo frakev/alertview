@@ -108,6 +108,10 @@ struct ZabbixProblem {
     r_clock: String,  // "0" if unresolved
     suppressed: String,
     #[serde(default)]
+    acknowledged: String, // "0" or "1" - whether problem is acknowledged
+    #[serde(default)]
+    ack_message: Option<String>, // Acknowledgment message/comment from Zabbix
+    #[serde(default)]
     tags: Vec<ZabbixTag>,
 }
 
@@ -227,7 +231,13 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
         .into_iter()
         .map(|p| {
             let severity = zabbix_severity(&p.severity).to_string();
-            let status = if p.suppressed == "1" { "silenced" } else { "firing" }.to_string();
+            // Zabbix: suppressed (manually silenced) and acknowledged both result in "silenced" status
+            // If acknowledged, include the ack message in annotations
+            let status = if p.suppressed == "1" || p.acknowledged == "1" {
+                "silenced"
+            } else {
+                "firing"
+            }.to_string();
 
             let mut labels: HashMap<String, String> = HashMap::new();
 
@@ -250,9 +260,21 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             for tag in &p.tags {
                 labels.insert(tag.tag.clone(), tag.value.clone());
             }
+            
+            // Add Zabbix acknowledged status as a label
+            labels.insert("acknowledged".to_string(), p.acknowledged.clone());
 
             let mut annotations: HashMap<String, String> = HashMap::new();
             annotations.insert("summary".to_string(), p.name.clone());
+            
+            // If acknowledged in Zabbix, add the ack message to annotations
+            if p.acknowledged == "1" {
+                if let Some(msg) = p.ack_message {
+                    annotations.insert("acknowledgement".to_string(), msg);
+                } else {
+                    annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+                }
+            }
 
             let ends_at = if p.r_clock != "0" {
                 Some(unix_ts_to_iso(&p.r_clock))
