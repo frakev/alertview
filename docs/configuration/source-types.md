@@ -232,11 +232,14 @@ Zabbix alerts include these special fields:
 - `severity` - Zabbix severity (0-5, mapped to: none, info, warning, high, critical)
 - `acknowledged` - Whether the alert is acknowledged in Zabbix ("0" or "1")
 - `acknowledgement` - Acknowledgment message/comment from Zabbix (if available)
+- `acknowledged_by` - User who acknowledged the alert
+- `acknowledged_at` - Timestamp when the alert was acknowledged
 
 **Alert Status Handling:**
 - Alerts with `suppressed: "1"` (manually silenced in Zabbix) are displayed as **silenced**
 - Alerts with `acknowledged: "1"` (ACK'd in Zabbix) are also displayed as **silenced**
 - The acknowledgment message is available in the `acknowledgement` annotation
+- User and timestamp are available in `acknowledged_by` and `acknowledged_at` labels
 
 ### Severity Mapping
 

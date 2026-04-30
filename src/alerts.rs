@@ -122,9 +122,21 @@ struct ZabbixProblem {
     #[serde(default)]
     acknowledged: String, // "0" or "1" - whether problem is acknowledged
     #[serde(default)]
-    ack_message: Option<String>, // Acknowledgment message/comment from Zabbix
+    acknowledgements: Vec<ZabbixAcknowledgement>, // ACK details from Zabbix
     #[serde(default)]
     tags: Vec<ZabbixTag>,
+}
+
+#[derive(Deserialize)]
+struct ZabbixAcknowledgement {
+    #[serde(rename = "acknowledgeid")]
+    #[allow(dead_code)]
+    id: String,
+    #[serde(rename = "useralias")]
+    user: String,
+    #[serde(rename = "clock")]
+    timestamp: String,
+    message: Option<String>, // The acknowledgment comment/message
 }
 
 #[derive(Deserialize)]
@@ -206,13 +218,17 @@ where
 async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Result<Vec<Alert>> {
     let api_url = format!("{}/api_jsonrpc.php", source.url.trim_end_matches('/'));
 
-    // Step 1: active problems
+    // Step 1: active problems (with acknowledgements to get ACK messages)
     let problems: Vec<ZabbixProblem> = zabbix_rpc(
         client,
         source,
         &api_url,
         "problem.get",
-        serde_json::json!({ "output": "extend", "selectTags": "extend" }),
+        serde_json::json!({ 
+            "output": "extend", 
+            "selectTags": "extend",
+            "selectAcknowledgements": true 
+        }),
     )
     .await?;
 
@@ -279,10 +295,18 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             let mut annotations: HashMap<String, String> = HashMap::new();
             annotations.insert("summary".to_string(), p.name.clone());
             
-            // If acknowledged in Zabbix, add the ack message to annotations
-            if p.acknowledged == "1" {
-                if let Some(msg) = p.ack_message {
-                    annotations.insert("acknowledgement".to_string(), msg);
+            // If acknowledged in Zabbix, add the ack message and user info to annotations
+            if p.acknowledged == "1" && !p.acknowledgements.is_empty() {
+                // Use the most recent acknowledgement
+                if let Some(latest_ack) = p.acknowledgements.last() {
+                    if let Some(ref msg) = latest_ack.message {
+                        annotations.insert("acknowledgement".to_string(), msg.clone());
+                    } else {
+                        annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+                    }
+                    // Add who acknowledged and when
+                    labels.insert("acknowledged_by".to_string(), latest_ack.user.clone());
+                    labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
                 } else {
                     annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
                 }
