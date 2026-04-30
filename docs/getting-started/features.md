@@ -116,19 +116,7 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 - Testing alert configurations
 - Debugging alert rules
 
-## Roadmap
+## Contributing
 
-Check out our [GitHub Issues](https://github.com/frakev/alertview/issues) for planned features and enhancements.
-
-### Upcoming Features
-- [ ] Alert acknowledgment and snoozing
-- [ ] Prometheus metrics endpoint
-- [ ] Basic authentication
-- [ ] Webhook source support
-- [ ] Slack/Teams notifications
-
-### Long-term Vision
-- Full-featured alert management platform
-- Advanced alert correlation
-- Machine learning for anomaly detection
-- Multi-tenancy support
+Check out our [GitHub Issues](https://github.com/frakev/alertview/issues) for feature requests and bug reports.
+Contributions are welcome! See [Contributing Guide](../development/contributing.md) for details.
