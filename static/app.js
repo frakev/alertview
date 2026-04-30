@@ -1,4 +1,4 @@
-/* ── Utilities ── */
+/* -- Utilities -- */
 function esc(s) {
   if (s == null) return '';
   const d = document.createElement('div');
@@ -12,10 +12,10 @@ function relTime(iso) {
     const m = Math.floor(d / 60000);
     const h = Math.floor(m / 60);
     const days = Math.floor(h / 24);
-    if (days > 0) return days + 'j ' + (h % 24) + 'h';
+    if (days > 0) return days + 'd ' + (h % 24) + 'h';
     if (h  > 0) return h + 'h ' + (m % 60) + 'm';
     if (m  > 0) return m + 'm';
-    return 'à l\'instant';
+    return 'just now';
   } catch { return '?' }
 }
 
@@ -23,13 +23,13 @@ function absTime(iso) {
   try {
     const date = new Date(iso);
     if (AppConfig.timezone === 'local' || AppConfig.timezone === 'UTC') {
-      return date.toLocaleString('fr-FR', { timeZone: AppConfig.timezone === 'UTC' ? 'UTC' : undefined });
+      return date.toLocaleString('en-US', { timeZone: AppConfig.timezone === 'UTC' ? 'UTC' : undefined });
     }
-    return date.toLocaleString('fr-FR', { timeZone: AppConfig.timezone });
+    return date.toLocaleString('en-US', { timeZone: AppConfig.timezone });
   } catch { return iso; }
 }
 
-/* ── Theme ── */
+/* -- Theme -- */
 const SUN  = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
 const MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
 
@@ -109,7 +109,7 @@ document.getElementById('tv-theme-btn').addEventListener('click', () => {
   pushUrl();
 });
 
-/* ── knownFps persistence ── */
+/* -- knownFps persistence -- */
 function loadKnownFps() {
   try {
     const raw = localStorage.getItem('av-known-fps');
@@ -126,7 +126,7 @@ function saveKnownFps(fps) {
   } catch {}
 }
 
-/* ── Notifications ── */
+/* -- Notifications -- */
 const NotifBtn = document.getElementById('notif-btn');
 
 function updateNotifBtn() {
@@ -134,17 +134,17 @@ function updateNotifBtn() {
   NotifBtn.className = 'icon-btn';
   if (Notification.permission === 'granted') NotifBtn.classList.add('notif-granted');
   if (Notification.permission === 'denied')  NotifBtn.classList.add('notif-denied');
-  NotifBtn.title = { granted: 'Notifications activées', denied: 'Notifications bloquées', default: 'Activer les notifications' }[Notification.permission] || 'Notifications';
+  NotifBtn.title = { granted: 'Notifications enabled', denied: 'Notifications blocked', default: 'Enable notifications' }[Notification.permission] || 'Notifications';
 }
 NotifBtn.addEventListener('click', async () => {
   if (!('Notification' in window)) return;
-  if (Notification.permission === 'denied') { alert('Notifications bloquées — modifiez les paramètres du site.'); return; }
+  if (Notification.permission === 'denied') { alert('Notifications blocked - please check site permissions.'); return; }
   await Notification.requestPermission();
   updateNotifBtn();
 });
 updateNotifBtn();
 
-/* ── Server-Sent Events (SSE) for real-time notifications ── */
+/* -- Server-Sent Events (SSE) for real-time notifications -- */
 let sseConnected = false;
 let sseRetryCount = 0;
 const maxSseRetries = 5;
@@ -236,15 +236,16 @@ function sendNotif(newAlerts) {
   if (Notification?.permission !== 'granted' || !newAlerts.length) return;
   const bySev = s => newAlerts.filter(a => a.severity === s).length;
   const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
+  const alertWord = newAlerts.length > 1 ? 'alerts' : 'alert';
   const n = new Notification(
-    `${icon} ${newAlerts.length} nouvelle${newAlerts.length > 1 ? 's' : ''} alerte${newAlerts.length > 1 ? 's' : ''}`,
-    { body: newAlerts.slice(0, 6).map(a => `[${a.severity.toUpperCase()}] ${a.name}`).join('\n') + (newAlerts.length > 6 ? `\n… et ${newAlerts.length - 6} de plus` : '') }
+    `${icon} ${newAlerts.length} new ${alertWord}`,
+    { body: newAlerts.slice(0, 6).map(a => `[${a.severity.toUpperCase()}] ${a.name}`).join('\n') + (newAlerts.length > 6 ? `\n... and ${newAlerts.length - 6} more` : '') }
   );
   n.onclick = () => { window.focus(); n.close(); };
   setTimeout(() => n.close(), 9000);
 }
 
-/* ── App state (filters persistés dans localStorage) ── */
+/* -- App state (filters persisted in localStorage) -- */
 const App = {
   data:           null,
   knownFps:       loadKnownFps(),
@@ -259,7 +260,7 @@ const App = {
   loading:        false,
 };
 
-/* ── Search ── */
+/* -- Search -- */
 const SearchInput = document.getElementById('search');
 const SearchClear = document.getElementById('search-clear');
 SearchInput.addEventListener('input', e => {
@@ -274,11 +275,11 @@ SearchClear.addEventListener('click', () => {
   renderAlerts();
 });
 
-/* ── Silence toggle ── */
+/* -- Silence toggle -- */
 function updateSilenceBtn() {
   [document.getElementById('silence-btn'), document.getElementById('tv-silence-btn')].forEach(btn => {
     if (!btn) return;
-    btn.textContent = App.showSilenced ? 'Masquer silencées' : 'Afficher silencées';
+    btn.textContent = App.showSilenced ? 'Hide silenced' : 'Show silenced';
     btn.classList.toggle('active', App.showSilenced);
   });
 }
@@ -292,7 +293,7 @@ function toggleSilenced() {
 document.getElementById('silence-btn').addEventListener('click', toggleSilenced);
 document.getElementById('tv-silence-btn').addEventListener('click', toggleSilenced);
 
-/* ── Source filter ── */
+/* -- Source filter -- */
 function toggleSrc(name) {
   if (App.srcFilter.has(name)) App.srcFilter.delete(name);
   else App.srcFilter.add(name);
@@ -316,10 +317,10 @@ function renderSourceChips() {
   });
 }
 
-/* ── Refresh ── */
+/* -- Refresh -- */
 document.getElementById('refresh-btn').addEventListener('click', () => fetchAlerts());
 
-/* ── Fetch ── */
+/* -- Fetch -- */
 async function fetchAlerts() {
   if (App.loading) return;
   App.loading = true;
@@ -354,7 +355,7 @@ async function fetchAlerts() {
 
     render();
 
-    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('fr-FR');
+    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('en-US');
 
     App.countdown = data.refresh_interval;
     document.getElementById('countdown').textContent = App.countdown;
@@ -377,7 +378,7 @@ async function fetchAlerts() {
 }
 
 
-/* ── Filters ── */
+/* -- Filters -- */
 function filteredAlerts() {
   return (App.data?.alerts ?? []).filter(a => {
     if (!App.showSilenced && a.status === 'silenced') return false;
@@ -402,13 +403,14 @@ function toggleSev(s) {
   pushUrl();
 }
 
-/* ── Render ── */
+/* -- Render -- */
 function updateTitle() {
   const firing = (App.data?.alerts ?? []).filter(a => a.status === 'firing');
   if (!firing.length) { document.title = 'AlertView'; return; }
   const bySev = s => firing.filter(a => a.severity === s).length;
   const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
-  document.title = `${icon} ${firing.length} alerte${firing.length > 1 ? 's' : ''} — AlertView`;
+  const alertWord = firing.length > 1 ? 'alerts' : 'alert';
+  document.title = `${icon} ${firing.length} ${alertWord} — AlertView`;
 }
 
 function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); updateTitle(); }
@@ -428,7 +430,7 @@ function renderSources() {
     <span class="src-item">
       <span class="src-dot ${s.status}"></span>
       ${esc(s.name)}
-      ${s.status === 'ok' ? '· ' + s.alert_count + ' alerte' + (s.alert_count !== 1 ? 's' : '') : `<span class="src-err-label" title="${esc(s.error)}">⚠ erreur</span>`}
+      ${s.status === 'ok' ? '· ' + s.alert_count + ' alert' + (s.alert_count !== 1 ? 's' : '') : `<span class="src-err-label" title="${esc(s.error)}">⚠ error</span>`}
     </span>`).join('');
 }
 
@@ -437,14 +439,15 @@ function renderAlerts() {
   const total    = App.data?.alerts.length ?? 0;
   const listEl   = document.getElementById('alert-list');
 
+  const alertWord = total !== 1 ? 'alerts' : 'alert';
   document.getElementById('alert-count').textContent = filtered.length < total
-    ? filtered.length + ' / ' + total + ' alertes'
-    : total + ' alerte' + (total !== 1 ? 's' : '');
+    ? filtered.length + ' / ' + total + ' ' + alertWord
+    : total + ' ' + alertWord;
 
   if (!filtered.length) {
     listEl.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">${App.searchQ || App.sevFilter !== 'all' || App.srcFilter.size > 0 ? '🔍' : '✅'}</div>
-      <div>${App.searchQ ? 'Aucun résultat pour &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;' : 'Aucune alerte active'}</div>
+      <div>${App.searchQ ? 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;' : 'No active alerts'}</div>
     </div>`;
     return;
   }
@@ -500,7 +503,7 @@ function groupHtml(group, filteredAlerts) {
       <div class="group-header" onclick="toggleGroup('${esc(group.key)}')">
         <span class="group-toggle">▶</span>
         <span class="group-label">${groupLabel}</span>
-        <span class="group-count">${groupAlerts.length} alerte${groupAlerts.length !== 1 ? 's' : ''}</span>
+        <span class="group-count">${groupAlerts.length} alert${groupAlerts.length !== 1 ? 's' : ''}</span>
         <span class="group-severities">${sevBadges}</span>
       </div>
       <div class="group-alerts" id="group-${esc(group.key)}" style="display: none;">
@@ -529,16 +532,16 @@ function toggleGroup(groupKey) {
 
 function getSourceLabel(sourceType) {
   const labels = {
-    alertmanager: "Ouvrir dans Alertmanager",
-    grafana: "Ouvrir dans Grafana",
-    zabbix: "Ouvrir dans Zabbix"
+    alertmanager: "Open in Alertmanager",
+    grafana: "Open in Grafana",
+    zabbix: "Open in Zabbix"
   };
-  return labels[sourceType] || "Ouvrir dans la source";
+  return labels[sourceType] || "Open in source";
 }
 
 function genLinkHtml(url, sourceType) {
   if (!url) return '';
-  const label = sourceType ? getSourceLabel(sourceType) : "Ouvrir dans Prometheus/Grafana";
+  const label = sourceType ? getSourceLabel(sourceType) : "Open in Prometheus/Grafana";
   return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="${esc(label)}">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -569,7 +572,7 @@ function cardHtml(a) {
         </div>
         <div class="card-meta">
           <span class="src-chip">${esc(a.source)}</span>
-          <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
+          <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
           ${genLinkHtml(a.link_url, a.source_type)}
         </div>
       </div>
@@ -590,12 +593,12 @@ function cardHtmlTV(a) {
       <span class="status-badge status-${a.status}">${a.status}</span>
       <span class="row-summary">${esc(summary)}</span>
       <span class="src-chip">${esc(a.source)}</span>
-      <span class="time-ago" title="${esc(absTime(a.starts_at))}">depuis&nbsp;${relTime(a.starts_at)}</span>
+      <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${genLinkHtml(a.link_url, a.source_type)}
     </div>`;
 }
 
-/* ── TV Mode ── */
+/* -- TV Mode -- */
 const TV = {
   active:     false,
   panelOpen:  false,
@@ -610,18 +613,18 @@ const TV = {
     document.getElementById('tv-settings-btn').addEventListener('click', e => { e.stopPropagation(); this.togglePanel(); });
     document.getElementById('tv-exit-btn').addEventListener('click', () => this.toggle());
 
-    // Afficher la barre au moindre mouvement
+    // Show bar on any movement
     document.addEventListener('mousemove', () => this.showBar());
     document.addEventListener('click',     () => this.showBar());
 
-    // Fermer le panneau en cliquant ailleurs
+    // Close panel when clicking elsewhere
     document.addEventListener('click', e => {
       if (this.panelOpen && !document.getElementById('tv-panel').contains(e.target) && e.target.id !== 'tv-settings-btn') {
         this.closePanel();
       }
     });
 
-    // Raccourcis clavier
+    // Keyboard shortcuts
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       if (e.key === 'Escape') { if (this.panelOpen) this.closePanel(); else if (this.active) this.toggle(); }
@@ -663,7 +666,7 @@ const TV = {
       options.timeZone = AppConfig.timezone;
     }
     document.getElementById('tv-clock').textContent =
-      new Date().toLocaleTimeString('fr-FR', options);
+      new Date().toLocaleTimeString('en-US', options);
   },
 
   showBar() {
@@ -695,7 +698,7 @@ const TV = {
     const counts = {};
     (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
     const order = ['critical','high','warning','info','none'];
-    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('all')">tout</span>`;
+    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('all')">all</span>`;
     document.getElementById('tv-sev-chips').innerHTML = all + order.filter(s => counts[s])
       .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
       .join('');
@@ -710,7 +713,7 @@ const TV = {
 
 TV.init();
 
-/* ── URL state sync ── */
+/* -- URL state sync -- */
 function pushUrl() {
   const p = new URLSearchParams();
   const theme = document.documentElement.getAttribute('data-theme');
@@ -736,7 +739,7 @@ function initFromUrl() {
   if (p.has('silenced')) { App.showSilenced = p.get('silenced') === '1'; localStorage.setItem('av-show-silenced', App.showSilenced); }
 }
 
-/* ── Boot ── */
+/* -- Boot -- */
 initFromUrl();
 updateSilenceBtn();
 fetchAlerts();

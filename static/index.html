@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,8 +24,8 @@
       <svg class="search-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
       </svg>
-      <input type="search" id="search" class="search-input" placeholder="Rechercher alertes, labels, annotations…" autocomplete="off" spellcheck="false">
-      <button class="search-clear" id="search-clear" title="Effacer">✕</button>
+      <input type="search" id="search" class="search-input" placeholder="Search alerts, labels, annotations..." autocomplete="off" spellcheck="false">
+      <button class="search-clear" id="search-clear" title="Clear">✕</button>
     </div>
 
     <div class="hdr-right">
@@ -35,24 +35,24 @@
         <span>·</span>
         <span>↻&thinsp;<b id="countdown">–</b>s</span>
       </div>
-      <button class="icon-btn" id="refresh-btn" title="Rafraîchir maintenant">
+      <button class="icon-btn" id="refresh-btn" title="Refresh now">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
           <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
           <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
         </svg>
       </button>
-      <button class="icon-btn" id="notif-btn" title="Notifications navigateur">
+      <button class="icon-btn" id="notif-btn" title="Browser notifications">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
       </button>
-      <!-- Mode TV -->
-      <button class="icon-btn" id="tv-btn" title="Mode TV (T)">
+      <!-- TV Mode -->
+      <button class="icon-btn" id="tv-btn" title="TV Mode (T)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
         </svg>
       </button>
-      <button class="icon-btn" id="theme-btn" title="Thème clair/sombre">
+      <button class="icon-btn" id="theme-btn" title="Light/Dark theme">
         <svg id="theme-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
@@ -62,12 +62,12 @@
   <div class="sources-bar" id="sources-bar"></div>
 </header>
 
-<!-- TV overlay (visible uniquement en mode TV) -->
+<!-- TV overlay (visible only in TV mode) -->
 <div class="tv-overlay" id="tv-overlay">
-  <!-- Panneau de réglages -->
+  <!-- Settings panel -->
   <div class="tv-panel" id="tv-panel">
     <div class="tv-row">
-      <span class="tv-label">Sévérité</span>
+      <span class="tv-label">Severity</span>
       <div class="tv-chips" id="tv-sev-chips"></div>
     </div>
     <div class="tv-row">
@@ -75,11 +75,11 @@
       <div class="tv-chips" id="tv-src-chips"></div>
     </div>
     <div class="tv-row">
-      <span class="tv-label">Silencées</span>
+      <span class="tv-label">Silenced</span>
       <button class="silence-toggle" id="tv-silence-btn"></button>
     </div>
     <div class="tv-row">
-      <span class="tv-label">Thème</span>
+      <span class="tv-label">Theme</span>
       <button class="icon-btn" id="tv-theme-btn" style="width:26px;height:26px">
         <svg id="tv-theme-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
@@ -87,15 +87,15 @@
       </button>
     </div>
     <div class="tv-row tv-row-sep">
-      <button class="tv-exit-btn" id="tv-exit-btn">✕&ensp;Quitter le mode TV</button>
+      <button class="tv-exit-btn" id="tv-exit-btn">✕&ensp;Exit TV Mode</button>
     </div>
   </div>
-  <!-- Barre flottante -->
+  <!-- Floating bar -->
   <div class="tv-bar" id="tv-bar">
     <span class="tv-clock" id="tv-clock">00:00</span>
     <div class="tv-dots" id="tv-dots"></div>
     <span class="tv-cd">↻&thinsp;<span id="tv-cd">–</span>s</span>
-    <button class="icon-btn tv-icon-sm" id="tv-settings-btn" title="Paramètres">
+    <button class="icon-btn tv-icon-sm" id="tv-settings-btn" title="Settings">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -115,7 +115,7 @@
   <div class="alert-list" id="alert-list">
     <div class="empty-state">
       <div class="empty-state-icon">⏳</div>
-      <div>Chargement…</div>
+      <div>Loading...</div>
     </div>
   </div>
 </main>

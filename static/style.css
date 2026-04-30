@@ -42,7 +42,7 @@ body {
 
 a { color: inherit; }
 
-/* ── Header ── */
+/* -- Header -- */
 .header {
   position: sticky;
   top: 0;
@@ -194,7 +194,7 @@ a { color: inherit; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Sources bar ── */
+/* -- Sources bar -- */
 .sources-bar {
   display: flex;
   align-items: center;
@@ -230,7 +230,7 @@ a { color: inherit; }
   50%       { opacity: .4; }
 }
 
-/* ── TV Mode ── */
+/* -- TV Mode -- */
 [data-tv="true"] .header  { display: none; }
 [data-tv="true"] .toolbar { display: none; }
 [data-tv="true"] .main    { padding: .5rem; }
@@ -338,7 +338,7 @@ a { color: inherit; }
   border-radius: 50%;
 }
 
-/* ── Main ── */
+/* -- Main -- */
 .main { padding: 1.25rem; }
 
 .toolbar {
@@ -401,7 +401,7 @@ a { color: inherit; }
 .silence-toggle:hover { color: var(--text); border-color: var(--accent); }
 .silence-toggle.active { color: var(--c-silenced); border-color: var(--c-silenced); }
 
-/* ── Alert list ── */
+/* -- Alert list -- */
 .alert-list {
   display: flex;
   flex-direction: column;
@@ -415,7 +415,7 @@ a { color: inherit; }
 }
 .empty-state-icon { font-size: 2.5rem; margin-bottom: .75rem; }
 
-/* ── Alert card ── */
+/* -- Alert card -- */
 .alert-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -547,7 +547,7 @@ a { color: inherit; }
   .hdr-right .refresh-info span:not(.spinner) { display: none; }
 }
 
-/* ── TV mode: couleurs vives ── */
+/* -- TV mode: bright colors -- */
 [data-tv="true"] {
   --c-critical: #ff2d20;
   --c-high:     #ff7500;
@@ -561,7 +561,7 @@ a { color: inherit; }
 [data-tv="true"] .alert-card.sev-info     { background: rgba(0,170,255,.09); }
 [data-tv="true"] .alert-list { gap: .2rem; }
 
-/* ── Ligne compacte (mode TV) ── */
+/* -- Compact line (TV mode) -- */
 .alert-row {
   display: flex;
   align-items: center;
@@ -583,7 +583,7 @@ a { color: inherit; }
 .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
 .alert-row .src-chip { font-size: 10px; }
 
-/* ── Alert Groups ── */
+/* -- Alert Groups -- */
 .alert-group {
   margin-bottom: .75rem;
   border: 1px solid var(--border);
