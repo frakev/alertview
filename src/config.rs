@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -71,4 +73,16 @@ impl Config {
         let config: Config = serde_yaml::from_str(&content)?;
         Ok(config)
     }
+
+    pub async fn load_async(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Cannot read {:?}: {}", path, e))?;
+        let config: Config = serde_yaml::from_str(&content)?;
+        Ok(config)
+    }
 }
+
+// Type pour stocker la config avec possibilité de reload
+pub type SharedConfig = Arc<RwLock<Config>>;
