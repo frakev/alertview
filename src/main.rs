@@ -22,8 +22,15 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Configure logging format from env
-    let use_json_logs = std::env::var("ALERTVIEW_LOG_FORMAT").as_deref() == Ok("json");
+    let config_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "config.yaml".to_string());
+
+    let config = Config::load(&config_path)?;
+    let port = config.port;
+
+    // Configure logging format from config or env
+    let use_json_logs = config.log_format == "json";
     
     if use_json_logs {
         tracing_subscriber::fmt()
@@ -41,13 +48,6 @@ async fn main() -> anyhow::Result<()> {
             )
             .init();
     }
-
-    let config_path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "config.yaml".to_string());
-
-    let config = Config::load(&config_path)?;
-    let port = config.port;
 
     tracing::info!(
         "Starting AlertView on port {port} with {} source(s)",

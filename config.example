@@ -12,7 +12,8 @@ tls_insecure: false    # true to ignore TLS certificate errors (self-signed cert
 cache_ttl_seconds: 0
 
 # Logging configuration
-# Set ALERTVIEW_LOG_FORMAT=json environment variable for JSON logs
+# log_format: "text"  # or "json" for structured logs
+# Can also be set via ALERTVIEW_LOG_FORMAT environment variable
 
 sources:
   - name: "Alertmanager"

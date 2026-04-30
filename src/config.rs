@@ -17,7 +17,14 @@ pub struct Config {
     pub sources: Vec<Source>,
     #[serde(default)]
     pub display: DisplayConfig,
+    #[serde(default = "default_log_format")]
+    pub log_format: String,
+}
 
+fn default_log_format() -> String {
+    std::env::var("ALERTVIEW_LOG_FORMAT")
+        .ok()
+        .unwrap_or_else(|| "text".to_string())
 }
 
 fn default_port() -> u16 {
@@ -128,6 +135,18 @@ mod tests {
         "#).expect("Failed to parse source with link_template");
         
         assert_eq!(source.link_template, Some("https://example.com/alerts?query={{.Labels.alertname}}".to_string()));
+    }
+
+    #[test]
+    fn test_log_format_default() {
+        let config: Config = serde_yaml::from_str("sources: []").expect("Failed to parse config");
+        assert_eq!(config.log_format, "text");
+    }
+
+    #[test]
+    fn test_log_format_json() {
+        let config: Config = serde_yaml::from_str("log_format: json\nsources: []").expect("Failed to parse config");
+        assert_eq!(config.log_format, "json");
     }
 }
 
