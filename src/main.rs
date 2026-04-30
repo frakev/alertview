@@ -539,29 +539,42 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
         }
 
         let tx_clone = tx.clone();
+        let shared_config_clone = shared_config.clone();
+        let config_path_for_task_clone = config_path_for_task.clone();
         
-        // Spawn task to handle change events
-        tokio::spawn(async move {
+        // Spawn blocking task to handle inotify events (rx is sync mpsc)
+        tokio::task::spawn_blocking(move || {
             while let Ok(Ok(events)) = rx.recv() {
                 // Debouncer emits event for any modification
                 tracing::info!("Detected {} file change event(s) for {}, reloading...", events.len(), config_path_for_task);
-                match Config::load_async(&config_path_for_task).await {
-                    Ok(new_config) => {
-                        let mut cfg = shared_config.write().await;
-                        *cfg = new_config;
-                        tracing::info!(
-                            "Config reloaded successfully with {} source(s)",
-                            cfg.sources.len()
-                        );
-                        for s in &cfg.sources {
-                            tracing::info!("  • {} ({})", s.name, s.url);
+                
+                let tx_clone = tx_clone.clone();
+                let shared_config_clone = shared_config_clone.clone();
+                let config_path_for_task = config_path_for_task_clone.clone();
+                
+                // Load config in a blocking context, but we need async for Config::load_async
+                // We'll use tokio::runtime::Handle to spawn an async task
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        match Config::load_async(&config_path_for_task).await {
+                            Ok(new_config) => {
+                                let mut cfg = shared_config_clone.write().await;
+                                *cfg = new_config;
+                                tracing::info!(
+                                    "Config reloaded successfully with {} source(s)",
+                                    cfg.sources.len()
+                                );
+                                for s in &cfg.sources {
+                                    tracing::info!("  • {} ({})", s.name, s.url);
+                                }
+                                // Notify frontend via SSE
+                                let _ = tx_clone.send(AppEvent::ConfigReloaded);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to reload config: {}", e);
+                            }
                         }
-                        // Notify frontend via SSE
-                        let _ = tx_clone.send(AppEvent::ConfigReloaded);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to reload config: {}", e);
-                    }
+                    });
                 }
             }
         });

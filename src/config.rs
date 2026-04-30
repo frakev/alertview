@@ -28,7 +28,7 @@ pub struct Config {
 fn default_config_watch_method() -> String {
     std::env::var("ALERTVIEW_CONFIG_WATCH_METHOD")
         .ok()
-        .unwrap_or_else(|| "inotify".to_string())
+        .unwrap_or_else(|| "polling".to_string())
 }
 
 fn default_config_poll_interval() -> u64 {
