@@ -16,7 +16,7 @@ log_format: "text"  # or "json" for structured logs
 # Can also be set via ALERTVIEW_LOG_FORMAT environment variable
 
 # Config auto-reload configuration
-config_watch_method: "inotify"  # "inotify" (native, default) or "polling"
+config_watch_method: "polling"  # "inotify" (native) or "polling" (default, works everywhere)
 config_poll_interval: 10        # Polling interval in seconds (only used with polling method)
 # Can also be set via ALERTVIEW_CONFIG_WATCH_METHOD and ALERTVIEW_CONFIG_POLL_INTERVAL
 

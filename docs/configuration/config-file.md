@@ -91,7 +91,7 @@ display:
 | `tls_insecure` | bool | false | Skip TLS certificate verification |
 | `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). Maximum 1000 cached entries |
 | `log_format` | string | "text" | Log format: "text" or "json" |
-| `config_watch_method` | string | "inotify" | Method to watch config file: "inotify" (native) or "polling" |
+| `config_watch_method` | string | "polling" | Method to watch config file: "inotify" (native) or "polling" (default, works everywhere) |
 | `config_poll_interval` | u64 | 10 | Polling interval in seconds (only used with polling method) |
 
 ### Sources Configuration

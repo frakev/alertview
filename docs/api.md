@@ -157,6 +157,7 @@ data: {"fingerprint":"alertmanager:abc123","labels":{"alertname":"HighCPUUsage",
 **Event Types:**
 
 - `new_alert`: A new alert has been detected (not previously seen)
+- `config_reloaded`: Configuration file has been reloaded (sent when config changes are detected)
 
 **Notes:**
 
