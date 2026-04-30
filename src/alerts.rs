@@ -73,6 +73,18 @@ struct AmAlert {
 #[derive(Debug, Deserialize)]
 struct AmStatus {
     state: String,
+    #[serde(default)]
+    silenced_by: Vec<String>, // List of silence IDs that silenced this alert
+}
+
+#[derive(Debug, Deserialize)]
+struct AmSilence {
+    id: String,
+    #[serde(rename = "createdBy")]
+    #[allow(dead_code)]
+    created_by: String,
+    comment: String,
+    // Other fields we don't need for now
 }
 
 // ── Zabbix JSON-RPC types ────────────────────────────────────────────────────
@@ -378,6 +390,13 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
     }
 
     let am_alerts: Vec<AmAlert> = resp.json().await?;
+    
+    // Fetch silences to get comment information for silenced alerts
+    let silences = fetch_am_silences(client, source).await.unwrap_or_default();
+    let silence_map: HashMap<String, String> = silences
+        .into_iter()
+        .map(|s| (s.id.clone(), s.comment.clone()))
+        .collect();
 
     let alerts = am_alerts
         .into_iter()
@@ -415,6 +434,22 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             }
             .to_string();
 
+            // Add silence comment to annotations if alert is silenced
+            let mut annotations = a.annotations.clone();
+            if status == "silenced" && !a.status.silenced_by.is_empty() {
+                // Try to find a matching silence comment
+                for silence_id in &a.status.silenced_by {
+                    if let Some(comment) = silence_map.get(silence_id) {
+                        annotations.insert("silence_comment".to_string(), comment.clone());
+                        break; // Use first matching silence
+                    }
+                }
+                // If no specific comment found but silenced, add a generic message
+                if !annotations.contains_key("silence_comment") {
+                    annotations.insert("silence_comment".to_string(), "Silenced in Alertmanager".to_string());
+                }
+            }
+
             // dashboard_url from config takes priority over the internal generator_url
             // Then try link_template, then generator_url
             let link_url = source.dashboard_url.clone()
@@ -426,7 +461,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                     severity: severity.clone(),
                     name: name.clone(),
                     labels: a.labels.clone(),
-                    annotations: a.annotations.clone(),
+                    annotations: annotations.clone(),
                     starts_at: a.starts_at.clone(),
                     ends_at: ends_at.clone(),
                     link_url: None,
@@ -445,7 +480,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 severity,
                 name,
                 labels: a.labels,
-                annotations: a.annotations,
+                annotations,
                 starts_at: a.starts_at,
                 ends_at,
                 link_url,
@@ -454,6 +489,39 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
         .collect();
 
     Ok(alerts)
+}
+
+/// Fetch Alertmanager silences to get comment information
+async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<Vec<AmSilence>> {
+    let base_url: String = match source.source_type {
+        SourceType::Alertmanager => source.url.trim_end_matches('/').to_string(),
+        SourceType::Grafana => format!(
+            "{}/api/alert_manager/grafana/api/v2",
+            source.url.trim_end_matches('/')
+        ),
+        _ => return Ok(vec![]),
+    };
+    
+    let url = format!("{}/silences", base_url);
+    
+    let mut req = client.get(&url);
+    if let Some(auth) = &source.basic_auth {
+        req = req.basic_auth(&auth.username, Some(&auth.password));
+    }
+    if let Some(token) = &source.bearer_token {
+        req = req.bearer_auth(token);
+    }
+    
+    let resp = req.send().await?;
+    if !resp.status().is_success() {
+        // Silences endpoint may not be available or may require different auth
+        // Return empty list - alerts will still work, just without silence comments
+        tracing::warn!("Failed to fetch silences from {}: {}", url, resp.status());
+        return Ok(vec![]);
+    }
+    
+    let silences: Vec<AmSilence> = resp.json().await?;
+    Ok(silences)
 }
 
 pub fn severity_order(severity: &str) -> u8 {

@@ -78,6 +78,13 @@ Alertmanager is the most common alert source and is natively supported by AlertV
 }
 ```
 
+### Silence Comments
+
+When alerts are silenced in Alertmanager, AlertView fetches the silence information and includes the comment in the annotations:
+- `silence_comment`: The comment/message from the silence that silenced this alert
+
+If the silence cannot be fetched or has no comment, a default message "Silenced in Alertmanager" is used.
+
 ### Troubleshooting
 
 **Connection refused:**
@@ -154,6 +161,8 @@ Grafana alerts include additional annotations that you can use in link templates
 - `panelId` - The panel ID
 - `ruleName` - The alert rule name
 - `ruleUrl` - URL to the alert rule
+
+**Silence Comments:** Grafana uses Alertmanager API internally, so silenced alerts also include the `silence_comment` annotation with the silence message.
 
 ### Example Link Template
 
