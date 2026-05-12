@@ -628,6 +628,27 @@ a { color: inherit; }
 .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
 .alert-row .src-chip { font-size: 10px; }
 
+.tv-labels-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  background: rgba(129,140,248,.12);
+  border: 1px solid rgba(129,140,248,.28);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.tv-labels-toggle:hover {
+  background: rgba(129,140,248,.24);
+  box-shadow: 0 0 8px rgba(129,140,248,.2);
+}
+
 /* -- Alert Groups -- */
 .alert-group {
   margin-bottom: .75rem;

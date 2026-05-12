@@ -610,13 +610,13 @@ function cardHtmlTV(a) {
     .join('');
   
   // Generate hidden labels HTML (initially hidden)
-  const hiddenLabelsHtml = has_hidden_labels ? 
-    `<span class="tv-hidden-labels" style="display:none;">` +
-    hidden_labels
-      .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
-      .map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`)
-      .join('') +
-    `</span>` : '';
+  const hiddenLabelsList = hidden_labels
+    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity');
+  const hiddenLabelsHtml = hiddenLabelsList.length > 0
+    ? `<span class="tv-hidden-labels" style="display:none;">` +
+      hiddenLabelsList.map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('') +
+      `</span>` : '';
+  const showToggle = hiddenLabelsList.length > 0;
 
   return `
     <div class="alert-card alert-row sev-${sev}" data-fp="${esc(a.fingerprint)}">
@@ -629,7 +629,7 @@ function cardHtmlTV(a) {
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
       ${labelsHtml}
-      ${has_hidden_labels ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)" title="Show more labels">⋮</button>` : ''}
+      ${showToggle ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)">+${hiddenLabelsList.length}</button>` : ''}
       ${hiddenLabelsHtml}
       ${genLinkHtml(a.link_url, a.source_type)}
     </div>`;
@@ -681,7 +681,8 @@ const TV = {
     if (hiddenLabels) {
       const isHidden = hiddenLabels.style.display === 'none';
       hiddenLabels.style.display = isHidden ? 'inline' : 'none';
-      button.title = isHidden ? 'Hide extra labels' : 'Show more labels';
+      const count = hiddenLabels.querySelectorAll('.lbl').length;
+      button.textContent = isHidden ? '−' : `+${count}`;
     }
   },
 
