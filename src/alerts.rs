@@ -455,16 +455,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
         return fetch_zabbix_alerts(client, source).await;
     }
 
-    let url = match source.source_type {
-        SourceType::Alertmanager => {
-            format!("{}/api/v2/alerts", source.url.trim_end_matches('/'))
-        }
-        SourceType::Grafana => format!(
-            "{}/api/alertmanager/grafana/api/v2/alerts",
-            source.url.trim_end_matches('/')
-        ),
-        SourceType::Zabbix => unreachable!(),
-    };
+    let url = format!("{}/alerts", source.url.trim_end_matches('/'));
 
     let mut req = client.get(&url);
 
@@ -584,16 +575,11 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
 /// Fetch Alertmanager silences to get comment information
 async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<Vec<AmSilence>> {
-    let base_url: String = match source.source_type {
-        SourceType::Alertmanager => source.url.trim_end_matches('/').to_string(),
-        SourceType::Grafana => format!(
-            "{}/api/alert_manager/grafana/api/v2",
-            source.url.trim_end_matches('/')
-        ),
-        _ => return Ok(vec![]),
-    };
-    
-    let url = format!("{}/silences", base_url);
+    if matches!(source.source_type, SourceType::Zabbix) {
+        return Ok(vec![]);
+    }
+
+    let url = format!("{}/silences", source.url.trim_end_matches('/'));
     
     let mut req = client.get(&url);
     if let Some(auth) = &source.basic_auth {
