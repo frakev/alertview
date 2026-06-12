@@ -51,7 +51,7 @@ jobs:
           profile: minimal
 
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --target x86_64-unknown-linux-gnu
 
       - name: Create tarball
         run: |
