@@ -55,6 +55,9 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
+      - name: Verify binary exists
+        run: ls -la target/x86_64-unknown-linux-gnu/release/alertview
+
       - name: Create tarball
         run: |
           mkdir -p alertview-${{ steps.version.outputs.VERSION }}
@@ -63,13 +66,14 @@ jobs:
           cp README.md alertview-${{ steps.version.outputs.VERSION }}/
           cp LICENSE alertview-${{ steps.version.outputs.VERSION }}/
           tar czvf alertview-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz alertview-${{ steps.version.outputs.VERSION }}
+          ls -la alertview-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           files: alertview-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || secrets.GHCR_TOKEN }}
 
   update-changelog:
     name: Update CHANGELOG
