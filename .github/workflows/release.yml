@@ -58,7 +58,7 @@ jobs:
       - name: Create tarball
         run: |
           mkdir -p alertview-${{ steps.version.outputs.VERSION }}
-          cp target/release/alertview alertview-${{ steps.version.outputs.VERSION }}/
+          cp target/x86_64-unknown-linux-gnu/release/alertview alertview-${{ steps.version.outputs.VERSION }}/
           cp config.example alertview-${{ steps.version.outputs.VERSION }}/config.example
           cp README.md alertview-${{ steps.version.outputs.VERSION }}/
           cp LICENSE alertview-${{ steps.version.outputs.VERSION }}/
