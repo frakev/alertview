@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AlertView v${{ steps.version.outputs.VERSION }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## What's Changed
+            
+            ### Features
+            - See [CHANGELOG.md](https://github.com/frakev/alertview/blob/main/CHANGELOG.md)
+            
+            ### Fixes
+            - See [CHANGELOG.md](https://github.com/frakev/alertview/blob/main/CHANGELOG.md)
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+  build-assets:
+    name: Build Release Assets
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Create tarball
+        run: |
+          mkdir -p alertview-${{ steps.version.outputs.VERSION }}
+          cp target/release/alertview alertview-${{ steps.version.outputs.VERSION }}/
+          cp config.example alertview-${{ steps.version.outputs.VERSION }}/config.example
+          cp README.md alertview-${{ steps.version.outputs.VERSION }}/
+          cp LICENSE alertview-${{ steps.version.outputs.VERSION }}/
+          tar czvf alertview-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz alertview-${{ steps.version.outputs.VERSION }}
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: alertview-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-changelog:
+    name: Update CHANGELOG
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG
+        run: |
+          # Move Unreleased section to current version
+          sed -i 's/## \[Unreleased\]/## [Unreleased]\n\n## ['${{ steps.version.outputs.VERSION }}'] - '$(date +%Y-%m-%d)/' CHANGELOG.md
+          
+          # Add link to compare
+          echo "" >> CHANGELOG.md
+          echo "[${{ steps.version.outputs.VERSION }}]: https://github.com/frakev/alertview/compare/v$(git tag --sort=-v:refname | grep -A1 ${{ steps.version.outputs.VERSION }} | tail -1)...v${{ steps.version.outputs.VERSION }}" >> CHANGELOG.md
+
+      - name: Commit CHANGELOG
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: update CHANGELOG for v${{ steps.version.outputs.VERSION }}"
+          git push
