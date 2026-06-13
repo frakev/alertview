@@ -474,7 +474,13 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
     let am_alerts: Vec<AmAlert> = resp.json().await?;
     
     // Fetch silences to get comment information for silenced alerts
-    let silences = fetch_am_silences(client, source).await.unwrap_or_default();
+    let silences = match fetch_am_silences(client, source).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Failed to fetch silences: {}", e);
+            Vec::new()
+        }
+    };
     let silence_map: HashMap<String, String> = silences
         .into_iter()
         .map(|s| (s.id.clone(), s.comment.clone()))

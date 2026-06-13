@@ -65,8 +65,7 @@ fn default_cache_ttl() -> u64 {
         .unwrap_or(0) // 0 = disabled
 }
 
-impl Config {
-}
+
 
 #[cfg(test)]
 mod tests {
