@@ -831,3 +831,29 @@ a { color: inherit; }
   animation: none;
   transform: none;
 }
+
+/* -- Footer: app name + build version -- */
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
+  font-size: .72rem;
+  color: var(--text-dim);
+}
+.app-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.app-footer a:hover { color: var(--accent); }
+.app-footer .app-version {
+  font-variant-numeric: tabular-nums;
+  padding: .1rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+[data-tv="true"] .app-footer { display: none; }

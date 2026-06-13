@@ -1,6 +1,8 @@
 FROM rust:1 AS builder
 WORKDIR /app
-COPY Cargo.toml ./
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+COPY Cargo.toml build.rs ./
 COPY src ./src
 COPY static ./static
 RUN cargo build --release

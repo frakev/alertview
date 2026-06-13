@@ -176,8 +176,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve_index() -> Html<&'static str> {
-    Html(INDEX_HTML)
+/// Release version, injected at build time by build.rs (CI git tag, else Cargo version).
+const VERSION: &str = env!("ALERTVIEW_VERSION");
+
+async fn serve_index() -> Html<String> {
+    Html(INDEX_HTML.replace("__APP_VERSION__", VERSION))
 }
 
 async fn serve_css() -> ([(&'static str, &'static str); 1], &'static str) {
