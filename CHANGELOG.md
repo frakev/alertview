@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Progressive Web App (PWA) support** — AlertView is now installable on Android (Chrome), iOS (Safari) and desktop
+  - Web app manifest (`/manifest.webmanifest`) with standalone display mode and app icons
+  - Service worker (`/sw.js`) caching the static app shell; live data (`/api/*`, `/events`) is never cached
+  - App icons (192px, 512px, maskable, apple-touch) embedded in the binary
+  - Requires a secure context (HTTPS, or `localhost`) for installation
 - Comprehensive documentation structure in `docs/` directory
 - API documentation (`docs/api.md`)
 - Troubleshooting guide (`docs/troubleshooting.md`)

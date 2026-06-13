@@ -16,6 +16,14 @@ static INDEX_HTML: &str = include_str!("../static/index.html");
 static STYLE_CSS: &str  = include_str!("../static/style.css");
 static APP_JS: &str     = include_str!("../static/app.js");
 
+// PWA assets (manifest, service worker, icons) embedded in the binary.
+static MANIFEST: &str = include_str!("../static/manifest.webmanifest");
+static SW_JS: &str    = include_str!("../static/sw.js");
+static ICON_192: &[u8]          = include_bytes!("../static/icons/icon-192.png");
+static ICON_512: &[u8]          = include_bytes!("../static/icons/icon-512.png");
+static ICON_MASKABLE_512: &[u8] = include_bytes!("../static/icons/icon-maskable-512.png");
+static APPLE_ICON: &[u8]        = include_bytes!("../static/icons/apple-touch-icon.png");
+
 fn print_help() {
     println!("AlertView - Alert Aggregation Dashboard");
     println!();
@@ -53,7 +61,7 @@ const MAX_SSE_CONNECTIONS: usize = 100;
 // SSE Event types
 #[derive(Clone, Debug)]
 enum AppEvent {
-    NewAlert(Alert),
+    NewAlert(Box<Alert>),
     ConfigReloaded,
 }
 
@@ -149,6 +157,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(serve_index))
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js))
+        .route("/manifest.webmanifest", get(serve_manifest))
+        .route("/sw.js", get(serve_sw))
+        .route("/icons/icon-192.png", get(serve_icon_192))
+        .route("/icons/icon-512.png", get(serve_icon_512))
+        .route("/icons/icon-maskable-512.png", get(serve_icon_maskable))
+        .route("/icons/apple-touch-icon.png", get(serve_apple_icon))
         .route("/api/alerts", get(get_alerts))
         .route("/health", get(health_check))
         .route("/events", get(sse_handler))
@@ -174,11 +188,53 @@ async fn serve_js() -> ([(&'static str, &'static str); 1], &'static str) {
     ([("content-type", "application/javascript; charset=utf-8")], APP_JS)
 }
 
+async fn serve_manifest() -> ([(&'static str, &'static str); 1], &'static str) {
+    ([("content-type", "application/manifest+json; charset=utf-8")], MANIFEST)
+}
+
+async fn serve_sw() -> ([(&'static str, &'static str); 2], &'static str) {
+    // service-worker-allowed lets the SW control the whole origin scope ("/").
+    (
+        [
+            ("content-type", "application/javascript; charset=utf-8"),
+            ("service-worker-allowed", "/"),
+        ],
+        SW_JS,
+    )
+}
+
+fn png_response(bytes: &'static [u8]) -> ([(&'static str, &'static str); 2], &'static [u8]) {
+    (
+        [
+            ("content-type", "image/png"),
+            ("cache-control", "public, max-age=604800"),
+        ],
+        bytes,
+    )
+}
+
+async fn serve_icon_192() -> ([(&'static str, &'static str); 2], &'static [u8]) {
+    png_response(ICON_192)
+}
+
+async fn serve_icon_512() -> ([(&'static str, &'static str); 2], &'static [u8]) {
+    png_response(ICON_512)
+}
+
+async fn serve_icon_maskable() -> ([(&'static str, &'static str); 2], &'static [u8]) {
+    png_response(ICON_MASKABLE_512)
+}
+
+async fn serve_apple_icon() -> ([(&'static str, &'static str); 2], &'static [u8]) {
+    png_response(APPLE_ICON)
+}
+
 async fn health_check() -> &'static str {
     "OK"
 }
 
 // Server-Sent Events handler for real-time alert notifications
+// Establishes a connection with the client and streams alert updates in real-time
 async fn sse_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<axum::response::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, axum::http::StatusCode> {
@@ -211,7 +267,7 @@ async fn sse_handler(
                 Ok(event) => {
                     match event {
                         AppEvent::NewAlert(alert) => {
-                            let json = serde_json::to_string(&alert).unwrap_or_default();
+                            let json = serde_json::to_string(&*alert).unwrap_or_default();
                             let event = Event::default()
                                 .event("new_alert")
                                 .data(json);
@@ -346,7 +402,7 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
 
     // Broadcast new alerts to SSE clients
     for alert in new_alerts {
-        let _ = state.tx.send(AppEvent::NewAlert(alert));
+        let _ = state.tx.send(AppEvent::NewAlert(Box::new(alert)));
     }
 
     all_alerts.sort_by(|a, b| {
@@ -376,6 +432,7 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
 }
 
 // Fetch alerts from a source with retry logic and per-source timeout
+// Implements exponential backoff for retries and respects source-specific timeouts
 async fn fetch_source_alerts_with_retry(
     client: &reqwest::Client,
     source: &config::Source,
@@ -430,6 +487,7 @@ async fn fetch_source_alerts_with_retry(
 }
 
 // Function to watch config file for changes (using inotify or polling)
+// Automatically reloads configuration when file changes are detected
 fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_method: String, poll_interval_secs: u64, tx: broadcast::Sender<AppEvent>) {
     use std::path::Path;
     use std::{fs, time::SystemTime};
@@ -582,6 +640,7 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
 }
 
 // Fallback polling watcher function
+// Used when inotify is not available or fails to initialize
 fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_interval_secs: u64, tx: broadcast::Sender<AppEvent>) {
     use std::fs;
     use std::time::SystemTime;

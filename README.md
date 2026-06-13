@@ -19,6 +19,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - **Retry logic** with exponential backoff per source
 - **Gzip compression** for API responses
 - **Health check endpoint** (`/health`)
+- **Installable as a PWA** — add AlertView to your home screen on Android, iOS or desktop (standalone, full-screen)
 
 ## Table of Contents
 - [Requirements](#requirements)
@@ -27,6 +28,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - [Running Locally](#running-locally)
 - [Docker](#docker)
 - [Kubernetes Deployment](#kubernetes-deployment)
+- [Install as an App (PWA)](#install-as-an-app-pwa)
 - [API](#api)
 - [Tests](#tests)
 
@@ -321,6 +323,48 @@ push v1.2.3   →  ghcr.io/frakev/alertview:1.2.3 + :latest
 ```
 
 The workflow targets a `self-hosted` runner labeled `k8s-home`. Change `runs-on` in the workflow file if your runner has a different label.
+
+## Install as an App (PWA)
+
+AlertView is a [Progressive Web App](https://web.dev/progressive-web-apps/), so it can be installed
+on a phone, tablet or desktop and launched like a native app — full-screen, with its own icon and no
+browser address bar.
+
+### Android (Chrome)
+
+1. Open AlertView in Chrome over **HTTPS** (e.g. `https://alerts.example.com`).
+2. Open the **⋮** menu and tap **Install app** (or **Add to Home screen**). Chrome may also show an
+   install banner automatically.
+3. AlertView opens standalone from your home screen.
+
+### iOS (Safari)
+
+Open AlertView, tap the **Share** button, then **Add to Home Screen**.
+
+### Desktop (Chrome / Edge)
+
+Click the **install icon** in the address bar, or use the browser menu → **Install AlertView**.
+
+### Requirements
+
+- A **secure context** is required: this means **HTTPS**, or `http://localhost` for local testing.
+  Plain-HTTP access over a LAN IP (e.g. `http://192.168.1.10:8080`) will not offer installation.
+  The provided [Kubernetes ingress](05-ingress.yaml) already terminates TLS via cert-manager /
+  Let's Encrypt — just point it at your own domain.
+
+### How it works
+
+The PWA assets are embedded in the binary and served from these routes:
+
+| Route | Purpose |
+|-------|---------|
+| `/manifest.webmanifest` | App metadata (name, icons, standalone display) |
+| `/sw.js` | Service worker (caches the static shell for fast/offline launch) |
+| `/icons/*.png` | App icons (192px, 512px, maskable, apple-touch) |
+
+> **Live data is never cached.** The service worker only caches the static app shell
+> (HTML/CSS/JS/icons). Requests to `/api/*`, `/events` (SSE) and `/health` always go straight to the
+> network, so alerts stay real-time.
 
 ## API
 
