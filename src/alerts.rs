@@ -172,6 +172,8 @@ struct ZabbixTag {
 struct ZabbixTrigger {
     triggerid: String,
     #[serde(default)]
+    status: String, // "0" = enabled, "1" = disabled
+    #[serde(default)]
     hosts: Vec<ZabbixHostInfo>,
     #[serde(default)]
     groups: Vec<ZabbixGroupInfo>,
@@ -307,7 +309,7 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
         "trigger.get",
         serde_json::json!({
             "triggerids": trigger_ids,
-            "output": ["triggerid"],
+            "output": ["triggerid", "status"],
             "selectGroups": ["name"],
             "selectHosts": ["name"]
         }),
@@ -316,6 +318,20 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
 
     let trigger_map: HashMap<String, ZabbixTrigger> =
         triggers.into_iter().map(|t| (t.triggerid.clone(), t)).collect();
+
+    // Drop problems whose trigger is disabled. Zabbix's own Problems UI hides these,
+    // but problem.get still returns them — e.g. orphaned LLD triggers stuck "not
+    // supported" (rescheduled Nomad per-alloc CSI mounts). Without this filter,
+    // alertview shows alerts that no longer appear in Zabbix.
+    let before = problems.len();
+    let problems: Vec<ZabbixProblem> = problems
+        .into_iter()
+        .filter(|p| trigger_map.get(&p.objectid).map_or(true, |t| t.status != "1"))
+        .collect();
+    let dropped = before - problems.len();
+    if dropped > 0 {
+        tracing::debug!("Filtered {} Zabbix problem(s) from disabled triggers", dropped);
+    }
 
     let alerts = problems
         .into_iter()
