@@ -4,6 +4,8 @@
 
 A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with Rust (Axum) and a single-page HTML frontend — no database, no dependencies at runtime.
 
+> ⚠️ **Security:** AlertView has no built-in authentication and binds to `0.0.0.0`. Its `/api/alerts` endpoint exposes alert data (hostnames, labels, messages). **Never expose it directly to an untrusted network** — always place it behind a reverse proxy with authentication and TLS (see [Reverse proxy](docs/deployment/reverse-proxy.md)).
+
 **Features:**
 - Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
 - Severity-colored cards (critical / high / warning / info)
@@ -473,3 +475,7 @@ The tests verify:
 - Source-specific configuration (timeout, retry policy)
 - Link template rendering with various placeholders
 - Display configuration (theme, timezone, labels)
+
+## License
+
+AlertView is released under the [MIT License](LICENSE).
