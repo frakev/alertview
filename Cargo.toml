@@ -1,7 +1,11 @@
 [package]
 name = "alertview"
-version = "0.1.0"
+version = "0.4.6"
 edition = "2021"
+description = "A lightweight alert dashboard for Alertmanager, Grafana and Zabbix"
+license = "MIT"
+repository = "https://github.com/frakev/alertview"
+readme = "README.md"
 
 [dependencies]
 axum = "0.7"
