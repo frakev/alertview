@@ -57,6 +57,7 @@ sources:
     type: alertmanager
     url: "http://alertmanager.monitoring.svc.cluster.local:9093"
     dashboard_url: "https://grafana.example.com/alerting/list"  # optional link on cards
+    severity_label: "severity"   # label used to classify severity (case-insensitive, default: "severity")
 
   - name: "Grafana"
     type: grafana

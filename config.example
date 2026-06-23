@@ -26,6 +26,9 @@ sources:
     url: "http://alertmanager.example.com:9093"
     dashboard_url: "https://grafana.example.com/alerting/list"
     timeout: 15  # seconds (default: 15)
+    # Label used to classify severity (case-insensitive, default: "severity").
+    # Set this if your alerts carry the level under a different label name.
+    # severity_label: "Severity"
     # link_template: "https://grafana.example.com/alerts?query={{.Labels.alertname}}"
     # basic_auth:
     #   username: admin
