@@ -628,34 +628,6 @@ a { color: inherit; }
 .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
 .alert-row .src-chip { font-size: 10px; }
 
-/* Right-side metadata as fixed columns so they line up across rows */
-.alert-row .row-meta {
-  display: grid;
-  grid-template-columns: 7rem 4.5rem 10rem auto;
-  align-items: center;
-  gap: .45rem;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-.alert-row .row-meta .src-chip {
-  justify-self: start;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.alert-row .row-meta .time-ago {
-  justify-self: end;
-  text-align: right;
-}
-.alert-row .row-labels {
-  display: flex;
-  align-items: center;
-  gap: .3rem;
-  min-width: 0;
-  overflow: hidden;
-}
-.alert-row .row-labels .lbl { white-space: nowrap; }
-
 .tv-labels-toggle {
   display: inline-flex;
   align-items: center;

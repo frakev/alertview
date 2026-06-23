@@ -1,6 +1,6 @@
 [package]
 name = "alertview"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 description = "A lightweight alert dashboard for Alertmanager, Grafana and Zabbix"
 license = "MIT"
