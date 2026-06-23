@@ -552,10 +552,12 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 }
             }
 
-            // dashboard_url from config takes priority over the internal generator_url
-            // Then try link_template, then generator_url
-            let link_url = source.dashboard_url.clone()
-                .or(source.link_template.clone().and_then(|t| apply_link_template(&t, &Alert {
+            // Prefer per-alert links over the static dashboard_url:
+            // 1. link_template (explicit per-alert template from config)
+            // 2. generator_url (per-alert link provided by Grafana/Alertmanager)
+            // 3. dashboard_url (static fallback, same for every alert)
+            let link_url = source.link_template.clone()
+                .and_then(|t| apply_link_template(&t, &Alert {
                     fingerprint: format!("{}:{}", source.name, a.fingerprint),
                     source: source.name.clone(),
                     source_type: source_type_str.clone(),
@@ -567,12 +569,13 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                     starts_at: a.starts_at.clone(),
                     ends_at: ends_at.clone(),
                     link_url: None,
-                })))
+                }))
                 .or(if a.generator_url.is_empty() {
                     None
                 } else {
                     Some(a.generator_url)
-                });
+                })
+                .or(source.dashboard_url.clone());
 
             Alert {
                 fingerprint: format!("{}:{}", source.name, a.fingerprint),
