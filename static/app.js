@@ -628,10 +628,11 @@ function getSourceLabel(sourceType) {
   return labels[sourceType] || "Open in source";
 }
 
-function genLinkHtml(url, sourceType) {
+function genLinkHtml(url, sourceType, sourceName) {
   if (!url) return '';
   const label = sourceType ? getSourceLabel(sourceType) : "Open in Prometheus/Grafana";
-  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="${esc(label)}">
+  const title = sourceName ? `${sourceName} — ${label}` : label;
+  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="${esc(title)}">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
       <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
@@ -708,13 +709,12 @@ function cardHtmlTV(a) {
       <span class="sev-badge sev-${sev}">${sev}</span>
       <span class="status-badge status-${a.status}">${a.status}</span>
       <span class="row-summary">${esc(summary)}</span>
-      <span class="src-chip">${esc(a.source)}</span>
-      <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
       ${labelsHtml}
       ${showToggle ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)">+${hiddenLabelsList.length}</button>` : ''}
       ${hiddenLabelsHtml}
-      ${genLinkHtml(a.link_url, a.source_type)}
+      <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
+      ${genLinkHtml(a.link_url, a.source_type, a.source)}
     </div>`;
 }
 

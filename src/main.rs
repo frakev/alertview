@@ -5,6 +5,7 @@ use futures::stream;
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tower_http::compression::CompressionLayer;
@@ -70,7 +71,7 @@ struct AppState {
     client: reqwest::Client,
     cache: SharedAlertCache,
     tx: broadcast::Sender<AppEvent>,
-    sse_connections: Arc<tokio::sync::RwLock<usize>>,
+    sse_connections: Arc<AtomicUsize>,
 }
 
 #[tokio::main]
@@ -144,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
         client,
         cache,
         tx: tx.clone(),
-        sse_connections: Arc::new(tokio::sync::RwLock::new(0)),
+        sse_connections: Arc::new(AtomicUsize::new(0)),
     });
 
     // Start config file watcher
@@ -238,66 +239,61 @@ async fn health_check() -> &'static str {
 
 // Server-Sent Events handler for real-time alert notifications
 // Establishes a connection with the client and streams alert updates in real-time
+// Decrements the SSE connection counter whenever the stream is dropped,
+// regardless of how it ends (client disconnect, server shutdown, lag).
+struct SseGuard(Arc<AtomicUsize>);
+impl Drop for SseGuard {
+    fn drop(&mut self) {
+        let remaining = self.0.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
+        tracing::debug!("SSE connection closed (total: {})", remaining);
+    }
+}
+
 async fn sse_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<axum::response::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, axum::http::StatusCode> {
     use axum::response::sse::{Event, KeepAlive};
     use futures::stream::StreamExt as _;
-    
-    // Check connection limit
-    {
-        let connections = state.sse_connections.read().await;
-        if *connections >= MAX_SSE_CONNECTIONS {
-            tracing::warn!("SSE connection limit reached ({}/{})", *connections, MAX_SSE_CONNECTIONS);
-            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
-        }
+    use tokio::sync::broadcast::error::RecvError;
+
+    // Reserve a slot; reject if we'd exceed the limit. Decrementing is handled
+    // by SseGuard's Drop so a client disconnect can never leak a slot.
+    let count = state.sse_connections.fetch_add(1, Ordering::SeqCst) + 1;
+    if count > MAX_SSE_CONNECTIONS {
+        state.sse_connections.fetch_sub(1, Ordering::SeqCst);
+        tracing::warn!("SSE connection limit reached ({}/{})", count - 1, MAX_SSE_CONNECTIONS);
+        return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
     }
-    
-    // Increment connection counter
-    {
-        let mut connections = state.sse_connections.write().await;
-        *connections += 1;
-        tracing::debug!("SSE connection opened (total: {})", *connections);
-    }
-    
+    tracing::debug!("SSE connection opened (total: {})", count);
+    let guard = SseGuard(state.sse_connections.clone());
+
     let rx = state.tx.subscribe();
-    
-    // Create a stream of SSE events from the broadcast channel
-    let event_stream = stream::unfold(rx, move |mut rx| {
-        let state_clone = state.clone();
-        async move {
+
+    // Create a stream of SSE events from the broadcast channel. The guard is
+    // carried in the stream state so it drops (and decrements) with the stream.
+    let event_stream = stream::unfold((rx, guard), move |(mut rx, guard)| async move {
+        loop {
             match rx.recv().await {
-                Ok(event) => {
-                    match event {
-                        AppEvent::NewAlert(alert) => {
-                            let json = serde_json::to_string(&*alert).unwrap_or_default();
-                            let event = Event::default()
-                                .event("new_alert")
-                                .data(json);
-                            Some((event, rx))
-                        }
-                        AppEvent::ConfigReloaded => {
-                            let event = Event::default()
-                                .event("config_reloaded")
-                                .data("config reloaded");
-                            Some((event, rx))
-                        }
-                    }
+                Ok(AppEvent::NewAlert(alert)) => {
+                    let json = serde_json::to_string(&*alert).unwrap_or_default();
+                    let event = Event::default().event("new_alert").data(json);
+                    return Some((event, (rx, guard)));
                 }
-                Err(_) => {
-                    // Decrement connection counter on error
-                    let mut connections = state_clone.sse_connections.write().await;
-                    *connections = connections.saturating_sub(1);
-                    tracing::debug!("SSE connection closed (total: {})", *connections);
-                    None // Channel closed
+                Ok(AppEvent::ConfigReloaded) => {
+                    let event = Event::default().event("config_reloaded").data("config reloaded");
+                    return Some((event, (rx, guard)));
                 }
+                // Receiver fell behind: skip the missed events, keep the connection.
+                Err(RecvError::Lagged(_)) => continue,
+                // Sender dropped (server shutdown): end the stream.
+                Err(RecvError::Closed) => return None,
             }
         }
     });
-    
+
     // Convert to Result stream (SSE requires Result)
     let event_stream = event_stream.map(Ok);
-    
+
     Ok(axum::response::Sse::new(event_stream)
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(30))))
 }
