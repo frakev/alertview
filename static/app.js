@@ -708,13 +708,13 @@ function cardHtmlTV(a) {
       <span class="sev-badge sev-${sev}">${sev}</span>
       <span class="status-badge status-${a.status}">${a.status}</span>
       <span class="row-summary">${esc(summary)}</span>
-      <span class="src-chip">${esc(a.source)}</span>
-      <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
-      ${labelsHtml}
-      ${showToggle ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)">+${hiddenLabelsList.length}</button>` : ''}
-      ${hiddenLabelsHtml}
-      ${genLinkHtml(a.link_url, a.source_type)}
+      <span class="row-meta">
+        <span class="src-chip">${esc(a.source)}</span>
+        <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
+        <span class="row-labels">${labelsHtml}${showToggle ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)">+${hiddenLabelsList.length}</button>` : ''}${hiddenLabelsHtml}</span>
+        ${genLinkHtml(a.link_url, a.source_type)}
+      </span>
     </div>`;
 }
 
