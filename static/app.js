@@ -264,6 +264,7 @@ const App = {
   countdownTimer: null,
   countdown:      0,
   loading:        false,
+  openGroups:     new Set(),
 };
 
 /* -- Search -- */
@@ -440,6 +441,53 @@ function renderSources() {
     </span>`).join('');
 }
 
+/* Build a single DOM element from an HTML string. */
+function htmlToEl(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+
+/* Keyed DOM reconciliation: add/remove/replace/reorder only the children that
+   actually changed, instead of rebuilding the whole container. Nodes are matched
+   by a key stored on the element; a node is replaced only when its HTML differs. */
+function reconcileChildren(container, items, getKey, getHtml) {
+  const existing = new Map();
+  for (const child of Array.from(container.children)) {
+    if (child.__key != null) existing.set(child.__key, child);
+  }
+
+  const seen = new Set();
+  let prev = null;
+  for (const item of items) {
+    const key = getKey(item);
+    const html = getHtml(item);
+    seen.add(key);
+
+    let node = existing.get(key);
+    if (!node) {
+      node = htmlToEl(html);
+    } else if (node.__html !== html) {
+      const fresh = htmlToEl(html);
+      node.replaceWith(fresh);
+      node = fresh;
+    }
+    node.__key = key;
+    node.__html = html;
+
+    // Move into position only if it isn't already there.
+    const ref = prev ? prev.nextSibling : container.firstChild;
+    if (node !== ref) container.insertBefore(node, ref);
+    prev = node;
+  }
+
+  // Drop anything no longer present (including non-keyed leftovers, e.g. the
+  // empty-state placeholder when switching back to a populated list).
+  for (const child of Array.from(container.children)) {
+    if (child.__key == null || !seen.has(child.__key)) child.remove();
+  }
+}
+
 function renderAlerts() {
   const filtered = filteredAlerts();
   const total    = App.data?.alerts.length ?? 0;
@@ -459,63 +507,102 @@ function renderAlerts() {
   }
 
   // Check if grouping is enabled and we have groups
-  const groups = App.data?.groups || [];
+  const groups  = App.data?.groups || [];
   const groupBy = App.data?.group_by || [];
-  
+
   if (groups.length > 0 && groupBy.length > 0) {
-    // Render grouped view
-    listEl.innerHTML = groups.map(group => groupHtml(group, filtered)).join('');
+    renderGroupedAlerts(listEl, groups, filtered);
   } else {
-    // Render flat list
-    listEl.innerHTML = filtered.map(cardHtml).join('');
+    reconcileChildren(listEl, filtered, a => a.fingerprint, cardHtml);
   }
 
-  if (App.freshFps.size) {
-    listEl.querySelectorAll('.alert-card').forEach(el => {
-      if (App.freshFps.has(el.dataset.fp)) el.classList.add('new');
-    });
-  }
+  // Highlight freshly arrived alerts (and clear the highlight from the rest).
+  listEl.querySelectorAll('.alert-card').forEach(el => {
+    el.classList.toggle('new', App.freshFps.has(el.dataset.fp));
+  });
 }
 
-function groupHtml(group, filteredAlerts) {
-  // Filter alerts that belong to this group
-  const groupAlerts = filteredAlerts.filter(a => {
-    const groupKeys = group.key.split(',').map(k => {
-      const [key, value] = k.split('=');
-      return { key, value };
-    });
-    
-    return groupKeys.every(({ key, value }) => {
-      return a.labels?.[key] === value;
-    });
+function alertsInGroup(group, filtered) {
+  const groupKeys = group.key.split(',').map(k => {
+    const [key, value] = k.split('=');
+    return { key, value };
   });
-  
-  if (groupAlerts.length === 0) return '';
-  
-  const sevCounts = group.severity_counts || {};
-  const sevBadges = Object.entries(sevCounts)
+  return filtered.filter(a => groupKeys.every(({ key, value }) => a.labels?.[key] === value));
+}
+
+function groupSevBadges(group) {
+  return Object.entries(group.severity_counts || {})
     .sort(([a], [b]) => severityOrder(a) - severityOrder(b))
     .map(([sev, count]) => `<span class="sev-badge sev-${sev}">${count} ${sev}</span>`)
     .join('');
-  
-  // Extract group label for display
+}
+
+/* Group shell (header + empty body); cards are reconciled separately so that
+   expand/collapse state and individual cards survive a refresh. */
+function groupShellHtml(group) {
   const groupLabel = group.key.split(',').map(k => {
     const [key, value] = k.split('=');
     return `<span class="lbl">${esc(key)}=<b>${esc(value)}</b></span>`;
   }).join('');
-  
+
   return `
     <div class="alert-group" data-group-key="${esc(group.key)}">
       <div class="group-header" onclick="toggleGroup('${esc(group.key)}')">
         <span class="group-toggle">▶</span>
         <span class="group-label">${groupLabel}</span>
-        <span class="group-count">${groupAlerts.length} alert${groupAlerts.length !== 1 ? 's' : ''}</span>
-        <span class="group-severities">${sevBadges}</span>
+        <span class="group-count"></span>
+        <span class="group-severities"></span>
       </div>
-      <div class="group-alerts" id="group-${esc(group.key)}" style="display: none;">
-        ${groupAlerts.map(cardHtml).join('')}
-      </div>
+      <div class="group-alerts" id="group-${esc(group.key)}" style="display:none;"></div>
     </div>`;
+}
+
+function applyGroupOpen(groupEl, isOpen) {
+  groupEl.querySelector('.group-alerts').style.display = isOpen ? 'block' : 'none';
+  groupEl.querySelector('.group-toggle').textContent = isOpen ? '▼' : '▶';
+}
+
+function renderGroupedAlerts(listEl, groups, filtered) {
+  const visible = groups
+    .map(group => ({ group, alerts: alertsInGroup(group, filtered) }))
+    .filter(x => x.alerts.length > 0);
+
+  const existing = new Map();
+  for (const child of Array.from(listEl.children)) {
+    if (child.__groupKey != null) existing.set(child.__groupKey, child);
+  }
+
+  const seen = new Set();
+  let prev = null;
+  for (const { group, alerts } of visible) {
+    seen.add(group.key);
+
+    let groupEl = existing.get(group.key);
+    if (!groupEl) {
+      groupEl = htmlToEl(groupShellHtml(group));
+      groupEl.__groupKey = group.key;
+    }
+
+    // Update header counts in place (no full rebuild).
+    const countEl = groupEl.querySelector('.group-count');
+    const countTxt = `${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`;
+    if (countEl.textContent !== countTxt) countEl.textContent = countTxt;
+    const sevEl = groupEl.querySelector('.group-severities');
+    const sevHtml = groupSevBadges(group);
+    if (sevEl.innerHTML !== sevHtml) sevEl.innerHTML = sevHtml;
+
+    // Reconcile the cards inside the group, then restore open/closed state.
+    reconcileChildren(groupEl.querySelector('.group-alerts'), alerts, a => a.fingerprint, cardHtml);
+    applyGroupOpen(groupEl, App.openGroups.has(group.key));
+
+    const ref = prev ? prev.nextSibling : listEl.firstChild;
+    if (groupEl !== ref) listEl.insertBefore(groupEl, ref);
+    prev = groupEl;
+  }
+
+  for (const child of Array.from(listEl.children)) {
+    if (child.__groupKey == null || !seen.has(child.__groupKey)) child.remove();
+  }
 }
 
 function severityOrder(sev) {
@@ -524,16 +611,12 @@ function severityOrder(sev) {
 }
 
 function toggleGroup(groupKey) {
-  const groupEl = document.getElementById('group-' + groupKey);
-  const toggleEl = groupEl.previousElementSibling.querySelector('.group-toggle');
-  
-  if (groupEl.style.display === 'none') {
-    groupEl.style.display = 'block';
-    toggleEl.textContent = '▼';
-  } else {
-    groupEl.style.display = 'none';
-    toggleEl.textContent = '▶';
-  }
+  if (App.openGroups.has(groupKey)) App.openGroups.delete(groupKey);
+  else App.openGroups.add(groupKey);
+
+  const inner = document.getElementById('group-' + groupKey);
+  const groupEl = inner && inner.closest('.alert-group');
+  if (groupEl) applyGroupOpen(groupEl, App.openGroups.has(groupKey));
 }
 
 function getSourceLabel(sourceType) {
