@@ -522,7 +522,8 @@ a { color: inherit; }
 }
 .time-ago {
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--c-warning);
+  font-weight: 600;
   white-space: nowrap;
   cursor: default;
 }
