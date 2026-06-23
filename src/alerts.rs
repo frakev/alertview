@@ -505,9 +505,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
     let alerts = am_alerts
         .into_iter()
         .map(|a| {
-            let severity = a
-                .labels
-                .get("severity")
+            let severity = lookup_label(&a.labels, &source.severity_label)
                 .map(|s| s.to_lowercase())
                 .unwrap_or_else(|| "none".to_string());
 
@@ -621,6 +619,19 @@ async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<
     
     let silences: Vec<AmSilence> = resp.json().await?;
     Ok(silences)
+}
+
+/// Looks up a label by key, case-insensitively.
+/// Tries an exact match first (fast path), then falls back to a
+/// case-insensitive comparison.
+fn lookup_label<'a>(labels: &'a HashMap<String, String>, key: &str) -> Option<&'a String> {
+    if let Some(v) = labels.get(key) {
+        return Some(v);
+    }
+    labels
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| v)
 }
 
 pub fn severity_order(severity: &str) -> u8 {
@@ -738,6 +749,29 @@ fn count_severities(alerts: &[Alert]) -> HashMap<String, usize> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn test_lookup_label_exact_match() {
+        let labels: HashMap<String, String> =
+            [("severity".to_string(), "critical".to_string())].into();
+        assert_eq!(lookup_label(&labels, "severity"), Some(&"critical".to_string()));
+    }
+
+    #[test]
+    fn test_lookup_label_case_insensitive() {
+        let labels: HashMap<String, String> =
+            [("Severity".to_string(), "high".to_string())].into();
+        // Configured key "severity" still matches a "Severity" label.
+        assert_eq!(lookup_label(&labels, "severity"), Some(&"high".to_string()));
+    }
+
+    #[test]
+    fn test_lookup_label_custom_key() {
+        let labels: HashMap<String, String> =
+            [("priority".to_string(), "warning".to_string())].into();
+        assert_eq!(lookup_label(&labels, "priority"), Some(&"warning".to_string()));
+        assert_eq!(lookup_label(&labels, "severity"), None);
+    }
 
     fn create_test_alert() -> Alert {
         let labels: HashMap<String, String> = [

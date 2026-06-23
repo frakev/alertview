@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-23
+
+### Added
+- **Configurable severity label per source** — each Alertmanager/Grafana source can set `severity_label` to choose which label is used to classify severity (defaults to `severity`). Useful when alerts carry the level under a different label name (e.g. `priority`).
+
+### Changed
+- Severity label lookup is now case-insensitive, so labels like `Severity` or `SEVERITY` are classified correctly.
+
 ## [0.4.6] - 2026-06-13
 
 ### Added

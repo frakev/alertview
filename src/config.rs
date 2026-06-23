@@ -154,6 +154,29 @@ mod tests {
     }
 
     #[test]
+    fn test_severity_label_default() {
+        let source: Source = serde_yaml::from_str(r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+        "#).expect("Failed to parse source");
+
+        assert_eq!(source.severity_label, "severity");
+    }
+
+    #[test]
+    fn test_severity_label_custom() {
+        let source: Source = serde_yaml::from_str(r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+            severity_label: Severity
+        "#).expect("Failed to parse source with severity_label");
+
+        assert_eq!(source.severity_label, "Severity");
+    }
+
+    #[test]
     fn test_log_format_default() {
         let config: Config = serde_yaml::from_str("sources: []").expect("Failed to parse config");
         assert_eq!(config.log_format, "text");
@@ -174,6 +197,10 @@ pub struct Source {
     pub url: String,
     pub dashboard_url: Option<String>,
     pub link_template: Option<String>,
+    /// Name of the label used to classify severity (Alertmanager/Grafana only).
+    /// Lookup is case-insensitive. Defaults to "severity".
+    #[serde(default = "default_severity_label")]
+    pub severity_label: String,
     pub basic_auth: Option<BasicAuth>,
     pub bearer_token: Option<String>,
     #[serde(default = "default_source_timeout")]
@@ -210,6 +237,10 @@ impl Source {
 
 fn default_source_timeout() -> u64 {
     15
+}
+
+fn default_severity_label() -> String {
+    "severity".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
