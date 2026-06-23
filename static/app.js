@@ -756,6 +756,7 @@ const TV = {
     this.active = !this.active;
     localStorage.setItem('av-tv', this.active);
     this._apply();
+    pushUrl();
   },
 
   // Toggle labels visibility in TV mode
@@ -853,6 +854,7 @@ function pushUrl() {
   if (App.srcFilter.size > 0)  p.set('src', [...App.srcFilter].join(','));
   if (App.searchQ)             p.set('q',        App.searchQ);
   if (App.showSilenced)        p.set('silenced', '1');
+  if (TV.active)               p.set('tv',       '1');
   const qs = p.toString();
   history.replaceState(null, '', qs ? '?' + qs : location.pathname);
 }
@@ -868,6 +870,10 @@ function initFromUrl() {
     SearchClear.style.display = App.searchQ ? 'block' : 'none';
   }
   if (p.has('silenced')) { App.showSilenced = p.get('silenced') === '1'; localStorage.setItem('av-show-silenced', App.showSilenced); }
+  if (p.has('tv')) {
+    const on = p.get('tv') === '1';
+    if (on !== TV.active) { TV.active = on; localStorage.setItem('av-tv', on); TV._apply(); }
+  }
 }
 
 /* -- Boot -- */
