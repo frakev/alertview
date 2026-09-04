@@ -9,14 +9,14 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 **Features:**
 - Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
 - Severity-colored cards (critical / error / high / warning / info), ranking configurable via `display.severity_order`
-- Search by label straight from the search box: `team=sre, hostname~web` (`=`, `!=`, `~`), mixed with free text
-- Clickable alerts with a link built from their labels (`display.alert_link_template`), independent from the ↗ "open in the source" button
+- Search by label straight from the search box: `team=sre|dba, hostname~web` (`=`, `!=`, `~`, `|` for several values), mixed with free text — Ctrl+F / Cmd+F or `/` jumps into it
+- The severity dot opens a link built from the alert's labels (`display.alert_link_template`) and lights up on hover, independent from the ↗ "open in the source" button
 - Labels shown in front of the alert name (`display.prefix_labels`)
 - Automatic light/dark theme following the OS, TV mode startable by default
-- Filter by severity, status (firing / silenced / pending), and source
+- Filter by severity and source, and show or hide silenced alerts
 - Multi-source filter chips
 - Direct links to specific alerts (Zabbix builds a `problem.view` URL from the trigger id, Alertmanager/Grafana use the alert's generator URL)
-- TV mode for wall displays — full-screen, auto-refresh, URL-persisted filters
+- TV mode for wall displays — dense rows aligned in columns, a permanent status bar (source dots, clock, last refresh, version) with the controls behind a `+`, URL-persisted filters
 - Dark/light theme with **custom CSS support**
 - **Automatic config reload** — changes to the config file are detected and applied without restart
 - **Sound notifications** for new alerts (using Web Audio API)

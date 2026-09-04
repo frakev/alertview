@@ -21,7 +21,7 @@ sources:
     # === Optional Settings ===
     dashboard_url: "https://grafana.example.com/alerting/list"  # Fallback link for the ↗ button
     link_template: "https://example.com/alerts?query={{.Labels.alertname}}"  # Template for the ↗ button
-    alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}"  # Makes the whole alert clickable
+    alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}"  # Turns the severity dot into a link
     source_link: true           # Show the ↗ button for this source
     severity_label: "severity"  # Label carrying the severity (case-insensitive)
     timeout: 15                 # Request timeout in seconds (default: 15)
@@ -93,10 +93,13 @@ display:
   # Alert body
   show_alert_name: true      # false = show the summary annotation instead
   show_labels: true          # false = hide the label chips
-  critical_icon: "🔥"         # marker on critical alerts, "" to disable
+  critical_icon: "🔥"         # replaces the dot on critical alerts, "" to disable
+  status_icons:              # markers replacing the status badge
+    silenced: "🔕"
+    pending: "⏳"
 
   # Links
-  alert_link_template: ""    # makes the whole alert clickable, built from its labels
+  alert_link_template: ""    # turns the severity dot into a link built from the labels
   source_link: true          # show the ↗ "open in the source" button
   link_new_tab: true         # false = open links in the same tab (kiosk)
 
@@ -162,7 +165,7 @@ Each source must have:
 | `dashboard_url` | string | null | URL to link to from alert cards |
 | `severity_label` | string | "severity" | Label carrying the severity, matched case-insensitively (Alertmanager/Grafana) |
 | `link_template` | string | null | Template for the ↗ source link |
-| `alert_link_template` | string | null | Template making the whole alert clickable (overrides `display.alert_link_template`) |
+| `alert_link_template` | string | null | Template turning the severity dot into a link (overrides `display.alert_link_template`) |
 | `source_link` | bool | null | Show the ↗ source link for this source (overrides `display.source_link`) |
 | `timeout` | u64 | 15 | Request timeout in seconds |
 | `basic_auth` | object | null | HTTP Basic Authentication |
@@ -204,8 +207,9 @@ The retry delay follows an exponential backoff pattern:
 | `prefix_separator` | string | " / " | Separator between prefix labels |
 | `show_alert_name` | bool | true | false shows the `summary` annotation instead of the alert name |
 | `show_labels` | bool | true | false hides the label chips |
-| `critical_icon` | string | "🔥" | Marker on critical alerts, `""` to disable |
-| `alert_link_template` | string | null | Makes the whole alert clickable (see Link Templates) |
+| `critical_icon` | string | "🔥" | Replaces the coloured dot on critical alerts, `""` to disable |
+| `status_icons` | map | silenced: 🔕, pending: ⏳ | Icon per alert status, in place of a status badge. A status absent from the map, or mapped to `""`, shows nothing |
+| `alert_link_template` | string | null | Turns the severity dot into a link (see Link Templates) |
 | `source_link` | bool | true | Show the ↗ "open in the source" button |
 | `link_new_tab` | bool | true | false opens links in the same tab |
 | `tv_mode_default` | bool | false | Start in TV mode when the browser has no stored choice |
@@ -272,7 +276,7 @@ An alert can carry two links, and either can be left out:
 
 | | Declared by | Rendered as |
 |---|---|---|
-| Alert link | `alert_link_template` (source, then `display`) | the whole card or row is clickable |
+| Alert link | `alert_link_template` (source, then `display`) | the severity dot becomes a link, lighting up on hover |
 | Source link | `link_template`, then the alert's generator URL, then `dashboard_url` | the ↗ button on the right |
 
 For Zabbix, the source link falls back to a `problem.view` URL built from the

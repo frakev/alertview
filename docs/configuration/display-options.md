@@ -86,6 +86,13 @@ Starts in TV mode in a browser where **nobody has used the TV button yet**. An
 explicit choice wins over it, and stays: once someone toggles TV mode, that
 browser remembers their choice and ignores this setting.
 
+In TV mode the rows are dense and their columns line up across the whole list,
+and a status bar sits in the bottom-right corner. Its minimal half is always
+visible — one dot per source, the time, the last refresh and the running
+version, which is the "everything is fine" glance of a wall display. The theme,
+filter and exit buttons are behind the `+`. Press `T` to toggle TV mode and
+`Escape` to leave it.
+
 For a wall display, put `?tv=1` in the URL instead — it wins over both the
 stored choice and this setting, so the screen always comes up in TV mode.
 

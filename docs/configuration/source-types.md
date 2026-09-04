@@ -13,7 +13,7 @@ All source types share these common fields:
   timeout: 15               # Optional: Request timeout in seconds (default: 15)
   dashboard_url: "..."       # Optional: Link for alert cards
   link_template: "..."      # Optional: Template for the ↗ source link
-  alert_link_template: "..." # Optional: Makes the whole alert clickable
+  alert_link_template: "..." # Optional: Turns the severity dot into a link
   source_link: true         # Optional: Show the ↗ source link for this source
   retry_policy:             # Optional: Retry configuration
     max_retries: 3

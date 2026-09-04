@@ -16,15 +16,24 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 - **Severity Coloring**: Color-coded cards (critical, error, high, warning, info)
 - **Responsive Design**: Works on desktop, tablet, and mobile
 - **Dark/Light Theme**: Built-in themes with custom CSS support
-- **TV Mode**: Full-screen display for wall monitors
+- **TV Mode**: Full-screen display for wall monitors — dense rows whose columns line up across the list, and a status bar in the bottom-right corner that stays put: one dot per source, the time, the last refresh and the running version. The theme, filter and exit buttons hide behind a `+`
 - **Sound Notifications**: Audio alerts for new alerts (configurable per severity)
+
+### ⌨️ Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+F` / `Cmd+F` | Focus the search box (not bound in TV mode, where the browser's own find stays available) |
+| `/` | Focus the search box |
+| `Escape` | In the search box: clear it, then leave it. Elsewhere: close the TV panel, then leave TV mode |
+| `T` | Toggle TV mode |
 
 ### 🔍 Filtering & Search
 - **Severity Filter**: Filter by any severity present, ranked by `display.severity_order`
-- **Label Search**: The search box takes label filters — `team=sre, hostname~web` — with `=`, `!=` and `~`, mixed freely with plain text. Filters live in the URL, so a per-team view can be bookmarked
-- **Clickable Alerts**: The whole card can open a link built from the alert's labels, independent from the ↗ "open in the source" button
+- **Label Search**: The search box takes label filters — `team=sre|dba, hostname~web` — with `=`, `!=`, `~`, and `|` for several values, mixed freely with plain text. Filters live in the URL, so a per-team view can be bookmarked
+- **Clickable Alerts**: The severity dot opens a link built from the alert's labels, and lights up on hover to say so — independent from the ↗ "open in the source" button
 - **Automatic Theme**: Follows the OS light/dark setting and switches live
-- **Status Filter**: Filter by firing, silenced, or pending
+- **Silenced Toggle**: Show or hide silenced alerts; they are marked with an icon rather than a badge, and their silence comment sits behind a 💬 button
 - **Source Filter**: Filter by specific alert sources
 - **Text Search**: Search across all alert fields
 - **URL-Persisted Filters**: Filters are preserved in the URL for sharing

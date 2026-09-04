@@ -74,6 +74,7 @@ Accept: application/json
   "show_alert_name": true,
   "show_labels": true,
   "critical_icon": "🔥",
+  "status_icons": {"silenced": "🔕", "pending": "⏳"},
   "tv_mode_default": false,
   "link_new_tab": true
 }
@@ -94,7 +95,7 @@ Accept: application/json
 The remaining fields mirror the `display` configuration section and exist so the
 frontend renders what the config asks for: `severity_order`, `prefix_labels`,
 `prefix_separator`, `show_alert_name`, `show_labels`, `critical_icon`,
-`tv_mode_default`, `link_new_tab` and `custom_css`. See
+`tv_mode_default`, `link_new_tab`, `status_icons` and `custom_css`. See
 [Display Options](configuration/display-options.md).
 
 **Alert Object Fields:**
@@ -112,7 +113,7 @@ frontend renders what the config asks for: `severity_order`, `prefix_labels`,
 | `source` | string | Source name from configuration |
 | `source_type` | string | Source type: alertmanager, grafana, zabbix |
 | `link_url` | string | URL behind the ↗ button ("open in the source"), null if none applies |
-| `alert_link_url` | string | URL the whole alert points to, from `alert_link_template`, null if the config declares none or the template could not be resolved |
+| `alert_link_url` | string | URL behind the severity dot, from `alert_link_template`, null if the config declares none or the template could not be resolved |
 
 Both link fields are always `http`/`https` — other schemes are dropped
 server-side.
