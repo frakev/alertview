@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-04
+
+### Changed
+- **Severity and status badges come before the alert text** — they used to follow it, so their position depended on the length of the name; they now sit in a fixed column right after the prefix labels, in TV rows and on cards alike, and severity reads straight down a column.
+
 ## [0.8.0] - 2026-09-04
 
 ### Changed

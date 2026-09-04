@@ -899,9 +899,9 @@ function cardHtml(a) {
           <span class="sev-dot ${sevClass(sev)}"></span>
           ${criticalIcon(a)}
           ${prefixHtml(a)}
-          <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
           <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
           <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
+          <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
         </div>
         <div class="card-meta">
           <span class="src-chip">${esc(a.source)}</span>
@@ -936,9 +936,9 @@ function cardHtmlTV(a) {
       ${cardLinkHtml(a)}
       <span class="row-lead"><span class="sev-dot ${sevClass(sev)}"></span>${criticalIcon(a)}</span>
       ${prefixHtml(a) || '<span class="alert-prefix"></span>'}
-      <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
       <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
       <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
+      <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
       <span class="row-summary">${esc(summary)}${ackComment ? ` <span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}</span>
       <span class="row-labels">${labelsHtml}${labelsToggleHtml(lay.hidden, lay.open)}${hiddenLabelsHtml(lay.hidden, lay.open, ' tv-lbl')}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>

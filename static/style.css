@@ -691,9 +691,9 @@ a { color: inherit; }
     grid-template-columns:
       auto                 /* dot + critical icon      */
       fit-content(32ch)    /* prefix labels            */
-      fit-content(64ch)    /* alert name, or summary   */
       auto                 /* severity badge           */
       auto                 /* status badge             */
+      fit-content(64ch)    /* alert name, or summary   */
       minmax(0, 1fr)       /* summary, or empty filler */
       fit-content(40ch)    /* labels + toggle          */
       auto                 /* age                      */
@@ -714,9 +714,9 @@ a { color: inherit; }
     align-items: center;
   }
 
-  /* The badges sit right after the alert text, as they always have; the single
-     flexible track is the summary, which soaks up whatever is left and pins the
-     labels, the age and the link to the right edge. */
+  /* The badges come before the alert text, so severity reads straight down a
+     column; the single flexible track is the summary, which soaks up whatever
+     is left and pins the labels, the age and the link to the right edge. */
 
   /* Cells clip rather than push their column wider than its cap. */
   [data-tv="true"] .alert-row > * {
