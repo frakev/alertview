@@ -50,7 +50,7 @@ docker run -d \
   -e ALERTVIEW_PORT=9090 \
   -e ALERTVIEW_REFRESH_INTERVAL=60 \
   -e ALERTVIEW_LOG_FORMAT=json \
-  -v $(pwd)/config.yaml:/config/config.yaml:rw \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
   ghcr.io/frakev/alertview:latest
 ```
 
@@ -69,7 +69,7 @@ services:
       - ALERTVIEW_LOG_FORMAT=json
       - ALERTVIEW_CACHE_TTL=60
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
 ```
 
 ## Kubernetes Usage

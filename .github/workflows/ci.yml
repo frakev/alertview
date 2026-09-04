@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Pull requests from forks get a read-only token and no secrets; say so
+# explicitly rather than relying on the repository default.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

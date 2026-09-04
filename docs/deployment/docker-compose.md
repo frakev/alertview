@@ -13,7 +13,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     restart: unless-stopped
     environment:
       - ALERTVIEW_PORT=8080
@@ -46,7 +46,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     depends_on:
       - alertmanager
     restart: unless-stopped
@@ -77,7 +77,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     depends_on:
       - alertmanager
       - grafana
@@ -96,7 +96,7 @@ services:
   alertview:
     image: ghcr.io/frakev/alertview:latest
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     environment:
       - ALERTVIEW_PORT=8080
     restart: unless-stopped
@@ -168,7 +168,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     depends_on:
       - alertmanager
     restart: unless-stopped
@@ -188,7 +188,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.${ENVIRONMENT:-production}.yaml:/config/config.yaml:rw
+      - ./config.${ENVIRONMENT:-production}.yaml:/config/config.yaml:ro
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - ALERTVIEW_PORT=8080
@@ -215,7 +215,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -236,7 +236,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     deploy:
       resources:
         limits:

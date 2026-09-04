@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Security policy rewritten for a public repository** — it pointed reports at `security@frakev.com`, a domain with neither an MX nor an A record, so every report would have bounced. Reports now go through GitHub's private vulnerability reporting, with a public issue as the fallback. The policy also states what AlertView assumes about its environment: it has no authentication of its own and is meant to sit behind a proxy, so an unauthenticated `/api/alerts` is not a vulnerability — while anything an *alert* can do to a viewer is. The supported-versions table still said 0.4.x.
+- **Mount the configuration read-only** — the documentation insisted on `:rw` "to enable auto-reload", in eleven places across the README and six guides. It is not true: AlertView only ever reads the file, and a `:ro` bind mount picks up host changes perfectly well (verified against the published image). It was telling everyone to mount a file holding their source credentials read-write for no reason. The real caveat — an editor that saves by renaming replaces the inode, which a single-file bind mount does not follow — is documented instead, with the directory mount that avoids it.
+
+### Fixed
+- **CI/CD documentation** — the README claimed the image was published to GHCR on every push to `main`, in two places; it has been tag-only since `d03c7a4`. The other two workflows were not described at all.
+- Dropped a redundant "Verify GHCR authentication" step that re-ran `docker login` by piping a secret through a shell, right after `docker/login-action` had already logged in — pointless work, and in a public repository the job log is world-readable.
+- `ci.yml` declares `permissions: contents: read` instead of inheriting the repository default.
+
 ## [0.10.0] - 2026-09-04
 
 ### Security

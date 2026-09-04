@@ -20,7 +20,7 @@ Replace the URL with your actual Alertmanager endpoint.
 ### 2. Run with Docker
 
 ```bash
-docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:latest
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:ro ghcr.io/frakev/alertview:latest
 ```
 
 ### 3. Access the dashboard

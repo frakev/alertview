@@ -29,7 +29,7 @@ This section covers various ways to deploy AlertView in different environments.
 ### Scenario 2: Single Server
 **Goal**: Deploy to a single server
 **Method**: Docker
-**Command**: `docker run -p 8080:8080 -v config.yaml:/config/config.yaml:rw alertview`
+**Command**: `docker run -p 8080:8080 -v config.yaml:/config/config.yaml:ro alertview`
 
 ### Scenario 3: Team Dashboard
 **Goal**: Team-wide alert dashboard

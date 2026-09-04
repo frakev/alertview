@@ -217,22 +217,26 @@ cargo run -- config.yaml
 # Build the image
 docker build -t alertview .
 
-# Run with config file mounted (use :rw for auto-reload to work)
-docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw alertview
+# Run with the config file mounted read-only
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:ro alertview
 ```
 
-> **Note:** Use `:rw` (read-write) mount option to enable automatic config reload. With `:ro` (read-only), config changes won't be detected.
+> **Note:** `:ro` is enough, including for auto-reload — AlertView only ever
+> reads the file, and a bind mount shows it the host's changes. Mount the
+> *directory* rather than the file (`-v $(pwd)/conf:/config:ro`) if you edit
+> with something that saves by renaming, like vim: a single-file bind mount
+> stays attached to the old inode and the change would go unnoticed.
 
 ### Pre-built Images
 
-The image is also published automatically to GHCR on every push to `main`:
+A pre-built image is published to GHCR for every released version (`v*` tag):
 
 ```bash
 # Pull the latest image
 docker pull ghcr.io/frakev/alertview:latest
 
 # Run it
-docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:latest
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:ro ghcr.io/frakev/alertview:latest
 ```
 
 ### Docker Compose
@@ -247,7 +251,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     restart: unless-stopped
 ```
 
@@ -328,7 +332,9 @@ kubectl get all -n alertview
 
 ## CI/CD
 
-The included `.github/workflows/docker-publish.yml` builds and pushes the image to GHCR on every push to `main` and on version tags (`v*`). It uses `GITHUB_TOKEN` — no extra secrets required.
+`.github/workflows/docker-publish.yml` builds and pushes the image to GHCR **on version tags only** (`v*`) — pushing to `main` used to build a second, identical image per release. It uses `GITHUB_TOKEN`, so no extra secret is required.
+
+`.github/workflows/ci.yml` runs clippy (`-D warnings`), the test suite and a syntax check of the frontend on every push to `main` and on every pull request. `.github/workflows/release.yml` builds the Linux binary and creates the GitHub release, also on tags.
 
 ```
 push to main  →  ghcr.io/frakev/alertview:main

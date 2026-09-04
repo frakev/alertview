@@ -354,7 +354,7 @@ docker run -p 8080:8080 \
   -e ALERTVIEW_PORT=8080 \
   -e ALERTVIEW_REFRESH_INTERVAL=30 \
   -e ALERTVIEW_LOG_FORMAT=json \
-  -v $(pwd)/config.yaml:/config/config.yaml:rw \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
   alertview
 ```
 
@@ -462,7 +462,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:rw
+      - ./config.yaml:/config/config.yaml:ro
     environment:
       - ALERTVIEW_PORT=8080
       - ALERTVIEW_REFRESH_INTERVAL=30

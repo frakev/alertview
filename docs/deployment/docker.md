@@ -6,7 +6,7 @@ Deploy AlertView using Docker containers.
 
 ```bash
 # Run with a configuration file
-docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:latest
+docker run -p 8080:8080 -v $(pwd)/config.yaml:/config/config.yaml:ro ghcr.io/frakev/alertview:latest
 
 # Access the dashboard at http://localhost:8080
 ```
@@ -59,7 +59,7 @@ EOF
 docker run -d \
   --name alertview \
   -p 8080:8080 \
-  -v $(pwd)/config.yaml:/config/config.yaml:rw \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
   ghcr.io/frakev/alertview:latest
 ```
 
@@ -81,10 +81,21 @@ curl http://localhost:8080/health
 ### Mount Configuration File
 
 ```bash
--v $(pwd)/config.yaml:/config/config.yaml:rw
+-v $(pwd)/config.yaml:/config/config.yaml:ro
 ```
 
-**Important**: Use `:rw` (read-write) to enable config auto-reload. With `:ro` (read-only), config changes won't be detected.
+**Important**: `:ro` is enough, auto-reload included — AlertView only ever
+reads the file, and a bind mount shows it the host's changes. Never mount a
+file holding source credentials read-write without a reason.
+
+The one case that needs care is *how* you edit the file: an editor that saves
+by renaming (vim, and most of them) replaces the inode, and a single-file bind
+mount stays attached to the old one. Mount the **directory** instead and the
+change is picked up:
+
+```bash
+docker run -d -p 8080:8080 -v $(pwd)/conf:/config:ro ghcr.io/frakev/alertview:latest
+```
 
 ### Environment Variables
 
@@ -94,7 +105,7 @@ docker run -d \
   -e ALERTVIEW_PORT=8080 \
   -e ALERTVIEW_REFRESH_INTERVAL=60 \
   -e ALERTVIEW_LOG_FORMAT=json \
-  -v $(pwd)/config.yaml:/config/config.yaml:rw \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
   ghcr.io/frakev/alertview:latest
 ```
 
@@ -102,7 +113,7 @@ docker run -d \
 
 ```bash
 # Map host port 9090 to container port 8080
-docker run -d -p 9090:8080 -v config.yaml:/config/config.yaml:rw alertview
+docker run -d -p 9090:8080 -v config.yaml:/config/config.yaml:ro alertview
 
 # Access at http://localhost:9090
 ```
@@ -112,8 +123,8 @@ docker run -d -p 9090:8080 -v config.yaml:/config/config.yaml:rw alertview
 ```bash
 docker run -d \
   -p 8080:8080 \
-  -v $(pwd)/config1.yaml:/config/config1.yaml:rw \
-  -v $(pwd)/config2.yaml:/config/config2.yaml:rw \
+  -v $(pwd)/config1.yaml:/config/config1.yaml:ro \
+  -v $(pwd)/config2.yaml:/config/config2.yaml:ro \
   ghcr.io/frakev/alertview:latest \
   /config/config1.yaml
 ```
@@ -162,7 +173,7 @@ docker build -t alertview:custom .
 ### 3. Run Custom Image
 
 ```bash
-docker run -p 8080:8080 -v config.yaml:/config/config.yaml:rw alertview:custom
+docker run -p 8080:8080 -v config.yaml:/config/config.yaml:ro alertview:custom
 ```
 
 ### 4. Push to Registry
@@ -290,7 +301,7 @@ docker run -d -p 8080:8080 -v alertview-config:/config alertview /config/config.
 ```bash
 docker run -d \
   -p 8080:8080 \
-  -v $(pwd)/configs:/configs:rw \
+  -v $(pwd)/configs:/configs:ro \
   alertview /configs/production.yaml
 ```
 
@@ -366,14 +377,14 @@ docker stop alertview
 docker rm alertview
 
 # Run new container
-docker run -d -p 8080:8080 -v config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:latest
+docker run -d -p 8080:8080 -v config.yaml:/config/config.yaml:ro ghcr.io/frakev/alertview:latest
 ```
 
 ### Rollback
 
 ```bash
 # Rollback to previous version
-docker run -d -p 8080:8080 -v config.yaml:/config/config.yaml:rw ghcr.io/frakev/alertview:v1.0.0
+docker run -d -p 8080:8080 -v config.yaml:/config/config.yaml:ro ghcr.io/frakev/alertview:v1.0.0
 ```
 
 ## Troubleshooting
@@ -410,13 +421,13 @@ Solution: docker logs alertview to see error
 docker run -it --rm \
   -e RUST_LOG=debug \
   -p 8080:8080 \
-  -v config.yaml:/config/config.yaml:rw \
+  -v config.yaml:/config/config.yaml:ro \
   alertview
 ```
 
 ## Best Practices
 
-1. **Use `:rw` for config files** to enable auto-reload
+1. **Mount config files `:ro`** — auto-reload works read-only, and the file holds your source credentials
 2. **Use environment variables** for secrets and environment-specific settings
 3. **Pin to specific versions** in production (not `latest`)
 4. **Enable health checks** for monitoring
