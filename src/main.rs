@@ -25,33 +25,49 @@ static ICON_512: &[u8]          = include_bytes!("../static/icons/icon-512.png")
 static ICON_MASKABLE_512: &[u8] = include_bytes!("../static/icons/icon-maskable-512.png");
 static APPLE_ICON: &[u8]        = include_bytes!("../static/icons/apple-touch-icon.png");
 
-fn print_help() {
-    println!("AlertView - Alert Aggregation Dashboard");
-    println!();
-    println!("Usage:");
-    println!("  alertview [OPTIONS] [CONFIG_FILE]");
-    println!();
-    println!("Arguments:");
-    println!("  CONFIG_FILE    Path to the configuration file (default: config.yaml)");
-    println!();
-    println!("Options:");
-    println!("  -h, --help     Show this help message and exit");
-    println!();
-    println!("Environment Variables:");
-    println!("  ALERTVIEW_CONFIG               Path to the configuration file");
-    println!("  ALERTVIEW_PORT                 Port to listen on (default: 8080)");
-    println!("  ALERTVIEW_REFRESH_INTERVAL     Browser refresh interval, seconds (default: 30)");
-    println!("  ALERTVIEW_CACHE_TTL            Per-source cache TTL, seconds (default: 0, off)");
-    println!("  ALERTVIEW_LOG_FORMAT           Log format: 'text' or 'json' (default: text)");
-    println!("  ALERTVIEW_CONFIG_WATCH_METHOD  'polling' or 'inotify' (default: polling)");
-    println!("  ALERTVIEW_CONFIG_POLL_INTERVAL Polling interval, seconds (default: 10)");
-    println!("  RUST_LOG                       Log level: error, warn, info, debug, trace");
-    println!();
-    println!("Examples:");
-    println!("  alertview                          # Use default config.yaml");
-    println!("  alertview /etc/alertview/config.yaml");
-    println!("  alertview --config /etc/alertview/config.yaml");
-    println!("  alertview --help");
+/// Built as one string rather than printed line by line: `alertview --help |
+/// head` closes the pipe early, and every `println!` after that panics with
+/// "failed printing to stdout: Broken pipe".
+fn help_text() -> String {
+    format!(
+        "\
+AlertView {VERSION} - Alert Aggregation Dashboard
+
+Usage:
+  alertview [OPTIONS] [CONFIG_FILE]
+
+Arguments:
+  CONFIG_FILE    Path to the configuration file (default: config.yaml)
+
+Options:
+  -h, --help     Show this help message and exit
+  -V, --version  Print the version and exit
+
+Environment Variables:
+  ALERTVIEW_CONFIG               Path to the configuration file
+  ALERTVIEW_PORT                 Port to listen on (default: 8080)
+  ALERTVIEW_REFRESH_INTERVAL     Browser refresh interval, seconds (default: 30)
+  ALERTVIEW_CACHE_TTL            Per-source cache TTL, seconds (default: 0, off)
+  ALERTVIEW_LOG_FORMAT           Log format: 'text' or 'json' (default: text)
+  ALERTVIEW_CONFIG_WATCH_METHOD  'polling' or 'inotify' (default: polling)
+  ALERTVIEW_CONFIG_POLL_INTERVAL Polling interval, seconds (default: 10)
+  RUST_LOG                       Log level: error, warn, info, debug, trace
+
+A value written in the configuration file wins over its environment variable.
+
+Examples:
+  alertview                          # Use default config.yaml
+  alertview /etc/alertview/config.yaml
+  alertview --config /etc/alertview/config.yaml
+  alertview --version
+"
+    )
+}
+
+/// Writes to stdout without panicking on a closed pipe.
+fn print_out(text: &str) {
+    use std::io::Write as _;
+    let _ = std::io::stdout().write_all(text.as_bytes());
 }
 
 // Type aliases for cleaner code
@@ -129,8 +145,15 @@ fn redact_credentials(message: &str) -> String {
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        print_help();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_out(&help_text());
+        std::process::exit(0);
+    }
+
+    // Answered before anything is read or bound, so `alertview --version`
+    // works without a configuration file and without a free port.
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        print_out(&format!("alertview {VERSION}\n"));
         std::process::exit(0);
     }
 
@@ -172,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tracing::info!(
-        "Starting AlertView on port {port} with {} source(s)",
+        "Starting AlertView {VERSION} on port {port} with {} source(s)",
         config.sources.len()
     );
     for s in &config.sources {
@@ -885,6 +908,28 @@ fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_help_text_documents_every_flag_and_variable() {
+        let help = help_text();
+        assert!(help.contains(VERSION), "the help banner names the running version");
+        for flag in ["-h, --help", "-V, --version", "CONFIG_FILE"] {
+            assert!(help.contains(flag), "{flag} missing from --help");
+        }
+        // --help used to list four of the seven variables the config reads.
+        for var in [
+            "ALERTVIEW_CONFIG",
+            "ALERTVIEW_PORT",
+            "ALERTVIEW_REFRESH_INTERVAL",
+            "ALERTVIEW_CACHE_TTL",
+            "ALERTVIEW_LOG_FORMAT",
+            "ALERTVIEW_CONFIG_WATCH_METHOD",
+            "ALERTVIEW_CONFIG_POLL_INTERVAL",
+            "RUST_LOG",
+        ] {
+            assert!(help.contains(var), "{var} missing from --help");
+        }
+    }
 
     #[test]
     fn test_redact_credentials() {

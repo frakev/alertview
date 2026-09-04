@@ -32,6 +32,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 ## Table of Contents
 - [Requirements](#requirements)
 - [Configuration](#configuration)
+- [Command Line](#command-line)
 - [Environment Variables](#environment-variables)
 - [Running Locally](#running-locally)
 - [Docker](#docker)
@@ -179,6 +180,23 @@ One entry per source. While an entry is being refreshed, the browsers that
 arrive meanwhile wait for that single fetch instead of each firing their own.
 
 > `config.yaml` is gitignored — never commit credentials.
+
+## Command Line
+
+```bash
+alertview                              # uses ./config.yaml
+alertview /etc/alertview/config.yaml   # positional path
+alertview --config /etc/alertview/config.yaml
+alertview --version                    # -> alertview 0.10.0
+alertview --help
+```
+
+The running version is also printed on the first log line at startup, shown in
+the footer of the dashboard and in the TV mode status bar, and sent as the
+`User-Agent` on every request to a source.
+
+Configuration path precedence: `--config <path>`, then a positional argument,
+then `$ALERTVIEW_CONFIG`, then `./config.yaml`.
 
 ## Environment Variables
 
