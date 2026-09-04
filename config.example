@@ -1,71 +1,131 @@
-# AlertView configuration
-# All fields are optional except for sources
+# ═══════════════════════════════════════════════════════════════════════════
+#  AlertView — complete configuration reference
+#
+#  Every field is optional except `sources`. Active lines below show a working
+#  setup; commented lines show an option with its default value, so you can
+#  uncomment and edit any of them.
+#
+#  Full documentation: docs/configuration/
+#  This file is watched: changes apply without restarting. Changing `port`,
+#  `tls_insecure` or `log_format` does need a restart — they are read once at
+#  startup.
+# ═══════════════════════════════════════════════════════════════════════════
 
-# Server configuration
-port: 8080
-refresh_interval: 30   # seconds between each auto-refresh
 
-# Global timeout for all sources (can be overridden per source)
-tls_insecure: false    # true to ignore TLS certificate errors (self-signed certs)
+# ───────────────────────────────────────────────────────────────────────────
+#  Server
+# ───────────────────────────────────────────────────────────────────────────
 
-# Cache configuration (0 = disabled)
+port: 8080             # HTTP port (env: ALERTVIEW_PORT)
+refresh_interval: 30   # seconds between two auto-refreshes in the browser
+
+# Ignore TLS certificate errors on every source (self-signed certificates).
+# Insecure: prefer adding your CA to the trust store.
+tls_insecure: false
+
+# Cache the alerts fetched from each source for this many seconds. 0 disables
+# it, which is fine for a handful of dashboards. Raise it if many browsers hit
+# the same instance and you want to spare the sources. (env: ALERTVIEW_CACHE_TTL)
 cache_ttl_seconds: 0
 
-# Logging configuration
-log_format: "text"  # or "json" for structured logs
-# Can also be set via ALERTVIEW_LOG_FORMAT environment variable
+# "text" for human-readable logs, "json" for structured ones
+# (env: ALERTVIEW_LOG_FORMAT). Log level comes from RUST_LOG, e.g. RUST_LOG=debug
+log_format: "text"
 
-# Config auto-reload configuration
-config_watch_method: "polling"  # "inotify" (native) or "polling" (default, works everywhere)
-config_poll_interval: 10        # Polling interval in seconds (only used with polling method)
-# Can also be set via ALERTVIEW_CONFIG_WATCH_METHOD and ALERTVIEW_CONFIG_POLL_INTERVAL
+# ─── Auto-reload ───
+# "polling" works everywhere, including a ConfigMap mounted in Kubernetes where
+# inotify does not see the symlink swap. "inotify" reacts instantly.
+# (env: ALERTVIEW_CONFIG_WATCH_METHOD, ALERTVIEW_CONFIG_POLL_INTERVAL)
+config_watch_method: "polling"
+config_poll_interval: 10   # seconds, only used with "polling"
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  Sources — where the alerts come from
+#
+#  `url` is the plain service URL: the API path is appended for you
+#  (/api/v2 for Alertmanager, /api/alertmanager/grafana/api/v2 for Grafana,
+#  /api_jsonrpc.php for Zabbix). A URL already pointing at the API is accepted.
+#  Names must be unique: they key the cache and the source filter.
+# ───────────────────────────────────────────────────────────────────────────
 
 sources:
+  # ─── Alertmanager ───
+  # Every per-source option is documented on this first entry.
   - name: "Alertmanager"
     type: alertmanager
     url: "http://alertmanager.example.com:9093"
+
+    # Fallback link for the ↗ button when the alert carries no generator URL
     dashboard_url: "https://grafana.example.com/alerting/list"
-    timeout: 15  # seconds (default: 15)
-    # Label used to classify severity (case-insensitive, default: "severity").
-    # Set this if your alerts carry the level under a different label name.
-    # severity_label: "Severity"
+
+    # Seconds before an attempt is abandoned (default: 15)
+    timeout: 15
+
+    # Label carrying the severity, matched case-insensitively (default:
+    # "severity"). Set it if your alerts use a different label name.
+    # severity_label: "level"
+
+    # Template for the ↗ "open in the source" button. Falls back to the alert's
+    # own generator URL, then to dashboard_url above.
     # link_template: "https://grafana.example.com/alerts?query={{.Labels.alertname}}"
-    # Per-source overrides of the display settings above:
+
+    # Per-source overrides of the display settings further down
     # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}"
-    # source_link: false   # no arrow for this source
+    # source_link: false        # no ↗ button for this source
+
+    # ─ Authentication (pick one) ─
     # basic_auth:
     #   username: admin
     #   password: secret
     # bearer_token: "YOUR_TOKEN_HERE"
+
+    # ─ Retries ─
+    # Delay between attempts is initial_delay_ms × 2^(attempt-1), capped at
+    # max_delay_ms. HTTP 4xx is not retried — a 404 or a 401 is a configuration
+    # problem, not a hiccup — except 408 and 429; 5xx and network errors are.
     # retry_policy:
     #   max_retries: 3
     #   initial_delay_ms: 1000
     #   max_delay_ms: 30000
 
+  # ─── Grafana (its built-in Alertmanager) ───
   - name: "Grafana"
     type: grafana
     url: "http://grafana.example.com:3000"
     dashboard_url: "https://grafana.example.com/"
     timeout: 15
-    # bearer_token is Grafana Service Account token (recommended)
+    # A service account token is the recommended credential
     # bearer_token: "YOUR_GRAFANA_TOKEN_HERE"
-    # or basic_auth with admin account:
     # basic_auth:
     #   username: admin
     #   password: secret
     # link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}"
 
+  # ─── Zabbix ───
+  # Problems are mapped as: severity 5 → critical, 4 → high, 3 and 2 → warning,
+  # 1 → info. An acknowledged or suppressed problem is shown as silenced, with
+  # the acknowledgement message as its comment. Problems whose trigger is
+  # disabled are dropped, as Zabbix's own Problems view does. `eventid` and
+  # `triggerid` are added as labels, for use in templates.
   - name: "Zabbix"
     type: zabbix
     url: "https://zabbix.example.com/zabbix"
     dashboard_url: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view"
     timeout: 15
-    # Zabbix API token
-    # bearer_token: "YOUR_ZABBIX_TOKEN_HERE"
-    # link_template: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view&filter_eventid={{.Labels.eventid}}"
+    # bearer_token: "YOUR_ZABBIX_API_TOKEN"
+    # link_template: "https://zabbix.example.com/zabbix/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  Display
+# ───────────────────────────────────────────────────────────────────────────
 
 display:
-  # Labels to show on each alert card (severity and alertname are always shown as badges)
+
+  # ─── What each alert shows ───────────────────────────────────────────────
+
+  # Labels rendered as "key=value" chips. Only the ones an alert carries show up.
   labels:
     - namespace
     - job
@@ -75,64 +135,106 @@ display:
     - pod
     - host
     - hostgroup
-  
-  # Theme: "auto" (follows the OS light/dark setting, default), "dark" or "light".
-  # A user who clicks the theme button in the UI overrides this in their browser.
-  # theme: "auto"
-  # Extra stylesheet layered on top of the theme
-  # custom_css: "https://example.com/alertview-theme.css"
-  
-  # Timezone: "local", "UTC", or any IANA timezone (e.g., "Europe/Paris", "America/New_York")
-  # timezone: "local"
-  
-  # Enable sound notifications for new alerts
-  # play_sounds: false
-  
-  # Group alerts by labels (e.g., ["namespace", "job"])
-  # group_by: ["namespace"]
 
-  # Labels shown in front of the alert name, in both normal and TV mode.
-  # Only the ones the alert carries are shown, joined by prefix_separator, and
-  # they are dropped from the label chips so nothing appears twice.
-  # Shown even if they are not listed in display.labels above.
+  # Labels shown in front of the alert name, in both normal and TV mode, joined
+  # by prefix_separator. Only the ones the alert carries are shown, they are
+  # dropped from the chips above so nothing appears twice, and they show up even
+  # when they are not listed in `labels`.
   # prefix_labels: ["hostname"]
   # prefix_separator: " / "
 
-  # Start in TV mode. Only applies to a browser where nobody has used the TV
-  # button yet; "?tv=1" in the URL always wins (use it for a kiosk display).
-  # tv_mode_default: false
-
-  # Make the whole alert clickable, with a link built from its labels.
-  # Placeholders: {{.Labels.x}}, {{.Annotations.x}}, {{.Name}}, {{.Severity}},
-  # {{.Status}}, {{.Source}}, {{.SourceType}}, {{.StartsAt}}, {{.EndsAt}}.
-  # An alert missing one of the labels used here simply is not clickable.
-  # Can be overridden per source with alert_link_template.
-  # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}?host={{.Labels.hostname}}"
-
-  # Show the alert name (the alertname label). false = show the summary
-  # annotation instead; alerts without a summary keep their name.
+  # false shows the `summary` annotation in place of the alert name. An alert
+  # without a summary keeps its name, and the name itself is not lost: it moves
+  # behind the "+N" button as an alertname= chip.
   # show_alert_name: true
 
-  # Show the label chips next to each alert (the "key=value" pills).
+  # false puts every chip behind that same "+N" button — one click brings them
+  # back. `labels` above stays declared.
   # show_labels: true
 
-  # Icon marking critical alerts, "" to disable
+  # Marker rendered just before the name of critical alerts, "" to disable
   # critical_icon: "🔥"
 
-  # Show the "open in the source" arrow on the right of each alert.
-  # Its destination is independent from alert_link_template above.
-  # source_link: true
+  # ─── Severity ────────────────────────────────────────────────────────────
 
-  # Open links in a new tab (false keeps them in the same tab, for kiosks)
-  # link_new_tab: true
-
-  # Severity levels, most severe first. Alerts are sorted in this order and the
-  # filter chips follow it. A severity that is not listed sorts last.
-  # Aliases are matched too: crit/err/warn/information.
+  # Severity levels, most severe first. Drives the alert sorting, the filter
+  # chips, the group ordering and the sound picked for a batch of new alerts.
+  # A severity absent from this list sorts after every listed one, so add your
+  # own levels here. Matching is case-insensitive and understands the aliases
+  # crit / err / warn / information.
   # severity_order: ["critical", "error", "high", "warning", "info", "none"]
 
-# Environment variables that can be used instead of config file:
-# ALERTVIEW_PORT=8080
-# ALERTVIEW_REFRESH_INTERVAL=30
-# ALERTVIEW_CACHE_TTL=60
-# ALERTVIEW_LOG_FORMAT=json
+  # ─── Links ───────────────────────────────────────────────────────────────
+
+  # Makes the whole alert clickable, with a URL built from its labels. This is
+  # independent from the ↗ button, which keeps its own destination.
+  # Placeholders: {{.Labels.x}}, {{.Annotations.x}}, {{.Name}}, {{.Severity}},
+  # {{.Status}}, {{.Source}}, {{.SourceType}}, {{.Fingerprint}}, {{.StartsAt}},
+  # {{.EndsAt}}. Values are percent-encoded; an alert missing a label the
+  # template asks for is simply not clickable; only http(s) links are rendered.
+  # Can be overridden per source.
+  # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}?host={{.Labels.hostname}}"
+
+  # Show the ↗ "open in the source" button (overridable per source)
+  # source_link: true
+
+  # false opens links in the same tab, which is what you want on a kiosk
+  # link_new_tab: true
+
+  # ─── Grouping ────────────────────────────────────────────────────────────
+
+  # Group alerts under collapsible headers. Groups are ordered by their most
+  # severe alert; an alert missing one of these labels lands in a "<missing>"
+  # group rather than disappearing.
+  # Grouping by team is the usual way to share one screen between teams — for a
+  # screen *per* team, use a label filter in the URL instead: ?q=team=sre
+  # group_by: ["team"]
+
+  # ─── Appearance ──────────────────────────────────────────────────────────
+
+  # "auto" follows the browser/OS light-dark setting and switches live; "dark"
+  # and "light" force one. Someone clicking the theme button in the UI overrides
+  # this in their own browser.
+  # theme: "auto"
+
+  # Extra stylesheet layered on top of the theme
+  # custom_css: "https://example.com/alertview-theme.css"
+
+  # "local", "UTC", or any IANA timezone (e.g. "Europe/Paris")
+  # timezone: "local"
+
+  # Beep when new alerts arrive, with a different tone per severity. Browsers
+  # only allow it once the user has interacted with the page.
+  # play_sounds: false
+
+  # Start in TV mode (dense rows, auto-hiding HUD). Only applies to a browser
+  # where nobody has used the TV button yet; "?tv=1" in the URL always wins and
+  # is the reliable option for a wall display.
+  # tv_mode_default: false
+
+
+# ───────────────────────────────────────────────────────────────────────────
+#  Environment variables
+#
+#  ALERTVIEW_CONFIG                 path to this file (also: alertview --config)
+#  ALERTVIEW_PORT                   default for `port`
+#  ALERTVIEW_REFRESH_INTERVAL       default for `refresh_interval`
+#  ALERTVIEW_CACHE_TTL              default for `cache_ttl_seconds`
+#  ALERTVIEW_LOG_FORMAT             default for `log_format`
+#  ALERTVIEW_CONFIG_WATCH_METHOD    default for `config_watch_method`
+#  ALERTVIEW_CONFIG_POLL_INTERVAL   default for `config_poll_interval`
+#  RUST_LOG                         log level: error, warn, info, debug, trace
+#
+#  A value written in this file wins over the environment variable.
+# ───────────────────────────────────────────────────────────────────────────
+
+# ───────────────────────────────────────────────────────────────────────────
+#  URL parameters — they apply to the visit only, nothing is stored in the
+#  browser, so they are safe to share or to put on a wall display:
+#
+#    ?q=team=sre          filter by label (also ?q=hostname~web, ?q=team!=dba)
+#    ?tv=1                force TV mode          ?tv=0 force it off
+#    ?sev=critical        filter by severity     ?src=Zabbix filter by source
+#    ?silenced=1          show silenced alerts
+#    ?theme=dark          force a theme          ?theme=auto follow the OS
+# ───────────────────────────────────────────────────────────────────────────

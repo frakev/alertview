@@ -19,8 +19,11 @@ sources:
     url: "http://localhost:9093" # Required: Base URL for the source
     
     # === Optional Settings ===
-    dashboard_url: "https://grafana.example.com/alerting/list"  # Link for alert cards
-    link_template: "https://example.com/alerts?query={{.Labels.alertname}}"  # Custom link template
+    dashboard_url: "https://grafana.example.com/alerting/list"  # Fallback link for the ↗ button
+    link_template: "https://example.com/alerts?query={{.Labels.alertname}}"  # Template for the ↗ button
+    alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}"  # Makes the whole alert clickable
+    source_link: true           # Show the ↗ button for this source
+    severity_label: "severity"  # Label carrying the severity (case-insensitive)
     timeout: 15                 # Request timeout in seconds (default: 15)
     
     # === Authentication (choose one) ===

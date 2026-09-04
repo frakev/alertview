@@ -15,7 +15,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - Automatic light/dark theme following the OS, TV mode startable by default
 - Filter by severity, status (firing / silenced / pending), and source
 - Multi-source filter chips
-- Direct links to specific alerts (Zabbix uses `filter_eventid`, Alertmanager/Grafana use `generator_url`)
+- Direct links to specific alerts (Zabbix builds a `problem.view` URL from the trigger id, Alertmanager/Grafana use the alert's generator URL)
 - TV mode for wall displays — full-screen, auto-refresh, URL-persisted filters
 - Dark/light theme with **custom CSS support**
 - **Automatic config reload** — changes to the config file are detected and applied without restart
@@ -112,7 +112,7 @@ sources:
     bearer_token: "your_zabbix_token"
 ```
 
-> **Note for Zabbix**: Direct alert links require `filter_set=1&filter_eventid=<ID>` parameters, which are automatically added by AlertView.
+> **Note for Zabbix**: alert links are built as `zabbix.php?action=problem.view&triggerids[]=<ID>`, derived from `dashboard_url` when you set one. `eventid` and `triggerid` are exposed as labels if you would rather write your own `link_template`.
 
 ### Display Configuration
 

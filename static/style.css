@@ -672,6 +672,75 @@ a { color: inherit; }
 [data-tv="true"] .alert-card.sev-info     { background: rgba(0,170,255,.09); }
 [data-tv="true"] .alert-list { gap: .2rem; }
 
+/* ── TV mode: rows share one grid ────────────────────────────────────────
+   Each row used to be its own flex line, so every column started wherever the
+   previous element happened to end: with hostnames of different lengths the
+   text, the badges and the labels were ragged from one row to the next.
+
+   The list is now the grid and each row a `subgrid` of it, so a column is as
+   wide as the widest cell across *all* rows — no hardcoded widths (the 0.5.3
+   attempt used `7rem 4.5rem 10rem` and was reverted for good reason). Tracks
+   size to their content, capped with fit-content() so one very long hostname
+   cannot starve the message.
+
+   Browsers without subgrid keep the flex layout below untouched. */
+@supports (grid-template-columns: subgrid) {
+  [data-tv="true"] .alert-list,
+  [data-tv="true"] .group-alerts {
+    display: grid;
+    grid-template-columns:
+      auto                 /* dot + critical icon      */
+      fit-content(32ch)    /* prefix labels            */
+      fit-content(64ch)    /* alert name, or summary   */
+      auto                 /* severity badge           */
+      auto                 /* status badge             */
+      minmax(0, 1fr)       /* summary, or empty filler */
+      fit-content(40ch)    /* labels + toggle          */
+      auto                 /* age                      */
+      auto;                /* source link              */
+    align-items: center;
+  }
+
+  /* Anything that is not a row (group headers, the empty state) spans the lot */
+  [data-tv="true"] .alert-list > :not(.alert-row),
+  [data-tv="true"] .group-alerts > :not(.alert-row) {
+    grid-column: 1 / -1;
+  }
+
+  [data-tv="true"] .alert-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  /* The badges sit right after the alert text, as they always have; the single
+     flexible track is the summary, which soaks up whatever is left and pins the
+     labels, the age and the link to the right edge. */
+
+  /* Cells clip rather than push their column wider than its cap. */
+  [data-tv="true"] .alert-row > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The overlay link is absolutely positioned: keep it out of the tracks. */
+  [data-tv="true"] .alert-row > .card-link { overflow: visible; }
+
+  [data-tv="true"] .row-lead,
+  [data-tv="true"] .row-labels,
+  [data-tv="true"] .row-link {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    overflow: visible;
+  }
+  [data-tv="true"] .row-labels { overflow: hidden; }
+  /* Ages are right-aligned so the digits line up, "for 4m" under "for 28m". */
+  [data-tv="true"] .alert-row .time-ago { text-align: right; }
+}
+
 /* -- Compact line (TV mode) -- */
 .alert-row {
   display: flex;

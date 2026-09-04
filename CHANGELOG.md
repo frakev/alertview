@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-04
+
+### Changed
+- **TV rows line up in columns** — each row was its own flex line, so every column started wherever the previous element happened to end: with hostnames of different lengths the message, the badges and the labels were ragged from one row to the next. The alert list is now a CSS grid and each row a `subgrid` of it, so a column is as wide as the widest cell across all rows and the tracks size to their content, capped with `fit-content()` so one very long hostname cannot starve the message. No hardcoded widths — unlike the 0.5.3 attempt (`7rem 4.5rem 10rem`) that was reverted in 0.5.4. The age is right-aligned so `for 4m` and `for 28m` line up on their digits. Every row emits the same nine slots even when empty, which is what keeps the columns in step; a browser without `subgrid` support falls back to the previous flex layout untouched.
+
+### Documentation
+- **`config.example` rewritten as a complete, organised reference** — options had been appended as they were added, leaving the file unsorted and partly stale: a "Global timeout for all sources" comment sitting above `tls_insecure` (there is no such setting), a Zabbix `link_template` still using the `filter_eventid` parameter dropped back in 0.4, and `show_labels` / `show_alert_name` descriptions predating the reveal button. It is now grouped into Server / Sources / Display sections, every per-source option is documented on the first source, and the file ends with the full list of environment variables and of the URL parameters. All 42 configuration fields are covered.
+- The two `filter_eventid` mentions in the README were replaced by how Zabbix links are actually built, and `docs/configuration/config-file.md` gained the per-source options missing from its inline schema.
+
 ## [0.7.1] - 2026-09-04
 
 ### Added

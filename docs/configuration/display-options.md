@@ -315,7 +315,7 @@ display:
 1. **Label Matching**: AlertView looks for each label in the `labels` array in the alert's labels
 2. **Display Order**: Labels are displayed in the order specified in the array
 3. **Fallback**: If a label doesn't exist for an alert, it's simply skipped
-4. **Special Labels**: `severity` and `alertname` are always shown as badges, regardless of this setting
+4. **Special Labels**: `severity` is always shown as a badge and `alertname` as the alert title, so neither is repeated as a chip. `show_alert_name: false` moves the name behind the `+N` button instead
 
 ### Example with Custom Labels
 
