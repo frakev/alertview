@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Docker workflow no longer sets up QEMU.** It builds `linux/amd64` and nothing else, so the emulation layer contributed nothing — but the step pulls `tonistiigi/binfmt` from Docker Hub on every run, which is a rate limit waiting to happen. It duly failed on the `v0.10.1` tag and skipped the build behind it.
+
 ## [0.10.1] - 2026-09-04
 
 ### Added
