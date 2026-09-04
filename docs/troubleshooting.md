@@ -39,8 +39,8 @@ python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" config.yaml
 # Or use yamllint
 yamllint config.yaml
 
-# Check if AlertView can load the config
-alertview --config config.yaml --dry-run
+# Check if AlertView can load the config: it validates and reports on startup
+alertview --config config.yaml
 ```
 
 ## Common Issues
@@ -132,20 +132,20 @@ alertview --config config.yaml --dry-run
 
 **Diagnosis:**
 
-1. **Check refresh interval:**
+1. **Check the refresh interval** (top level, not under `display:`):
    ```yaml
-   display:
-     refresh_interval: 30  # Should be > 0
+   refresh_interval: 30  # Must be > 0
    ```
 
 2. **Check caching:**
    ```yaml
-   cache_ttl: 60  # If too high, alerts may seem stale
+   cache_ttl_seconds: 60  # If too high, alerts may seem stale
    ```
 
-3. **Check source status:**
+3. **Check source status** — every source reports its own state in the
+   dashboard payload:
    ```bash
-   curl http://localhost:8080/api/sources
+   curl -s http://localhost:8080/api/alerts | jq '.sources'
    ```
 
 4. **Check for errors in logs:**
@@ -156,9 +156,35 @@ alertview --config config.yaml --dry-run
 **Solutions:**
 
 - **Increase refresh interval:** Set to a lower value (e.g., 10-30 seconds)
-- **Disable caching:** Set `cache_ttl: 0` for real-time updates
+- **Disable caching:** Set `cache_ttl_seconds: 0` for real-time updates
 - **Check source health:** Verify your monitoring systems are responding
 - **Check for errors:** Look for fetch errors in logs
+
+### "Backend unreachable" Banner
+
+**Symptoms:**
+- A red banner across the top: *Backend unreachable — data frozen since HH:MM*
+- The alert list is dimmed, the browser tab reads `⚠ stale`
+- The countdown keeps ticking, on a 15-second retry
+
+**What it means:** the browser could not reach AlertView itself — not that a
+source failed. The alerts still on screen are the last ones that arrived and
+may be minutes old. A source that fails instead shows a red dot and `⚠ error`
+in the sources bar, while the rest of the dashboard stays live.
+
+**Diagnosis:**
+
+1. **Is the server up?**
+   ```bash
+   curl -s http://localhost:8080/health   # expects: OK
+   ```
+2. **Is a reverse proxy in the way?** Check its logs for 502/504 on
+   `/api/alerts`, and make sure it does not buffer or time out `/events`.
+3. **Was it restarted?** A rolling update drains connections gracefully, and
+   the banner clears by itself on the next successful poll.
+
+The banner disappears on its own as soon as one poll succeeds; nothing has to
+be reloaded by hand.
 
 ### Connection Errors
 

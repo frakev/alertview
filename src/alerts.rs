@@ -38,6 +38,33 @@ impl std::fmt::Display for HttpStatusError {
 
 impl std::error::Error for HttpStatusError {}
 
+/// A JSON-RPC error returned by Zabbix itself (HTTP 200 with an `error`
+/// member). Typed, so the version fallbacks below can tell "this Zabbix does
+/// not know that parameter" from "this Zabbix said no": only the first is
+/// worth retrying under an older parameter name.
+#[derive(Debug)]
+pub struct ZabbixApiError {
+    pub code: i32,
+    pub message: String,
+    pub data: String,
+}
+
+impl std::fmt::Display for ZabbixApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Zabbix API error {}: {} \u{2014} {}", self.code, self.message, self.data)
+    }
+}
+
+impl std::error::Error for ZabbixApiError {}
+
+/// JSON-RPC -32602 "Invalid params": the parameter does not exist on this
+/// version. Anything else (auth, permissions, HTTP, network) must surface
+/// as-is rather than be retried under a different name.
+fn is_invalid_params(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<ZabbixApiError>()
+        .is_some_and(|e| e.code == -32602)
+}
+
 #[derive(Debug, Serialize)]
 pub struct SourceStatus {
     pub name: String,
@@ -97,22 +124,32 @@ pub struct AlertGroup {
 }
 
 // Alertmanager v2 API wire types
+// Only `fingerprint` is required: an alert without one cannot be tracked at
+// all. Everything else defaults, so one unusual entry does not take down the
+// deserialisation of the whole array — see the per-item parse in
+// fetch_source_alerts.
 #[derive(Debug, Deserialize)]
 struct AmAlert {
+    #[serde(default)]
     annotations: HashMap<String, String>,
-    #[serde(rename = "endsAt")]
+    #[serde(rename = "endsAt", default)]
     ends_at: String,
     fingerprint: String,
     #[serde(rename = "generatorURL", default)]
     generator_url: String,
+    #[serde(default)]
     labels: HashMap<String, String>,
-    #[serde(rename = "startsAt")]
+    #[serde(rename = "startsAt", default)]
     starts_at: String,
+    #[serde(default)]
     status: AmStatus,
 }
 
 #[derive(Debug, Deserialize)]
 struct AmStatus {
+    // A missing status reads as firing: on an alert dashboard, showing an
+    // alert that turns out to be pending beats hiding one that is not.
+    #[serde(default = "default_am_state")]
     state: String,
     // Alertmanager sends this as "silencedBy"; without the rename the field
     // silently stayed empty and no silence comment was ever resolved.
@@ -122,6 +159,20 @@ struct AmStatus {
     // by a silence — without this it showed up as silenced with no comment.
     #[serde(rename = "inhibitedBy", default)]
     inhibited_by: Vec<String>,
+}
+
+impl Default for AmStatus {
+    fn default() -> Self {
+        Self {
+            state: default_am_state(),
+            silenced_by: Vec::new(),
+            inhibited_by: Vec::new(),
+        }
+    }
+}
+
+fn default_am_state() -> String {
+    "active".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,17 +246,46 @@ fn default_acknowledged() -> String {
     "0".to_string()
 }
 
-#[derive(Deserialize)]
+// Every field is optional. `useralias` used to be required here, and no
+// Zabbix ever returns it on an acknowledgement — the object carries a
+// `userid`, the name needs a separate user.get. A required field serde could
+// not find made the *whole* problem.get response fail to deserialise, which is
+// what the three-way fallback below was papering over: acknowledgement
+// comments never reached the UI on any version.
+#[derive(Deserialize, Default)]
 struct ZabbixAcknowledgement {
-    #[serde(rename = "acknowledgeid")]
-    #[allow(dead_code)]
-    id: String,
-    #[serde(rename = "useralias")]
+    #[serde(default)]
+    userid: String,
+    /// Only 5.0 could return a name inline, under `useralias`; 5.4+ renamed it
+    /// `username`. Empty otherwise, and resolved through user.get.
+    #[serde(default, alias = "useralias", alias = "username")]
     user: String,
-    #[serde(rename = "clock")]
+    #[serde(default, rename = "clock")]
     timestamp: String,
-    #[serde(alias = "message", alias = "comment")]
-    message: Option<String>, // The acknowledgment comment/message (Zabbix may use message or comment)
+    #[serde(default, alias = "comment")]
+    message: Option<String>,
+}
+
+/// A Zabbix user, fetched only to put a name on an acknowledgement.
+#[derive(Deserialize)]
+struct ZabbixUser {
+    userid: String,
+    /// `username` since 5.4, `alias` before it.
+    #[serde(default, alias = "alias")]
+    username: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    surname: String,
+}
+
+impl ZabbixUser {
+    /// Full name when the account has one, the login otherwise.
+    fn display_name(&self) -> String {
+        let full = format!("{} {}", self.name.trim(), self.surname.trim());
+        let full = full.trim();
+        if full.is_empty() { self.username.clone() } else { full.to_string() }
+    }
 }
 
 #[derive(Deserialize)]
@@ -221,8 +301,59 @@ struct ZabbixTrigger {
     status: String, // "0" = enabled, "1" = disabled
     #[serde(default)]
     hosts: Vec<ZabbixHostInfo>,
-    #[serde(default)]
+    // `selectGroups` answers under "groups", `selectHostGroups` under
+    // "hostgroups" — see ZabbixDialect.
+    #[serde(default, alias = "hostgroups")]
     groups: Vec<ZabbixGroupInfo>,
+}
+
+// ── Zabbix dialects ──────────────────────────────────────────────────────
+
+/// Parameter names Zabbix renamed between versions. AlertView has no version
+/// pin, so it probes: the modern name first, the older one if this server
+/// rejects it as an unknown parameter. What worked is remembered per source,
+/// so an old server pays the extra round-trip once, not on every poll.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ZabbixDialect {
+    /// trigger.get: `selectHostGroups` since 6.4, `selectGroups` before it.
+    /// `selectGroups` was *removed* in 7.0, which took the whole source down.
+    groups_param: &'static str,
+    /// problem.get: `selectAcknowledgements` since 6.0, `selectAcknowledges`
+    /// before it, `None` for a server that knows neither.
+    ack_param: Option<&'static str>,
+}
+
+impl Default for ZabbixDialect {
+    fn default() -> Self {
+        Self {
+            groups_param: "selectHostGroups",
+            ack_param: Some("selectAcknowledgements"),
+        }
+    }
+}
+
+fn dialect_cache() -> &'static std::sync::RwLock<HashMap<String, ZabbixDialect>> {
+    static CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, ZabbixDialect>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+fn dialect_for(source: &str) -> ZabbixDialect {
+    dialect_cache()
+        .read()
+        .ok()
+        .and_then(|cache| cache.get(source).copied())
+        .unwrap_or_default()
+}
+
+fn remember_dialect(source: &str, dialect: ZabbixDialect) {
+    if dialect_for(source) == dialect {
+        return;
+    }
+    tracing::debug!("Zabbix dialect for {}: {:?}", source, dialect);
+    if let Ok(mut cache) = dialect_cache().write() {
+        cache.insert(source.to_string(), dialect);
+    }
 }
 
 #[derive(Deserialize)]
@@ -276,70 +407,137 @@ where
     }
     let rpc: ZabbixRpcResponse<T> = resp.json().await?;
     if let Some(err) = rpc.error {
-        return Err(anyhow::anyhow!(
-            "Zabbix API error {}: {} — {}",
-            err.code,
-            err.message,
-            err.data
-        ));
+        return Err(ZabbixApiError {
+            code: err.code,
+            message: err.message,
+            data: err.data,
+        }
+        .into());
     }
     rpc.result.ok_or_else(|| anyhow::anyhow!("Zabbix API returned empty result"))
 }
 
+/// problem.get, degrading through the acknowledgement parameter names.
+/// Returns the name that worked so the caller can remember it.
+async fn fetch_zabbix_problems(
+    client: &reqwest::Client,
+    source: &Source,
+    api_url: &str,
+    preferred: Option<&'static str>,
+) -> Result<(Vec<ZabbixProblem>, Option<&'static str>)> {
+    // Newest first, and never re-try a name this server already rejected.
+    let candidates: Vec<Option<&'static str>> = match preferred {
+        Some("selectAcknowledgements") => vec![
+            Some("selectAcknowledgements"),
+            Some("selectAcknowledges"),
+            None,
+        ],
+        Some("selectAcknowledges") => vec![Some("selectAcknowledges"), None],
+        _ => vec![None],
+    };
+
+    let mut last: Option<anyhow::Error> = None;
+    for candidate in candidates {
+        let mut params = serde_json::json!({ "output": "extend", "selectTags": "extend" });
+        if let Some(name) = candidate {
+            params[name] = serde_json::Value::Bool(true);
+        }
+        match zabbix_rpc::<Vec<ZabbixProblem>>(client, source, api_url, "problem.get", params).await
+        {
+            Ok(problems) => return Ok((problems, candidate)),
+            // Only an unknown-parameter error means "try the older name".
+            // An auth failure used to fall through all three attempts and
+            // surface as whatever the last one said.
+            Err(e) if is_invalid_params(&e) => {
+                tracing::debug!("Zabbix {} rejected {:?}: {}", source.name, candidate, e);
+                last = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("problem.get returned no usable response")))
+}
+
+/// trigger.get, degrading through the host-group parameter names.
+async fn fetch_zabbix_triggers(
+    client: &reqwest::Client,
+    source: &Source,
+    api_url: &str,
+    trigger_ids: &[&str],
+    preferred: &'static str,
+) -> Result<(Vec<ZabbixTrigger>, &'static str)> {
+    let candidates: [&'static str; 2] = if preferred == "selectGroups" {
+        ["selectGroups", "selectHostGroups"]
+    } else {
+        ["selectHostGroups", "selectGroups"]
+    };
+
+    let mut last: Option<anyhow::Error> = None;
+    for candidate in candidates {
+        let params = serde_json::json!({
+            "triggerids": trigger_ids,
+            "output": ["triggerid", "status"],
+            candidate: ["name"],
+            "selectHosts": ["name"]
+        });
+        match zabbix_rpc::<Vec<ZabbixTrigger>>(client, source, api_url, "trigger.get", params).await
+        {
+            Ok(triggers) => return Ok((triggers, candidate)),
+            Err(e) if is_invalid_params(&e) => {
+                tracing::debug!("Zabbix {} rejected {}: {}", source.name, candidate, e);
+                last = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("trigger.get returned no usable response")))
+}
+
+/// Names for the users behind a set of acknowledgements. A read-only API user
+/// may not be allowed to list users at all, so a failure here costs the author
+/// line and nothing else.
+async fn fetch_zabbix_user_names(
+    client: &reqwest::Client,
+    source: &Source,
+    api_url: &str,
+    userids: Vec<&str>,
+) -> HashMap<String, String> {
+    if userids.is_empty() {
+        return HashMap::new();
+    }
+    let params = serde_json::json!({
+        "output": ["userid", "username", "name", "surname"],
+        "userids": userids,
+    });
+    match zabbix_rpc::<Vec<ZabbixUser>>(client, source, api_url, "user.get", params).await {
+        Ok(users) => users
+            .into_iter()
+            .map(|u| (u.userid.clone(), u.display_name()))
+            .filter(|(_, name)| !name.is_empty())
+            .collect(),
+        Err(e) => {
+            tracing::debug!("Could not resolve Zabbix user names for {}: {}", source.name, e);
+            HashMap::new()
+        }
+    }
+}
+
 async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Result<Vec<Alert>> {
     let api_url = format!("{}/api_jsonrpc.php", source.url.trim_end_matches('/'));
+    let mut dialect = dialect_for(&source.name);
 
-    // Step 1: active problems (with acknowledgements to get ACK messages)
-    // Try selectAcknowledgements first (Zabbix 6.0+), fall back to select_acknowledges (Zabbix 5.x)
-    // If both fail, try without acknowledgement selection (older versions)
-    let problems: Vec<ZabbixProblem> = match zabbix_rpc(
-        client,
-        source,
-        &api_url,
-        "problem.get",
-        serde_json::json!({ 
-            "output": "extend", 
-            "selectTags": "extend",
-            "selectAcknowledgements": true 
-        }),
-    ).await {
-        Ok(p) => p,
-        Err(_) => {
-            // Fallback for older Zabbix versions
-            match zabbix_rpc(
-                client,
-                source,
-                &api_url,
-                "problem.get",
-                serde_json::json!({ 
-                    "output": "extend", 
-                    "selectTags": "extend",
-                    "select_acknowledges": true 
-                }),
-            ).await {
-                Ok(p) => p,
-                Err(_) => {
-                    // Fallback to basic query without acknowledgements
-                    zabbix_rpc(
-                        client,
-                        source,
-                        &api_url,
-                        "problem.get",
-                        serde_json::json!({ 
-                            "output": "extend", 
-                            "selectTags": "extend"
-                        }),
-                    ).await?
-                }
-            }
-        }
-    };
+    // Step 1: active problems, with their acknowledgements when this version
+    // knows how to return them.
+    let (problems, ack_param) =
+        fetch_zabbix_problems(client, source, &api_url, dialect.ack_param).await?;
+    dialect.ack_param = ack_param;
 
     if problems.is_empty() {
         tracing::debug!("No Zabbix problems found");
+        remember_dialect(&source.name, dialect);
         return Ok(Vec::new());
     }
-    
+
     // Log acknowledged problems for debugging
     let ack_count = problems.iter().filter(|p| p.acknowledged == "1").count();
     if ack_count > 0 {
@@ -348,22 +546,24 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
 
     // Step 2: enrich with hosts + hostgroups via their trigger
     let trigger_ids: Vec<&str> = problems.iter().map(|p| p.objectid.as_str()).collect();
-    let triggers: Vec<ZabbixTrigger> = zabbix_rpc(
-        client,
-        source,
-        &api_url,
-        "trigger.get",
-        serde_json::json!({
-            "triggerids": trigger_ids,
-            "output": ["triggerid", "status"],
-            "selectGroups": ["name"],
-            "selectHosts": ["name"]
-        }),
-    )
-    .await?;
+    let (triggers, groups_param) =
+        fetch_zabbix_triggers(client, source, &api_url, &trigger_ids, dialect.groups_param).await?;
+    dialect.groups_param = groups_param;
+    remember_dialect(&source.name, dialect);
 
     let trigger_map: HashMap<String, ZabbixTrigger> =
         triggers.into_iter().map(|t| (t.triggerid.clone(), t)).collect();
+
+    // Step 3: put a name on the acknowledgements that only carry a userid.
+    let userids: Vec<&str> = problems
+        .iter()
+        .flat_map(|p| p.acknowledgements.iter())
+        .filter(|ack| ack.user.is_empty() && !ack.userid.is_empty())
+        .map(|ack| ack.userid.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let user_names = fetch_zabbix_user_names(client, source, &api_url, userids).await;
 
     // Drop problems whose trigger is disabled. Zabbix's own Problems UI hides these,
     // but problem.get still returns them — e.g. orphaned LLD triggers stuck "not
@@ -429,15 +629,30 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 if !p.acknowledgements.is_empty() {
                     // Use the most recent acknowledgement
                     if let Some(latest_ack) = p.acknowledgements.last() {
-                        tracing::debug!("Using ACK from user {}: {:?}", latest_ack.user, latest_ack.message);
-                        if let Some(ref msg) = latest_ack.message {
-                            annotations.insert("acknowledgement".to_string(), msg.clone());
+                        let author = if latest_ack.user.is_empty() {
+                            user_names.get(&latest_ack.userid).cloned().unwrap_or_default()
                         } else {
-                            annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+                            latest_ack.user.clone()
+                        };
+                        tracing::debug!("Using ACK from user {:?}: {:?}", author, latest_ack.message);
+                        match latest_ack.message.as_deref().map(str::trim) {
+                            Some(msg) if !msg.is_empty() => {
+                                annotations.insert("acknowledgement".to_string(), msg.to_string());
+                            }
+                            _ => {
+                                annotations.insert(
+                                    "acknowledgement".to_string(),
+                                    "Acknowledged in Zabbix".to_string(),
+                                );
+                            }
                         }
                         // Add who acknowledged and when
-                        labels.insert("acknowledged_by".to_string(), latest_ack.user.clone());
-                        labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
+                        if !author.is_empty() {
+                            labels.insert("acknowledged_by".to_string(), author);
+                        }
+                        if !latest_ack.timestamp.is_empty() {
+                            labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
+                        }
                     }
                 } else {
                     tracing::debug!("Problem is acknowledged but has no acknowledgements array");
@@ -530,7 +745,28 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
         return Err(HttpStatusError { status: resp.status(), url }.into());
     }
 
-    let am_alerts: Vec<AmAlert> = resp.json().await?;
+    // Parsed one by one: a single malformed alert used to fail the whole
+    // array, and the source went from "N alerts" to "error" with nothing shown.
+    let raw: Vec<serde_json::Value> = resp.json().await?;
+    let received = raw.len();
+    let am_alerts: Vec<AmAlert> = raw
+        .into_iter()
+        .filter_map(|value| match serde_json::from_value::<AmAlert>(value) {
+            Ok(alert) => Some(alert),
+            Err(e) => {
+                tracing::warn!("Skipping an unparseable alert from {}: {}", source.name, e);
+                None
+            }
+        })
+        .collect();
+    if am_alerts.len() < received {
+        tracing::warn!(
+            "Dropped {}/{} unparseable alert(s) from {}",
+            received - am_alerts.len(),
+            received,
+            source.name
+        );
+    }
     
     // Fetch silences to get comment information for silenced alerts. Skipped
     // when nothing is silenced, which is the common case — no point in a second
@@ -986,6 +1222,137 @@ mod tests {
     }]"#;
     const ONE_SILENCE: &str =
         r#"[{"id": "sil-1", "createdBy": "alice", "comment": "maintenance"}]"#;
+
+    /// A stub Zabbix that only knows the parameter names of one version, so
+    /// the dialect probing can be tested for real. `groups_param` is what its
+    /// trigger.get accepts; anything else comes back as -32602, exactly the
+    /// way a 7.0 answers `selectGroups` and a 6.0 answers `selectHostGroups`.
+    async fn spawn_zabbix_stub(groups_param: &'static str, ack_param: &'static str) -> String {
+        use axum::{routing::post, Json, Router};
+        use serde_json::{json, Value};
+
+        let handler = move |Json(body): Json<Value>| async move {
+            let method = body["method"].as_str().unwrap_or_default().to_string();
+            let params = body["params"].clone();
+            let invalid = |what: &str| {
+                json!({"jsonrpc": "2.0", "id": 1, "error": {
+                    "code": -32602, "message": "Invalid params.",
+                    "data": format!("unexpected parameter \"{}\"", what)}})
+            };
+
+            let result = match method.as_str() {
+                "problem.get" => {
+                    for name in ["selectAcknowledgements", "selectAcknowledges"] {
+                        if !params[name].is_null() && name != ack_param {
+                            return Json(invalid(name));
+                        }
+                    }
+                    json!([{
+                        "eventid": "1", "objectid": "42", "name": "Disk full",
+                        "severity": "5", "clock": "1788000000", "r_clock": "0",
+                        "suppressed": "0", "acknowledged": "1",
+                        // A real Zabbix returns a userid, never a name.
+                        "acknowledgements": [
+                            {"acknowledgeid": "9", "userid": "7", "clock": "1788000100",
+                             "message": "on it"}
+                        ],
+                        "tags": [{"tag": "team", "value": "sre"}]
+                    }])
+                }
+                "trigger.get" => {
+                    for name in ["selectHostGroups", "selectGroups"] {
+                        if !params[name].is_null() && name != groups_param {
+                            return Json(invalid(name));
+                        }
+                    }
+                    let groups = json!([{"name": "Linux servers"}]);
+                    let mut trigger = json!({
+                        "triggerid": "42", "status": "0", "hosts": [{"name": "srv-01"}]
+                    });
+                    trigger[if groups_param == "selectHostGroups" { "hostgroups" } else { "groups" }] =
+                        groups;
+                    json!([trigger])
+                }
+                "user.get" => json!([
+                    {"userid": "7", "username": "alice", "name": "Alice", "surname": "F"}
+                ]),
+                _ => json!([]),
+            };
+            Json(json!({"jsonrpc": "2.0", "id": 1, "result": result}))
+        };
+
+        let app = Router::new().route("/api_jsonrpc.php", post(handler));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{}", addr)
+    }
+
+    /// Zabbix 7.0 removed `selectGroups` from trigger.get. Sending it made the
+    /// call fail, and with it the whole source.
+    #[tokio::test]
+    async fn test_zabbix_7_dialect() {
+        let url = spawn_zabbix_stub("selectHostGroups", "selectAcknowledgements").await;
+        let mut source = source_with_url(SourceType::Zabbix, &url);
+        source.name = "zbx70".to_string();
+
+        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source).await.unwrap();
+        assert_eq!(alerts.len(), 1);
+        let alert = &alerts[0];
+        assert_eq!(alert.severity, "critical");
+        assert_eq!(alert.labels.get("hostgroup").map(String::as_str), Some("Linux servers"));
+        assert_eq!(alert.labels.get("host").map(String::as_str), Some("srv-01"));
+        assert_eq!(alert.labels.get("team").map(String::as_str), Some("sre"));
+        // The acknowledgement carries a userid only: the name comes from user.get.
+        assert_eq!(alert.annotations.get("acknowledgement").map(String::as_str), Some("on it"));
+        assert_eq!(alert.labels.get("acknowledged_by").map(String::as_str), Some("Alice F"));
+        assert_eq!(dialect_for("zbx70").groups_param, "selectHostGroups");
+    }
+
+    /// Zabbix 6.0 and older know neither `selectHostGroups` on trigger.get nor
+    /// `selectAcknowledgements` on problem.get: both fall back one step.
+    #[tokio::test]
+    async fn test_zabbix_6_dialect() {
+        let url = spawn_zabbix_stub("selectGroups", "selectAcknowledges").await;
+        let mut source = source_with_url(SourceType::Zabbix, &url);
+        source.name = "zbx60".to_string();
+
+        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source).await.unwrap();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(
+            alerts[0].labels.get("hostgroup").map(String::as_str),
+            Some("Linux servers")
+        );
+        assert_eq!(alerts[0].annotations.get("acknowledgement").map(String::as_str), Some("on it"));
+
+        // What worked is remembered, so the probing costs one round-trip once.
+        let dialect = dialect_for("zbx60");
+        assert_eq!(dialect.groups_param, "selectGroups");
+        assert_eq!(dialect.ack_param, Some("selectAcknowledges"));
+    }
+
+    /// One malformed entry must not take the whole payload down with it.
+    #[tokio::test]
+    async fn test_fetch_skips_unparseable_alerts() {
+        const MIXED: &str = r#"[
+            {"labels": {"alertname": "Good", "severity": "warning"},
+             "annotations": {}, "status": {"state": "active"},
+             "startsAt": "2026-09-04T10:00:00Z", "endsAt": "0001-01-01T00:00:00Z",
+             "fingerprint": "ok"},
+            {"labels": {"alertname": "NoFingerprint"}, "status": {"state": "active"}},
+            {"fingerprint": "bare"}
+        ]"#;
+        let url = spawn_stub(MIXED, "[]").await;
+        let source = source_with_url(SourceType::Alertmanager, &url);
+        let alerts = fetch_source_alerts(&reqwest::Client::new(), &source).await.unwrap();
+
+        // The entry without a fingerprint is dropped; the bare one survives on
+        // defaults alone.
+        let names: Vec<&str> = alerts.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Good", "Unknown"]);
+        assert_eq!(alerts[1].status, "firing");
+        assert_eq!(alerts[1].severity, "none");
+    }
 
     #[test]
     fn test_zabbix_exposes_alertname() {

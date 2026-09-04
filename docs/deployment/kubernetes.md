@@ -220,6 +220,15 @@ spec:
           value: "60"
 ```
 
+> A value written in `config.yaml` **wins over the environment variable** —
+> these are defaults for fields the file leaves out. The `02-configmap.yaml`
+> shipped here sets `port` and `refresh_interval` explicitly, so setting
+> `ALERTVIEW_PORT` alongside it has no effect. Remove the field from the file
+> to let the variable through.
+>
+> This applies only to the settings above: source URLs, tokens and every
+> `display:` option are read from the file alone.
+
 See [Environment Variables](../configuration/environment-variables.md) for a complete list.
 
 ### Multiple Configurations
@@ -396,39 +405,127 @@ spec:
 
 #### Pod Security
 
-Run as non-root user:
+The image already runs as `65532:65532`, and AlertView writes nothing to disk —
+its configuration is a read-only mount and it keeps no state — so it runs
+under a fully restricted context:
 
 ```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 2000
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alertview
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
 ```
+
+The published image runs under exactly this context: non-root, read-only root
+filesystem, no capabilities, no privilege escalation.
+
+Nothing is written to the mounted volume, so no `fsGroup` is required for the
+ConfigMap mount shipped here, whose files are world-readable (mode `0644`). It
+*is* required as soon as you narrow the file's mode — see
+[Secrets Management](#secrets-management) below.
 
 #### Secrets Management
 
-For sensitive data (e.g., API tokens for datasources):
+> **AlertView does not expand environment variables inside `config.yaml`.**
+> Writing `bearer_token: "${ALERTMANAGER_TOKEN}"` and injecting the value with
+> `secretKeyRef` does not work — the placeholder is read as the literal token
+> and every request is rejected. Only the settings listed under
+> [Using Environment Variables](#using-environment-variables) have an
+> environment fallback; source credentials have none.
+
+Since credentials live in the configuration file itself, put the **whole file
+in a Secret** rather than a ConfigMap, and mount it exactly where the ConfigMap
+would have gone:
+
+```bash
+kubectl create secret generic alertview-config \
+  --from-file=config.yaml=./config.yaml \
+  -n alertview
+```
 
 ```yaml
-env:
-- name: ALERTMANAGER_API_TOKEN
-  valueFrom:
-    secretKeyRef:
-      name: alertview-secrets
-      key: alertmanager-token
+    spec:
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        # Secret files are owned by root; fsGroup makes them group-readable by
+        # the container's user. Without it, mode 0440 means "permission denied"
+        # on a file the pod cannot open — and AlertView refuses to start.
+        fsGroup: 65532
+      volumes:
+        - name: config
+          secret:
+            secretName: alertview-config
+            defaultMode: 0440
 ```
+
+The container, the mount path and the arguments are unchanged — AlertView only
+ever sees a file at `/config/config.yaml`. Auto-reload keeps working: Secret
+updates reach the pod the same way ConfigMap ones do (see the note under
+[Using ConfigMap](#using-configmap)), and `config_watch_method: "polling"`
+picks up the symlink swap that inotify misses.
+
+The `02-configmap.yaml` shipped with this repository is an **example**: it
+carries `YOUR_GRAFANA_TOKEN_HERE`-style placeholders. As soon as you replace
+them with real tokens, move the file to a Secret as above — a ConfigMap is
+readable by anything that can list ConfigMaps in the namespace, and it is
+usually committed to git.
+
+For encrypted-at-rest workflows, a `SealedSecret`, an External Secrets
+`ExternalSecret` or a SOPS-encrypted file all produce the same Secret and need
+no change on the AlertView side.
+
+### Rolling Updates
+
+AlertView handles `SIGTERM`: it stops accepting new connections, lets the
+requests already in flight finish, closes the SSE streams and exits — usually
+in a few milliseconds. The default `terminationGracePeriodSeconds: 30` is
+ample; no `preStop` hook is needed.
+
+Browsers reconnect their event stream on their own, and a dashboard that
+cannot reach the server in the meantime says so rather than showing stale
+alerts as if they were live (see [Features](../getting-started/features.md)).
 
 ### Monitoring
 
-Add Prometheus annotations for monitoring:
+**AlertView exposes no Prometheus metrics** — there is no `/metrics` endpoint,
+and `prometheus.io/scrape` annotations on the pod will only produce a failing
+target. What it does expose is `/health`, which returns `200 OK` as soon as the
+HTTP server is up:
+
+```bash
+curl -s http://alertview.alertview.svc.cluster.local:8080/health   # OK
+```
+
+That is what the readiness and liveness probes in `03-deployment.yaml` use. To
+alert on the dashboard itself being down, probe it from the outside — with
+`blackbox_exporter`, for instance:
 
 ```yaml
-metadata:
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
-    prometheus.io/path: "/metrics"
+# Prometheus scrape config (on the blackbox exporter, not on AlertView)
+- job_name: alertview-health
+  metrics_path: /probe
+  params:
+    module: [http_2xx]
+  static_configs:
+    - targets: ["http://alertview.alertview.svc.cluster.local:8080/health"]
 ```
+
+`/health` reflects the HTTP server, not the state of the sources: a source
+that is failing keeps the endpoint at `200`, is reported per source in
+`/api/alerts` and is shown next to its name in the dashboard.
 
 ### Logging
 

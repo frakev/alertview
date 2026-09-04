@@ -27,6 +27,24 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 | `/` | Focus the search box |
 | `Escape` | In the search box: clear it, then leave it. Elsewhere: close the TV panel, then leave TV mode |
 | `T` | Toggle TV mode |
+| `Tab` | Move between the severity chips, the source chips and the group headers |
+| `Enter` / `Space` | Activate the focused chip or group header |
+
+Every control is reachable from the keyboard: the severity and source chips
+and the group headers are not `<button>` elements, so they carry their own
+focus ring and Enter/Space handling.
+
+### ⚠️ Stale Data
+
+A dashboard that stops updating must not look like a quiet one. When a poll
+fails, AlertView shows a red *Backend unreachable — data frozen since HH:MM*
+banner, dims the alert list, marks the browser tab `⚠ stale`, and keeps the
+countdown running on a 15-second retry. Everything clears by itself on the
+next successful poll.
+
+This is about reaching AlertView itself. A **source** that fails is reported
+separately, as a red dot and `⚠ error` next to its name, while the rest of the
+dashboard stays live.
 
 ### 🔍 Filtering & Search
 - **Severity Filter**: Filter by any severity present, ranked by `display.severity_order`

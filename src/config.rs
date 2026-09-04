@@ -182,6 +182,24 @@ mod tests {
         assert_eq!(config.log_format, "text");
     }
 
+    fn config_from(yaml: &str) -> Result<Config> {
+        let config: Config = serde_yaml::from_str(yaml)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    #[test]
+    fn test_validate_rejects_unknown_enums() {
+        // A typo here used to fall through to the other branch in silence.
+        assert!(config_from("sources: []\nlog_format: jsonn").is_err());
+        assert!(config_from("sources: []\nconfig_watch_method: inotifty").is_err());
+        assert!(config_from("sources: []\nconfig_poll_interval: 0").is_err());
+        // An empty order ranks every severity the same, disabling sorting.
+        assert!(config_from("sources: []\ndisplay:\n  severity_order: []").is_err());
+        // The valid spellings still load.
+        assert!(config_from("sources: []\nlog_format: json\nconfig_watch_method: inotify").is_ok());
+    }
+
     #[test]
     fn test_log_format_json() {
         let config: Config = serde_yaml::from_str("log_format: json\nsources: []").expect("Failed to parse config");
@@ -458,6 +476,31 @@ impl Config {
         // Validate refresh interval
         if self.refresh_interval == 0 {
             anyhow::bail!("refresh_interval cannot be 0");
+        }
+
+        // These used to be free-form strings: a typo silently fell through to
+        // the other branch (text logs, inotify) instead of saying so.
+        if !matches!(self.log_format.as_str(), "text" | "json") {
+            anyhow::bail!("log_format must be \"text\" or \"json\", got {:?}", self.log_format);
+        }
+        if !matches!(self.config_watch_method.as_str(), "inotify" | "polling") {
+            anyhow::bail!(
+                "config_watch_method must be \"inotify\" or \"polling\", got {:?}",
+                self.config_watch_method
+            );
+        }
+        if self.config_poll_interval == 0 {
+            anyhow::bail!("config_poll_interval cannot be 0");
+        }
+
+        // An empty order ranks every severity the same, which silently turns
+        // off sorting, the group ordering and the filter chips' order.
+        if self.display.severity_order.is_empty() {
+            anyhow::bail!("display.severity_order cannot be empty");
+        }
+
+        if self.sources.is_empty() {
+            tracing::warn!("No sources configured: the dashboard will stay empty");
         }
         
         // Validate each source

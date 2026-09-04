@@ -86,6 +86,11 @@ When alerts are silenced in Alertmanager, AlertView fetches the silence informat
 - `silence_comment`: The comment/message from the silence that silenced this alert
 - `silence_created_by`: Who created that silence (the silence's `createdBy`)
 
+**Malformed alerts.** Alerts are parsed one at a time: an entry AlertView
+cannot read is logged and skipped, and the rest of the payload is shown. Only
+`fingerprint` is required; everything else falls back to a default, so a
+minimal alert still appears rather than taking the whole source down.
+
 If the silence cannot be fetched or has no comment, a default message "Silenced in Alertmanager" is used.
 
 ### Troubleshooting
@@ -244,6 +249,31 @@ Zabbix alerts include these special fields:
 - Alerts with `acknowledged: "1"` (ACK'd in Zabbix) are also displayed as **silenced**
 - The acknowledgment message is available in the `acknowledgement` annotation
 - User and timestamp are available in `acknowledged_by` and `acknowledged_at` labels
+
+**Who acknowledged an alert.** An acknowledgement carries a `userid`, not a
+name, so AlertView resolves it with one `user.get` per poll. An API token
+without permission to read users simply leaves the author out — the message,
+the timestamp and the alert itself are unaffected.
+
+### Zabbix Version Compatibility
+
+Tested against Zabbix **6.0 through 7.x**. Zabbix renamed two API parameters
+along the way, and AlertView probes for them rather than pinning a version:
+
+| API call | Modern name | Older name | Renamed in |
+|---|---|---|---|
+| `trigger.get` | `selectHostGroups` | `selectGroups` | 6.4 (deprecated), **removed in 7.0** |
+| `problem.get` | `selectAcknowledgements` | `selectAcknowledges` | 6.0 |
+
+The modern name is tried first. If the server answers "invalid params" — that
+is, it does not know the parameter — AlertView retries with the older one and
+remembers what worked for that source, so the extra round-trip happens once,
+not on every poll. Any other error (authentication, permissions, HTTP,
+network) is reported straight away instead of being retried under a different
+name.
+
+No configuration is needed for this: it applies to whatever version each
+source turns out to be running.
 
 ### Severity Mapping
 

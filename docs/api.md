@@ -138,7 +138,7 @@ Groups are ordered by their most severe alert.
 | `name` | string | Source name |
 | `status` | string | Source status: ok, error |
 | `alert_count` | integer | Number of alerts from this source |
-| `error` | string | Error message if status is error, null otherwise |
+| `error` | string | Error message if status is error, null otherwise. Credentials embedded in a source URL (`http://user:pass@host`) are replaced by `***@` before the message leaves the server |
 
 **Status Codes:**
 

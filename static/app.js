@@ -10,11 +10,17 @@ function lsSet(key, value) {
   try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
 }
 
+/* Escapes for both text and attribute contexts. The previous implementation
+   round-tripped through textContent/innerHTML, which is the DOM's *text node*
+   serialisation: it escapes & < >, and leaves quotes alone. Everything here is
+   interpolated into HTML strings, attributes included (title=, data-sev=,
+   data-group-key=), so an alert label holding a double quote closed the
+   attribute and the next word became a live event handler. */
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 function esc(s) {
   if (s == null) return '';
-  const d = document.createElement('div');
-  d.textContent = String(s);
-  return d.innerHTML;
+  return String(s).replace(/[&<>"']/g, c => ESC[c]);
 }
 
 function relTime(iso) {
@@ -30,13 +36,30 @@ function relTime(iso) {
   } catch { return '?' }
 }
 
+/* The configured timezone, validated once. Intl throws on an IANA name with a
+   typo, and the TV clock had no guard: it died on its first tick and threw
+   once a second afterwards. Falling back to the browser's zone beats a frozen
+   clock on a wall display. */
+let tzChecked = null;
+
+function tzOptions() {
+  const tz = AppConfig.timezone;
+  if (!tz || tz === 'local') return {};
+  if (tzChecked && tzChecked.tz === tz) return tzChecked.options;
+  let options = { timeZone: tz };
+  try {
+    new Date().toLocaleString('en-US', options);
+  } catch {
+    console.warn(`AlertView: unknown timezone "${tz}", using the browser's instead`);
+    options = {};
+  }
+  tzChecked = { tz, options };
+  return options;
+}
+
 function absTime(iso) {
   try {
-    const date = new Date(iso);
-    if (AppConfig.timezone === 'local' || AppConfig.timezone === 'UTC') {
-      return date.toLocaleString('en-US', { timeZone: AppConfig.timezone === 'UTC' ? 'UTC' : undefined });
-    }
-    return date.toLocaleString('en-US', { timeZone: AppConfig.timezone });
+    return new Date(iso).toLocaleString('en-US', tzOptions());
   } catch { return iso; }
 }
 
@@ -276,23 +299,47 @@ let AppConfig = {
   timezone: 'local'
 };
 
+/* The tone for a severity. A level with no preset of its own borrows the
+   nearest one in the configured order, more severe first: the loop used to
+   stop at the most severe level present and play nothing at all when that
+   level had no preset — which is every custom severity. */
+function presetFor(sev) {
+  const order = sevOrderList().map(canonSev);
+  const start = order.indexOf(canonSev(sev));
+  if (start === -1) return SOUND_PRESETS[canonSev(sev)] || null;
+  for (let d = 0; d < order.length; d++) {
+    if (start - d >= 0 && SOUND_PRESETS[order[start - d]]) return SOUND_PRESETS[order[start - d]];
+    if (start + d < order.length && SOUND_PRESETS[order[start + d]]) return SOUND_PRESETS[order[start + d]];
+  }
+  // Nobody in this severity_order has a preset — a fully renamed scale. Map
+  // the rank onto the built-in one so the top of the scale still sounds more
+  // urgent than the bottom, instead of the page going silent.
+  const defaults = DEFAULT_SEV_ORDER.filter(s => SOUND_PRESETS[s]);
+  if (!defaults.length) return null;
+  const span = Math.max(1, order.length - 1);
+  return SOUND_PRESETS[defaults[Math.min(defaults.length - 1,
+    Math.round((start / span) * (defaults.length - 1)))]];
+}
+
 function playSoundForAlerts(newAlerts) {
   if (!AppConfig.playSounds || !newAlerts.length) return;
-  
-  // Play sound for the highest severity
-  for (const sev of sevOrderList()) {
-    if (newAlerts.some(a => canonSev(a.severity) === canonSev(sev))) {
-      const preset = SOUND_PRESETS[canonSev(sev)];
-      if (preset) preset();
-      break; // Only play for the highest severity
-    }
-  }
+  const worst = newAlerts.reduce((best, a) =>
+    severityOrder(a.severity) < severityOrder(best.severity) ? a : best);
+  const preset = presetFor(worst.severity);
+  if (preset) preset();
+}
+
+/* Icon standing for a batch of alerts. Driven by the configured severity
+   order: keyed off the level *names* it was always 🟡 as soon as someone
+   renamed their severities. */
+function severityIcon(list) {
+  const worst = list.reduce((rank, a) => Math.min(rank, severityOrder(a.severity)), Infinity);
+  return worst === 0 ? '🔴' : worst <= 2 ? '🟠' : '🟡';
 }
 
 function sendNotif(newAlerts) {
   if (Notification?.permission !== 'granted' || !newAlerts.length) return;
-  const bySev = s => newAlerts.filter(a => a.severity === s).length;
-  const icon = bySev('critical') ? '🔴' : bySev('error') ? '🟠' : bySev('high') ? '🟠' : '🟡';
+  const icon = severityIcon(newAlerts);
   const alertWord = newAlerts.length > 1 ? 'alerts' : 'alert';
   const n = new Notification(
     `${icon} ${newAlerts.length} new ${alertWord}`,
@@ -316,6 +363,8 @@ const App = {
   srcFilter:      (() => { try { const r = lsGet('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
   showSilenced:   lsGet('av-show-silenced') === 'true',
   refreshTimer:   null,
+  lastSuccess:    null,
+  stale:          false,
   countdownTimer: null,
   countdown:      0,
   loading:        false,
@@ -373,7 +422,8 @@ function renderSourceChips() {
   const chips = sources.map(s => {
     const active = App.srcFilter.has(s.name);
     const count  = s.status === 'ok' ? `&thinsp;(${s.alert_count})` : '';
-    return `<span class="src-flt-chip${active ? ' active' : ''}" data-src="${esc(s.name)}">` +
+    return `<span class="src-flt-chip${active ? ' active' : ''}" data-src="${esc(s.name)}"` +
+      ` role="button" tabindex="0" aria-pressed="${active}">` +
       `<span class="src-dot ${esc(s.status)}"></span>${esc(s.name)}${count}</span>`;
   }).join('');
   ['src-filter-chips', 'tv-src-chips'].forEach(id => {
@@ -436,23 +486,20 @@ async function fetchAlerts() {
 
     render();
 
-    const now = new Date().toLocaleTimeString('en-US');
+    App.lastSuccess = new Date();
+    const now = App.lastSuccess.toLocaleTimeString('en-US');
     document.getElementById('last-refresh').textContent = now;
     document.getElementById('tv-last').textContent = now;
-
-    App.countdown = data.refresh_interval;
-    document.getElementById('countdown').textContent = App.countdown;
-    document.getElementById('tv-cd').textContent = App.countdown;
-
-    App.countdownTimer = setInterval(() => {
-      App.countdown = Math.max(0, App.countdown - 1);
-      document.getElementById('countdown').textContent = App.countdown;
-      document.getElementById('tv-cd').textContent = App.countdown;
-    }, 1000);
+    setStale(false);
+    startCountdown(data.refresh_interval);
 
     App.refreshTimer = setTimeout(fetchAlerts, data.refresh_interval * 1000);
   } catch (err) {
     console.error('AlertView:', err);
+    setStale(true, err);
+    // The countdown was cleared on the way in; restart it on the retry delay
+    // so the page keeps visibly ticking instead of freezing mid-number.
+    startCountdown(15);
     App.refreshTimer = setTimeout(fetchAlerts, 15000);
   } finally {
     App.loading = false;
@@ -460,6 +507,39 @@ async function fetchAlerts() {
   }
 }
 
+
+function paintCountdown() {
+  document.getElementById('countdown').textContent = App.countdown;
+  document.getElementById('tv-cd').textContent = App.countdown;
+}
+
+function startCountdown(seconds) {
+  clearInterval(App.countdownTimer);
+  App.countdown = seconds;
+  paintCountdown();
+  App.countdownTimer = setInterval(() => {
+    App.countdown = Math.max(0, App.countdown - 1);
+    paintCountdown();
+  }, 1000);
+}
+
+/* A failed poll used to be a console message and nothing else: "last refresh"
+   kept showing an old time and the countdown froze, so a dead backend looked
+   exactly like "nothing new" — the worst way for a wall display to fail. */
+function setStale(stale, err) {
+  if (stale === App.stale && !stale) return;
+  App.stale = stale;
+  document.documentElement.setAttribute('data-stale', String(stale));
+  const banner = document.getElementById('stale-banner');
+  banner.hidden = !stale;
+  if (!stale) { updateTitle(); return; }
+
+  document.getElementById('stale-since').textContent = App.lastSuccess
+    ? App.lastSuccess.toLocaleTimeString('en-US')
+    : 'never';
+  banner.title = String(err?.message || err || 'The alertview backend did not answer');
+  document.title = '⚠ stale — AlertView';
+}
 
 /* display.tv_mode_default only applies when this browser has no stored TV
    preference and the URL did not force one. */
@@ -568,10 +648,10 @@ function toggleSev(s) {
 
 /* -- Render -- */
 function updateTitle() {
+  if (App.stale) { document.title = '⚠ stale — AlertView'; return; }
   const firing = (App.data?.alerts ?? []).filter(a => a.status === 'firing');
   if (!firing.length) { document.title = 'AlertView'; return; }
-  const bySev = s => firing.filter(a => a.severity === s).length;
-  const icon = bySev('critical') ? '🔴' : bySev('error') ? '🟠' : bySev('high') ? '🟠' : '🟡';
+  const icon = severityIcon(firing);
   const alertWord = firing.length > 1 ? 'alerts' : 'alert';
   document.title = `${icon} ${firing.length} ${alertWord} — AlertView`;
 }
@@ -583,7 +663,8 @@ function renderStats() {
   (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
   const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
   document.getElementById('stats-bar').innerHTML = order
-    .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" data-sev="${esc(s)}">${counts[s]}&thinsp;${esc(s)}</span>`)
+    .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" data-sev="${esc(s)}"` +
+      ` role="button" tabindex="0" aria-pressed="${App.sevFilter === s}">${counts[s]}&thinsp;${esc(s)}</span>`)
     .join('');
 }
 
@@ -707,7 +788,7 @@ function groupShellHtml(group) {
 
   return `
     <div class="alert-group" data-group-key="${esc(group.key)}">
-      <div class="group-header">
+      <div class="group-header" role="button" tabindex="0" aria-expanded="false">
         <span class="group-toggle">▶</span>
         <span class="group-label">${groupLabel}</span>
         <span class="group-count"></span>
@@ -720,6 +801,7 @@ function groupShellHtml(group) {
 function applyGroupOpen(groupEl, isOpen) {
   groupEl.querySelector('.group-alerts').style.display = isOpen ? 'block' : 'none';
   groupEl.querySelector('.group-toggle').textContent = isOpen ? '▼' : '▶';
+  groupEl.querySelector('.group-header').setAttribute('aria-expanded', String(isOpen));
 }
 
 function renderGroupedAlerts(listEl, groups, filtered) {
@@ -1087,10 +1169,7 @@ const TV = {
   },
   stopClock() { clearInterval(this.clockTimer); },
   updateClock() {
-    const options = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
-    if (AppConfig.timezone !== 'local') {
-      options.timeZone = AppConfig.timezone;
-    }
+    const options = { hour: '2-digit', minute: '2-digit', second: '2-digit', ...tzOptions() };
     document.getElementById('tv-clock').textContent =
       new Date().toLocaleTimeString('en-US', options);
   },
@@ -1128,9 +1207,11 @@ const TV = {
     const counts = {};
     (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
     const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
-    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="all">all</span>`;
+    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="all"` +
+      ` role="button" tabindex="0" aria-pressed="${App.sevFilter === 'all'}">all</span>`;
     document.getElementById('tv-sev-chips').innerHTML = all + order
-      .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="${esc(s)}">${counts[s]}&thinsp;${esc(s)}</span>`)
+      .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="${esc(s)}"` +
+        ` role="button" tabindex="0" aria-pressed="${App.sevFilter === s}">${counts[s]}&thinsp;${esc(s)}</span>`)
       .join('');
   },
 
@@ -1189,10 +1270,26 @@ function delegate(containerId, selector, handler) {
   });
 }
 
+/* The chips and the group headers are spans, not <button>s, so Enter and Space
+   have to be wired by hand — without this the whole filter row and every group
+   header were unreachable from the keyboard. */
+function activate(containerId, selector, handler) {
+  delegate(containerId, selector, handler);
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const hit = e.target.closest(selector);
+    if (!hit || !el.contains(hit)) return;
+    e.preventDefault();
+    handler(hit, e);
+  });
+}
+
 ['stats-bar', 'tv-sev-chips'].forEach(id =>
-  delegate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
+  activate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
-  delegate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
+  activate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
 delegate('alert-list', '[data-comment-toggle]', (el, e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -1212,7 +1309,7 @@ delegate('alert-list', '[data-labels-toggle]', (el, e) => {
   else App.openLabels.add(fp);
   renderAlerts();
 });
-delegate('alert-list', '.group-header', el => {
+activate('alert-list', '.group-header', el => {
   const groupEl = el.closest('.alert-group');
   if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
 });

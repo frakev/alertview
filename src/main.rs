@@ -38,10 +38,14 @@ fn print_help() {
     println!("  -h, --help     Show this help message and exit");
     println!();
     println!("Environment Variables:");
-    println!("  ALERTVIEW_CONFIG    Path to the configuration file");
-    println!("  ALERTVIEW_PORT      Port to listen on (default: 8080)");
-    println!("  ALERTVIEW_LOG_FORMAT Log format: 'text' or 'json' (default: text)");
-    println!("  RUST_LOG           Log level: error, warn, info, debug, trace");
+    println!("  ALERTVIEW_CONFIG               Path to the configuration file");
+    println!("  ALERTVIEW_PORT                 Port to listen on (default: 8080)");
+    println!("  ALERTVIEW_REFRESH_INTERVAL     Browser refresh interval, seconds (default: 30)");
+    println!("  ALERTVIEW_CACHE_TTL            Per-source cache TTL, seconds (default: 0, off)");
+    println!("  ALERTVIEW_LOG_FORMAT           Log format: 'text' or 'json' (default: text)");
+    println!("  ALERTVIEW_CONFIG_WATCH_METHOD  'polling' or 'inotify' (default: polling)");
+    println!("  ALERTVIEW_CONFIG_POLL_INTERVAL Polling interval, seconds (default: 10)");
+    println!("  RUST_LOG                       Log level: error, warn, info, debug, trace");
     println!();
     println!("Examples:");
     println!("  alertview                          # Use default config.yaml");
@@ -65,6 +69,8 @@ const MAX_SSE_CONNECTIONS: usize = 100;
 enum AppEvent {
     NewAlert(Box<Alert>),
     ConfigReloaded,
+    /// Ends every SSE stream so a graceful shutdown can actually drain.
+    Shutdown,
 }
 
 struct AppState {
@@ -79,6 +85,44 @@ struct AppState {
     /// the cache is always empty and every poll re-announced every alert as
     /// new — which made clients refresh in a loop.
     known_fps: Arc<tokio::sync::RwLock<HashMap<String, HashSet<String>>>>,
+    /// One gate per cache key. Without it, every browser that arrived while a
+    /// cache entry was expired fired its own upstream request.
+    inflight: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+}
+
+/// Look the cache up, returning a copy only while the entry is still fresh.
+async fn cache_hit(state: &AppState, key: &str, ttl: Duration) -> Option<Vec<alerts::Alert>> {
+    let cache = state.cache.read().await;
+    cache
+        .get(key)
+        .and_then(|(alerts, ts)| (ts.elapsed() < ttl).then(|| alerts.clone()))
+}
+
+/// Credentials embedded in a URL, blanked out. Source errors are served to
+/// every browser through /api/alerts, and reqwest puts the failing URL in its
+/// message — including a `http://user:pass@host` userinfo.
+fn redact_credentials(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(start) = rest.find("://") {
+        let (head, tail) = rest.split_at(start + 3);
+        out.push_str(head);
+        // The authority ends at the first delimiter; look for userinfo inside it.
+        let end = tail
+            .find(['/', ' ', '"', ','])
+            .unwrap_or(tail.len());
+        let (authority, after) = tail.split_at(end);
+        match authority.rsplit_once('@') {
+            Some((_, host)) => {
+                out.push_str("***@");
+                out.push_str(host);
+            }
+            None => out.push_str(authority),
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 #[tokio::main]
@@ -132,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
         config.sources.len()
     );
     for s in &config.sources {
-        tracing::info!("  • {} ({})", s.name, s.url);
+        tracing::info!("  • {} ({})", s.name, redact_credentials(&s.url));
     }
 
     // Warn if TLS verification is disabled
@@ -162,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
         tx: tx.clone(),
         sse_connections: Arc::new(AtomicUsize::new(0)),
         known_fps: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+        inflight: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
     });
 
     // Start config file watcher
@@ -185,9 +230,46 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     tracing::info!("Listening on http://0.0.0.0:{port}");
-    axum::serve(listener, app).await?;
+    // Without this, a SIGTERM (a Kubernetes rolling update, `docker stop`)
+    // killed in-flight requests instead of letting them finish.
+    let shutdown_tx = tx.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            // SSE streams never end on their own, so draining would wait for
+            // them forever: tell them to close.
+            let _ = shutdown_tx.send(AppEvent::Shutdown);
+        })
+        .await?;
+    tracing::info!("Shutdown complete");
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sigterm) => {
+                sigterm.recv().await;
+            }
+            Err(e) => {
+                tracing::warn!("Cannot listen for SIGTERM: {}", e);
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("Interrupt received, shutting down"),
+        _ = terminate => tracing::info!("SIGTERM received, shutting down"),
+    }
 }
 
 /// Release version, injected at build time by build.rs (CI git tag, else Cargo version).
@@ -296,6 +378,7 @@ async fn sse_handler(
                     let event = Event::default().event("config_reloaded").data("config reloaded");
                     return Some((event, (rx, guard)));
                 }
+                Ok(AppEvent::Shutdown) => return None,
                 // Receiver fell behind: skip the missed events, keep the connection.
                 Err(RecvError::Lagged(_)) => continue,
                 // Sender dropped (server shutdown): end the stream.
@@ -325,9 +408,6 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
     };
     let use_cache = cache_ttl > Duration::from_secs(0);
 
-    // Fingerprints already announced, per source.
-    let known_before: HashMap<String, HashSet<String>> = state.known_fps.read().await.clone();
-
     // Sources are fetched concurrently — the response used to take the sum of
     // every source's latency. `buffered` keeps the results in config order.
     let jobs: Vec<_> = sources
@@ -338,16 +418,37 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 let cache_key = format!("{}:{}:{:?}", source.name, source.url, source.source_type);
 
                 if use_cache {
-                    let cached = {
-                        let cache = state.cache.read().await;
-                        cache.get(&cache_key).and_then(|(alerts, ts)| {
-                            (ts.elapsed() < cache_ttl).then(|| alerts.clone())
-                        })
-                    };
-                    if let Some(alerts) = cached {
+                    if let Some(alerts) = cache_hit(&state, &cache_key, cache_ttl).await {
                         tracing::debug!("Cache hit for source {}", source.name);
                         return (source, cache_key, Ok(alerts), true);
                     }
+
+                    // Single-flight: one fetch per source at a time. N browsers
+                    // arriving on an expired entry used to mean N upstream
+                    // requests at once, which is the moment the source can
+                    // least afford them.
+                    let gate = {
+                        let mut inflight = state.inflight.lock().await;
+                        inflight
+                            .entry(cache_key.clone())
+                            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                            .clone()
+                    };
+                    let _permit = gate.lock().await;
+
+                    // The fetch we queued behind has just filled the cache.
+                    if let Some(alerts) = cache_hit(&state, &cache_key, cache_ttl).await {
+                        tracing::debug!("Cache filled while waiting, source {}", source.name);
+                        return (source, cache_key, Ok(alerts), true);
+                    }
+
+                    tracing::debug!("Fetching from source {}", source.name);
+                    let result = fetch_source_alerts_with_retry(&state.client, source).await;
+                    if let Ok(alerts) = &result {
+                        let mut cache = state.cache.write().await;
+                        cache.insert(cache_key.clone(), (alerts.clone(), Instant::now()));
+                    }
+                    return (source, cache_key, result, false);
                 }
 
                 tracing::debug!("Fetching from source {}", source.name);
@@ -364,36 +465,20 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
 
     let mut all_alerts = Vec::new();
     let mut source_statuses = Vec::new();
-    let mut new_fingerprints = HashSet::new();
+    let mut cache_keys: HashSet<String> = HashSet::new();
     let mut refreshed_fps: HashMap<String, HashSet<String>> = HashMap::new();
 
     for (source, cache_key, result, from_cache) in fetches {
+        cache_keys.insert(cache_key);
         match result {
             Ok(alerts) => {
                 tracing::debug!("Got {} alerts from {}", alerts.len(), source.name);
 
                 if !from_cache {
-                    // A source with no entry yet has never been fetched
-                    // successfully (server start, new source in the config):
-                    // prime it silently rather than announcing its whole
-                    // backlog as new.
-                    let fps: HashSet<String> =
-                        alerts.iter().map(|a| a.fingerprint.clone()).collect();
-                    match known_before.get(&source.name) {
-                        Some(known) => new_fingerprints
-                            .extend(fps.difference(known).cloned()),
-                        None => tracing::debug!(
-                            "Priming {} known alert(s) for source {}",
-                            fps.len(),
-                            source.name
-                        ),
-                    }
-                    refreshed_fps.insert(source.name.clone(), fps);
-
-                    if use_cache {
-                        let mut cache = state.cache.write().await;
-                        cache.insert(cache_key, (alerts.clone(), Instant::now()));
-                    }
+                    refreshed_fps.insert(
+                        source.name.clone(),
+                        alerts.iter().map(|a| a.fingerprint.clone()).collect(),
+                    );
                 }
 
                 source_statuses.push(SourceStatus {
@@ -405,25 +490,48 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 all_alerts.extend(alerts);
             }
             Err(e) => {
-                tracing::warn!("Failed to fetch from {}: {}", source.name, e);
+                // Redacted in the log too: logs get shipped off the host.
+                tracing::warn!("Failed to fetch from {}: {}", source.name, redact_credentials(&e.to_string()));
                 source_statuses.push(SourceStatus {
                     name: source.name.clone(),
                     status: "error".to_string(),
                     alert_count: 0,
-                    error: Some(e.to_string()),
+                    // /api/alerts is served to every browser: no credentials
+                    // from a source URL may travel with the message.
+                    error: Some(redact_credentials(&e.to_string())),
                 });
             }
         }
     }
 
-    // Remember what has been announced. Sources served from cache or that
-    // failed keep their previous entry, so a transient failure does not
-    // re-announce everything once the source comes back.
-    {
+    // Diff and record in one critical section: two browsers polling at the
+    // same instant used to read the same "already announced" snapshot and both
+    // announce the same alerts. Sources served from cache or that failed keep
+    // their previous entry, so a transient failure does not re-announce
+    // everything once the source comes back.
+    let new_fingerprints: HashSet<String> = {
         let configured: HashSet<&str> = sources.iter().map(|s| s.name.as_str()).collect();
         let mut known = state.known_fps.write().await;
-        known.extend(refreshed_fps);
+        let mut fresh = HashSet::new();
+        for (name, fps) in refreshed_fps {
+            match known.get(&name) {
+                Some(seen) => fresh.extend(fps.difference(seen).cloned()),
+                // A source with no entry yet has never been fetched
+                // successfully (server start, new source in the config): prime
+                // it silently rather than announcing its whole backlog as new.
+                None => tracing::debug!("Priming {} known alert(s) for source {}", fps.len(), name),
+            }
+            known.insert(name, fps);
+        }
         known.retain(|name, _| configured.contains(name.as_str()));
+        fresh
+    };
+
+    // A source that is renamed, removed or repointed leaves its cache entry
+    // (and its gate) behind on every config reload otherwise.
+    if use_cache {
+        state.cache.write().await.retain(|key, _| cache_keys.contains(key));
+        state.inflight.lock().await.retain(|key, _| cache_keys.contains(key));
     }
 
     // Per-source settings are already applied; fill in the config-wide ones.
@@ -613,7 +721,7 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                                             cfg.sources.len()
                                         );
                                         for s in &cfg.sources {
-                                            tracing::info!("  • {} ({})", s.name, s.url);
+                                            tracing::info!("  • {} ({})", s.name, redact_credentials(&s.url));
                                         }
                                         // Notify frontend via SSE
                                         let _ = tx.send(AppEvent::ConfigReloaded);
@@ -696,7 +804,7 @@ fn start_config_watcher(shared_config: SharedConfig, config_path: String, watch_
                                     cfg.sources.len()
                                 );
                                 for s in &cfg.sources {
-                                    tracing::info!("  • {} ({})", s.name, s.url);
+                                    tracing::info!("  • {} ({})", s.name, redact_credentials(&s.url));
                                 }
                                 // Notify frontend via SSE
                                 let _ = tx_clone.send(AppEvent::ConfigReloaded);
@@ -772,4 +880,30 @@ fn start_polling_watcher(shared_config: SharedConfig, config_path: String, poll_
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redact_credentials() {
+        // reqwest puts the failing URL in its message, and /api/alerts hands
+        // that message to every browser.
+        assert_eq!(
+            redact_credentials("error sending request for url (http://bob:s3cret@zbx.test/api_jsonrpc.php)"),
+            "error sending request for url (http://***@zbx.test/api_jsonrpc.php)"
+        );
+        // A URL without userinfo is untouched, and so is plain text.
+        assert_eq!(
+            redact_credentials("HTTP 404 Not Found from https://am.test/api/v2/alerts"),
+            "HTTP 404 Not Found from https://am.test/api/v2/alerts"
+        );
+        assert_eq!(redact_credentials("Timeout after 15s"), "Timeout after 15s");
+        // Several URLs in one message.
+        assert_eq!(
+            redact_credentials("http://a:b@x.test/ then https://c:d@y.test/z"),
+            "http://***@x.test/ then https://***@y.test/z"
+        );
+    }
 }

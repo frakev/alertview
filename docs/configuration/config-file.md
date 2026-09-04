@@ -116,7 +116,7 @@ display:
 | `port` | u16 | 8080 | Port number to listen on |
 | `refresh_interval` | u64 | 30 | Seconds between auto-refreshes |
 | `tls_insecure` | bool | false | Skip TLS certificate verification |
-| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). One entry per source |
+| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). One entry per source. While an entry is being refreshed, other browsers wait for that one fetch rather than each firing their own |
 | `log_format` | string | "text" | Log format: "text" or "json" |
 | `config_watch_method` | string | "polling" | Method to watch config file: "inotify" (native) or "polling" (default, works everywhere) |
 | `config_poll_interval` | u64 | 10 | Polling interval in seconds (only used with polling method) |
@@ -377,17 +377,34 @@ display:
 
 ## Validation
 
-You can validate your configuration file using:
+AlertView validates the file on startup and on every reload, and refuses to
+start on anything it cannot honour rather than falling back in silence:
+
+| Rule | Message |
+|---|---|
+| `port` ≠ 0 | `Port cannot be 0` |
+| `refresh_interval` ≠ 0 | `refresh_interval cannot be 0` |
+| `log_format` is `text` or `json` | `log_format must be "text" or "json", got …` |
+| `config_watch_method` is `inotify` or `polling` | `config_watch_method must be …` |
+| `config_poll_interval` ≠ 0 | `config_poll_interval cannot be 0` |
+| `display.severity_order` is not empty | `display.severity_order cannot be empty` |
+| Source names are unique (case-insensitive) | `Duplicate source name …` |
+| Per source: `url` set, `timeout` ≠ 0, `initial_delay_ms` ≠ 0, `max_delay_ms` ≥ `initial_delay_ms` | `Invalid configuration for source at index N: …` |
+
+An empty `sources:` list is allowed — it logs a warning and serves an empty
+dashboard.
+
+A **reload** that fails validation is rejected and logged; the running
+configuration is kept, so a typo in a live edit cannot take the dashboard down.
+
+To check a file without starting a server for good:
 
 ```bash
-# Using yamllint (recommended)
+# Validates, prints the sources it found, then Ctrl-C
+alertview config.yaml
+
+# YAML syntax only
 yamllint config.yaml
-
-# Using Python
-python3 -c 'import yaml, sys; yaml.safe_load(open(sys.argv[1]))' config.yaml
-
-# Using Rust (if you have serde_yaml)
-cargo run --example validate-config -- config.yaml
 ```
 
 ## Migration Guide

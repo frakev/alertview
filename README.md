@@ -7,7 +7,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 > ⚠️ **Security:** AlertView has no built-in authentication and binds to `0.0.0.0`. Its `/api/alerts` endpoint exposes alert data (hostnames, labels, messages). **Never expose it directly to an untrusted network** — always place it behind a reverse proxy with authentication and TLS (see [Reverse proxy](docs/deployment/reverse-proxy.md)).
 
 **Features:**
-- Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
+- Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources (Zabbix 6.0 → 7.x, detected at runtime)
 - Severity-colored cards (critical / error / high / warning / info), ranking configurable via `display.severity_order`
 - Search by label straight from the search box: `team=sre|dba, hostname~web` (`=`, `!=`, `~`, `|` for several values), mixed with free text — Ctrl+F / Cmd+F or `/` jumps into it
 - The severity dot opens a link built from the alert's labels (`display.alert_link_template`) and lights up on hover, independent from the ↗ "open in the source" button
@@ -24,7 +24,9 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - **Response caching** with configurable TTL
 - **Retry logic** with exponential backoff per source
 - **Gzip compression** for API responses
-- **Health check endpoint** (`/health`)
+- **Health check endpoint** (`/health`), and a **graceful shutdown** on SIGTERM
+- **Says when it is stale** — a backend it cannot reach gets a banner and a dimmed list, never a frozen dashboard that reads as "all quiet"
+- **Keyboard-navigable** — every filter chip and group header takes focus and answers Enter/Space
 - **Installable as a PWA** — add AlertView to your home screen on Android, iOS or desktop (standalone, full-screen)
 
 ## Table of Contents
@@ -37,6 +39,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 - [Install as an App (PWA)](#install-as-an-app-pwa)
 - [API](#api)
 - [Tests](#tests)
+- [Credits](#credits)
 
 ## Requirements
 
@@ -171,6 +174,9 @@ Enable response caching to reduce load on your alert sources:
 # Global cache TTL in seconds (0 = disabled)
 cache_ttl_seconds: 60
 ```
+
+One entry per source. While an entry is being refreshed, the browsers that
+arrive meanwhile wait for that single fetch instead of each firing their own.
 
 > `config.yaml` is gitignored — never commit credentials.
 
@@ -480,6 +486,16 @@ The tests verify:
 - Source-specific configuration (timeout, retry policy)
 - Link template rendering with various placeholders
 - Display configuration (theme, timezone, labels)
+
+## Credits
+
+AlertView is maintained by [frakev](https://github.com/frakev), who
+designed it, decided what it should do and runs it in production.
+
+The code itself — the Rust backend, the frontend, the tests and this
+documentation — is written by **Claude** (Anthropic), through
+[Claude Code](https://claude.com/claude-code), from their specifications and
+under their review.
 
 ## License
 
