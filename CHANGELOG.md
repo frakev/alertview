@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-04
+
 ### Added
 - **`--version` / `-V`** — the version was readable in the dashboard footer, in the TV status bar and in the `User-Agent`, but not from the binary itself. It is answered before the configuration is read and before the port is bound, so it works on a machine with neither. `--help` now names the version too, and the startup log line reads `Starting AlertView 0.10.0 on port 8080 with 3 source(s)` — "which build is this?" is the first question when a dashboard misbehaves.
 

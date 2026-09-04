@@ -187,7 +187,7 @@ arrive meanwhile wait for that single fetch instead of each firing their own.
 alertview                              # uses ./config.yaml
 alertview /etc/alertview/config.yaml   # positional path
 alertview --config /etc/alertview/config.yaml
-alertview --version                    # -> alertview 0.10.0
+alertview --version                    # prints the running version
 alertview --help
 ```
 
