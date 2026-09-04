@@ -109,6 +109,16 @@ display:
   # Can be overridden per source with alert_link_template.
   # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}?host={{.Labels.hostname}}"
 
+  # Show the alert name (the alertname label). false = show the summary
+  # annotation instead; alerts without a summary keep their name.
+  # show_alert_name: true
+
+  # Show the label chips next to each alert (the "key=value" pills).
+  # show_labels: true
+
+  # Icon marking critical alerts, "" to disable
+  # critical_icon: "🔥"
+
   # Show the "open in the source" arrow on the right of each alert.
   # Its destination is independent from alert_link_template above.
   # source_link: true

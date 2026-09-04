@@ -54,7 +54,7 @@
       <svg class="search-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
       </svg>
-      <input type="search" id="search" class="search-input" placeholder="Search alerts, labels, annotations..." autocomplete="off" spellcheck="false">
+      <input type="search" id="search" class="search-input" placeholder="Search, or filter by label: team=sre, hostname~web" autocomplete="off" spellcheck="false">
       <button class="search-clear" id="search-clear" title="Clear">✕</button>
     </div>
 
@@ -112,6 +112,7 @@
   <!-- Floating HUD bar -->
   <div class="tv-bar" id="tv-bar">
     <span class="tv-clock" id="tv-clock">00:00</span>
+    <span class="tv-version" title="AlertView v__APP_VERSION__">v__APP_VERSION__</span>
     <div class="tv-dots" id="tv-dots"></div>
     <span class="tv-cd">↻&thinsp;<span id="tv-cd">–</span>s</span>
     <span class="tv-bar-sep"></span>

@@ -48,7 +48,8 @@ Accept: application/json
       "name": "HighCPUUsage",
       "source": "alertmanager",
       "source_type": "alertmanager",
-      "link_url": "http://prometheus.example.com/graph?g0.expr=..."
+      "link_url": "http://prometheus.example.com/graph?g0.expr=...",
+      "alert_link_url": "https://wiki.example.com/runbook/HighCPUUsage"
     }
   ],
   "sources": [
@@ -62,10 +63,19 @@ Accept: application/json
   "refresh_interval": 30,
   "display_labels": ["namespace", "job", "instance"],
   "timezone": "local",
-  "theme": null,
+  "theme": "auto",
+  "custom_css": null,
   "play_sounds": false,
   "groups": [],
-  "group_by": []
+  "group_by": [],
+  "severity_order": ["critical", "error", "high", "warning", "info", "none"],
+  "prefix_labels": ["hostname"],
+  "prefix_separator": " / ",
+  "show_alert_name": true,
+  "show_labels": true,
+  "critical_icon": "🔥",
+  "tv_mode_default": false,
+  "link_new_tab": true
 }
 ```
 
@@ -81,6 +91,12 @@ Accept: application/json
 - `groups`: Array of alert groups (if grouping is enabled)
 - `group_by`: Labels used for grouping
 
+The remaining fields mirror the `display` configuration section and exist so the
+frontend renders what the config asks for: `severity_order`, `prefix_labels`,
+`prefix_separator`, `show_alert_name`, `show_labels`, `critical_icon`,
+`tv_mode_default`, `link_new_tab` and `custom_css`. See
+[Display Options](configuration/display-options.md).
+
 **Alert Object Fields:**
 
 | Field | Type | Description |
@@ -95,7 +111,24 @@ Accept: application/json
 | `name` | string | Alert name (from alertname label) |
 | `source` | string | Source name from configuration |
 | `source_type` | string | Source type: alertmanager, grafana, zabbix |
-| `link_url` | string | URL to view the alert in its source system |
+| `link_url` | string | URL behind the ↗ button ("open in the source"), null if none applies |
+| `alert_link_url` | string | URL the whole alert points to, from `alert_link_template`, null if the config declares none or the template could not be resolved |
+
+Both link fields are always `http`/`https` — other schemes are dropped
+server-side.
+
+**Alert Group Object Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Opaque group identifier |
+| `labels` | object | The `group_by` labels and their values; a label the alerts do not carry is reported as `<missing>` |
+| `count` | integer | Number of alerts in the group |
+| `severity_counts` | object | Alert count per severity |
+
+A group does **not** carry its alerts: they are already in the top-level
+`alerts` array, and the members are the alerts whose labels match `labels`.
+Groups are ordered by their most severe alert.
 
 **Source Status Object Fields:**
 

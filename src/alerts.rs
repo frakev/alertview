@@ -75,13 +75,21 @@ pub struct AlertsResponse {
     pub tv_mode_default: bool,
     #[serde(default)]
     pub link_new_tab: bool,
+    #[serde(default)]
+    pub show_alert_name: bool,
+    #[serde(default)]
+    pub show_labels: bool,
+    #[serde(default)]
+    pub critical_icon: String,
 }
 
+/// A group header. The alerts themselves are not repeated here — the frontend
+/// picks them out of the main `alerts` list from `labels`, and serialising them
+/// twice doubled the payload.
 #[derive(Debug, Serialize)]
 pub struct AlertGroup {
     pub key: String,
     pub labels: std::collections::HashMap<String, String>,
-    pub alerts: Vec<Alert>,
     pub count: usize,
     pub severity_counts: std::collections::HashMap<String, usize>,
 }
@@ -104,8 +112,14 @@ struct AmAlert {
 #[derive(Debug, Deserialize)]
 struct AmStatus {
     state: String,
-    #[serde(default)]
+    // Alertmanager sends this as "silencedBy"; without the rename the field
+    // silently stayed empty and no silence comment was ever resolved.
+    #[serde(rename = "silencedBy", default)]
     silenced_by: Vec<String>, // List of silence IDs that silenced this alert
+    // An inhibited alert is "suppressed" too, but by another alert rather than
+    // by a silence — without this it showed up as silenced with no comment.
+    #[serde(rename = "inhibitedBy", default)]
+    inhibited_by: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -357,7 +371,7 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     let before = problems.len();
     let problems: Vec<ZabbixProblem> = problems
         .into_iter()
-        .filter(|p| trigger_map.get(&p.objectid).map_or(true, |t| t.status != "1"))
+        .filter(|p| trigger_map.get(&p.objectid).is_none_or(|t| t.status != "1"))
         .collect();
     let dropped = before - problems.len();
     if dropped > 0 {
@@ -569,7 +583,12 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
             // Add silence comment to annotations if alert is silenced
             let mut annotations = a.annotations.clone();
-            if status == "silenced" && !a.status.silenced_by.is_empty() {
+            if status == "silenced" && a.status.silenced_by.is_empty() && !a.status.inhibited_by.is_empty() {
+                annotations.insert(
+                    "silence_comment".to_string(),
+                    "Inhibited by another alert".to_string(),
+                );
+            } else if status == "silenced" && !a.status.silenced_by.is_empty() {
                 // Try to find a matching silence comment
                 for silence_id in &a.status.silenced_by {
                     if let Some(comment) = silence_map.get(silence_id) {
@@ -790,14 +809,18 @@ pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
 }
 
 /// Group alerts by specified labels
-pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
+pub fn group_alerts(
+    alerts: &[Alert],
+    group_by: &[String],
+    severity_order: &[String],
+) -> Vec<AlertGroup> {
     if group_by.is_empty() {
         return Vec::new();
     }
 
     use std::collections::HashMap;
 
-    let mut groups_map: HashMap<String, Vec<Alert>> = HashMap::new();
+    let mut groups_map: HashMap<String, Vec<&Alert>> = HashMap::new();
 
     for alert in alerts {
         let mut group_key_parts: Vec<String> = Vec::new();
@@ -811,7 +834,7 @@ pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
         }
 
         let group_key = group_key_parts.join(",");
-        groups_map.entry(group_key).or_default().push(alert.clone());
+        groups_map.entry(group_key).or_default().push(alert);
     }
 
     let mut groups: Vec<AlertGroup> = groups_map
@@ -832,20 +855,29 @@ pub fn group_alerts(alerts: &[Alert], group_by: &[String]) -> Vec<AlertGroup> {
             AlertGroup {
                 key,
                 labels,
-                alerts: alerts.clone(),
                 count: alerts.len(),
                 severity_counts,
             }
         })
         .collect();
 
-    // Sort groups by key
-    groups.sort_by(|a, b| a.key.cmp(&b.key));
+    // Most severe group first — on a wall display the team with a critical
+    // has to be at the top, not wherever the alphabet puts it.
+    groups.sort_by(|a, b| {
+        let worst = |g: &AlertGroup| {
+            g.severity_counts
+                .keys()
+                .map(|s| severity_rank(severity_order, s))
+                .min()
+                .unwrap_or(usize::MAX)
+        };
+        worst(a).cmp(&worst(b)).then_with(|| a.key.cmp(&b.key))
+    });
 
     groups
 }
 
-fn count_severities(alerts: &[Alert]) -> HashMap<String, usize> {
+fn count_severities(alerts: &[&Alert]) -> HashMap<String, usize> {
     let mut counts = HashMap::new();
     for alert in alerts {
         *counts.entry(alert.severity.clone()).or_insert(0) += 1;
@@ -911,6 +943,77 @@ mod tests {
         assert_eq!(severity_rank(&order, "notice"), 2);
         // Levels dropped from the list lose their built-in rank.
         assert_eq!(severity_rank(&order, "critical"), 3);
+    }
+
+    // ── Integration tests against a stub Alertmanager ────────────────────
+    // These exist because unit tests could not have caught the bugs that hurt:
+    // the API path being dropped from the URL, "silencedBy" never
+    // deserialising, or a javascript: generator URL reaching the frontend.
+
+    async fn spawn_stub(alerts: &'static str, silences: &'static str) -> String {
+        use axum::{routing::get, Router};
+        let json = |body: &'static str| async move {
+            ([("content-type", "application/json")], body)
+        };
+        let app = Router::new()
+            .route("/api/v2/alerts", get(move || json(alerts)))
+            .route("/api/v2/silences", get(move || json(silences)));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{}", addr)
+    }
+
+    const ONE_ALERT: &str = r#"[{
+        "fingerprint": "abc",
+        "status": {"state": "suppressed", "silencedBy": ["sil-1"]},
+        "labels": {"alertname": "DiskFull", "severity": "critical", "hostname": "srv-01"},
+        "annotations": {"summary": "disk full"},
+        "startsAt": "2026-09-04T10:00:00Z",
+        "endsAt": "0001-01-01T00:00:00Z",
+        "generatorURL": "javascript:alert(1)"
+    }]"#;
+    const ONE_SILENCE: &str =
+        r#"[{"id": "sil-1", "createdBy": "alice", "comment": "maintenance"}]"#;
+
+    #[tokio::test]
+    async fn test_fetch_from_a_plain_base_url() {
+        let url = spawn_stub(ONE_ALERT, ONE_SILENCE).await;
+        let source = source_with_url(SourceType::Alertmanager, &url);
+        let alerts = fetch_source_alerts(&reqwest::Client::new(), &source)
+            .await
+            .expect("the API path must be appended to a plain base URL");
+
+        assert_eq!(alerts.len(), 1);
+        let alert = &alerts[0];
+        assert_eq!(alert.name, "DiskFull");
+        assert_eq!(alert.status, "silenced");
+        // silencedBy has to deserialise for the comment to be resolved.
+        assert_eq!(
+            alert.annotations.get("silence_comment").map(String::as_str),
+            Some("maintenance")
+        );
+        // A javascript: generator URL must never reach the frontend.
+        assert_eq!(alert.link_url, None);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_reports_http_status() {
+        let url = spawn_stub(ONE_ALERT, ONE_SILENCE).await;
+        let mut source = source_with_url(SourceType::Alertmanager, &url);
+        source.url = format!("{}/nowhere/api/v2", url);
+
+        let err = fetch_source_alerts(&reqwest::Client::new(), &source)
+            .await
+            .expect_err("a 404 must surface as a typed status error");
+        let status = err
+            .downcast_ref::<HttpStatusError>()
+            .expect("the retry loop branches on this type");
+        assert_eq!(status.status.as_u16(), 404);
+    }
+
+    fn sev_order() -> Vec<String> {
+        crate::config::DisplayConfig::default().severity_order
     }
 
     fn source_with_url(source_type: SourceType, url: &str) -> Source {
@@ -1177,7 +1280,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &["namespace".to_string()]);
+        let groups = group_alerts(&alerts, &["namespace".to_string()], &sev_order());
         assert_eq!(groups.len(), 2);
         
         // Find prod and dev groups
@@ -1227,7 +1330,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &["namespace".to_string(), "job".to_string()]);
+        let groups = group_alerts(&alerts, &["namespace".to_string(), "job".to_string()], &sev_order());
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].key, "namespace=prod,job=api");
         assert_eq!(groups[1].key, "namespace=prod,job=web");
@@ -1252,7 +1355,7 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &[]);
+        let groups = group_alerts(&alerts, &[], &sev_order());
         assert_eq!(groups.len(), 0);
     }
 

@@ -261,10 +261,12 @@ ALERTVIEW_PORT=9090 cargo run
 
 **Available Options:**
 - `-h, --help` - Show help message and exit
-- `CONFIG_FILE` - Path to the configuration file (default: `config.yaml`)
+- `CONFIG_FILE` - Path to the configuration file (default: `config.yaml`), also
+  accepted as `--config <path>`
 
 **Environment Variables:**
-- `ALERTVIEW_CONFIG` - Path to the configuration file
+- `ALERTVIEW_CONFIG` - Path to the configuration file, used when no path is
+  given on the command line
 - `ALERTVIEW_PORT` - Port to listen on (default: 8080)
 - `ALERTVIEW_LOG_FORMAT` - Log format: `text` or `json` (default: text)
 - `RUST_LOG` - Log level: `error`, `warn`, `info`, `debug`, `trace`

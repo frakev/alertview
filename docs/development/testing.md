@@ -8,16 +8,14 @@ AlertView uses Rust's built-in test framework. Tests are organized as follows:
 
 ```
 alertview/
-├── src/
-│   ├── main.rs           # Integration tests can be here
-│   ├── config.rs         # Unit tests for config
-│   ├── alerts.rs         # Unit tests for alerts
-│   └── cache.rs          # Unit tests for cache
-├── tests/                # Integration tests (optional)
-│   └── integration.rs    # End-to-end tests
-└── benches/              # Benchmarks (optional)
-    └── benchmark.rs      # Performance benchmarks
+└── src/
+    ├── main.rs           # HTTP handlers, retry logic
+    ├── config.rs         # Unit tests for config parsing and validation
+    └── alerts.rs         # Unit tests + integration tests against a stub server
 ```
+
+Everything lives in `#[cfg(test)] mod tests` blocks next to the code it covers.
+`cargo test` runs the lot; CI runs it on every push and pull request.
 
 ## Running Tests
 
@@ -351,53 +349,32 @@ pub fn create_test_alert() -> Alert {
 }
 ```
 
-### Mock HTTP Server
+### Integration tests against a stub Alertmanager
 
-Use `mockito` or `wiremock` for testing HTTP requests:
+No mocking library is needed: axum is already a dependency, so a stub server can
+be spawned inside a `#[tokio::test]` on a random port. See
+`test_fetch_from_a_plain_base_url` and `test_fetch_reports_http_status` in
+`src/alerts.rs`.
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use mockito::{mock, Server};
-
-    #[tokio::test]
-    async fn test_fetch_alerts_from_mock_server() {
-        // Start a mock server
-        let mut server = Server::new();
-        
-        // Setup mock response
-        let mock_response = r#"[{
-            "labels": {"alertname": "Test"},
-            "annotations": {"summary": "Test alert"},
-            "startsAt": "2024-01-01T00:00:00Z",
-            "status": {"state": "firing"}
-        }]"#;
-        
-        let _m = mock("GET", "/api/v2/alerts")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(mock_response)
-            .create();
-        
-        // Create a source pointing to the mock server
-        let source = Source {
-            name: "test".to_string(),
-            source_type: SourceType::Alertmanager,
-            url: server.url(),
-            ..Default::default()
-        };
-        
-        // Fetch alerts
-        let client = reqwest::Client::new();
-        let result = fetch_source_alerts(&source, &client).await;
-        
-        assert!(result.is_ok());
-        let alerts = result.unwrap();
-        assert_eq!(alerts.len(), 1);
-    }
+async fn spawn_stub(alerts: &'static str, silences: &'static str) -> String {
+    use axum::{routing::get, Router};
+    let json = |body: &'static str| async move {
+        ([("content-type", "application/json")], body)
+    };
+    let app = Router::new()
+        .route("/api/v2/alerts", get(move || json(alerts)))
+        .route("/api/v2/silences", get(move || json(silences)));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{}", addr)
 }
 ```
+
+These cover what unit tests cannot: the API path being appended to the source
+URL, the wire format actually sent by Alertmanager (`silencedBy`, `startsAt`),
+link sanitising, and HTTP errors surfacing as a typed `HttpStatusError`.
 
 ## Test Strategies
 
@@ -907,6 +884,5 @@ mod tests {
 - [Cargo Test Documentation](https://doc.rust-lang.org/cargo/commands/cargo-test.html)
 - [Tarpaulin Coverage Tool](https://github.com/xd009642/tarpaulin)
 - [Proptest Property Testing](https://github.com/altsysrq/proptest)
-- [Mockito HTTP Mocking](https://github.com/lipanski/mockito)
 - [Criterion Benchmarking](https://github.com/bheisler/criterion.rs)
 - [k6 Load Testing](https://k6.io/)

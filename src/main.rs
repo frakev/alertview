@@ -1,7 +1,7 @@
 use alerts::{severity_rank, Alert, AlertsResponse, SourceStatus};
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 use config::{Config, SharedConfig};
-use futures::stream;
+use futures::stream::{self, StreamExt as _};
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -46,6 +46,7 @@ fn print_help() {
     println!("Examples:");
     println!("  alertview                          # Use default config.yaml");
     println!("  alertview /etc/alertview/config.yaml");
+    println!("  alertview --config /etc/alertview/config.yaml");
     println!("  alertview --help");
 }
 
@@ -53,8 +54,8 @@ fn print_help() {
 type AlertCache = HashMap<String, (Vec<alerts::Alert>, Instant)>;
 type SharedAlertCache = Arc<tokio::sync::RwLock<AlertCache>>;
 
-// Maximum cache size to prevent memory exhaustion
-const MAX_CACHE_ENTRIES: usize = 1000;
+// How many sources are fetched at once
+const MAX_CONCURRENT_FETCHES: usize = 8;
 
 // Maximum number of concurrent SSE connections
 const MAX_SSE_CONNECTIONS: usize = 100;
@@ -89,9 +90,14 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(0);
     }
 
+    // Precedence: --config <path> / positional argument, then ALERTVIEW_CONFIG
+    // (documented in --help but never read until now), then the default.
     let config_path = args
-        .get(1)
-        .cloned()
+        .iter()
+        .position(|a| a == "--config")
+        .and_then(|i| args.get(i + 1).cloned())
+        .or_else(|| args.get(1).filter(|a| !a.starts_with('-')).cloned())
+        .or_else(|| std::env::var("ALERTVIEW_CONFIG").ok())
         .unwrap_or_else(|| "config.yaml".to_string());
 
     let config = Config::load(&config_path)?;
@@ -160,9 +166,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Start config file watcher
     start_config_watcher(shared_config.clone(), config_path, watch_method, poll_interval, tx.clone());
-
-    // Log cache size limit
-    tracing::debug!("Alert cache limited to {} entries", MAX_CACHE_ENTRIES);
 
     let app = Router::new()
         .route("/", get(serve_index))
@@ -309,40 +312,90 @@ async fn sse_handler(
 }
 
 async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> {
+    // Snapshot the config and release the lock: the fetches below take seconds,
+    // and holding the read guard would block a config reload for that long.
+    let (sources, display, refresh_interval, cache_ttl) = {
+        let config = state.config.read().await;
+        (
+            config.sources.clone(),
+            config.display.clone(),
+            config.refresh_interval,
+            Duration::from_secs(config.cache_ttl_seconds),
+        )
+    };
+    let use_cache = cache_ttl > Duration::from_secs(0);
+
+    // Fingerprints already announced, per source.
+    let known_before: HashMap<String, HashSet<String>> = state.known_fps.read().await.clone();
+
+    // Sources are fetched concurrently — the response used to take the sum of
+    // every source's latency. `buffered` keeps the results in config order.
+    let jobs: Vec<_> = sources
+        .iter()
+        .map(|source| {
+            let state = state.clone();
+            async move {
+                let cache_key = format!("{}:{}:{:?}", source.name, source.url, source.source_type);
+
+                if use_cache {
+                    let cached = {
+                        let cache = state.cache.read().await;
+                        cache.get(&cache_key).and_then(|(alerts, ts)| {
+                            (ts.elapsed() < cache_ttl).then(|| alerts.clone())
+                        })
+                    };
+                    if let Some(alerts) = cached {
+                        tracing::debug!("Cache hit for source {}", source.name);
+                        return (source, cache_key, Ok(alerts), true);
+                    }
+                }
+
+                tracing::debug!("Fetching from source {}", source.name);
+                let result = fetch_source_alerts_with_retry(&state.client, source).await;
+                (source, cache_key, result, false)
+            }
+        })
+        .collect();
+
+    let fetches = stream::iter(jobs)
+        .buffered(MAX_CONCURRENT_FETCHES)
+        .collect::<Vec<_>>()
+        .await;
+
     let mut all_alerts = Vec::new();
     let mut source_statuses = Vec::new();
-    let mut new_alerts = Vec::new();
-
-    let config = state.config.read().await;
-    let cache_ttl = Duration::from_secs(config.cache_ttl_seconds);
-    let use_cache = cache_ttl > Duration::from_secs(0);
-    
-    // Fingerprints already announced, per source. Snapshotted so the lock is not
-    // held across the network I/O below.
-    let known_before: HashMap<String, HashSet<String>> = state.known_fps.read().await.clone();
+    let mut new_fingerprints = HashSet::new();
     let mut refreshed_fps: HashMap<String, HashSet<String>> = HashMap::new();
 
-    for source in &config.sources {
-        // Generate cache key based on source config
-        let cache_key = format!("{}:{}:{:?}", source.name, source.url, source.source_type);
-        
-        // Try to get from cache
-        let cached_data = if use_cache {
-            let cache = state.cache.read().await;
-            cache.get(&cache_key).and_then(|(alerts, timestamp)| {
-                if timestamp.elapsed() < cache_ttl {
-                    Some(alerts.clone())
-                } else {
-                    None
-                }
-            })
-        } else {
-            None
-        };
+    for (source, cache_key, result, from_cache) in fetches {
+        match result {
+            Ok(alerts) => {
+                tracing::debug!("Got {} alerts from {}", alerts.len(), source.name);
 
-        match cached_data {
-            Some(alerts) => {
-                tracing::debug!("Cache hit for source {}", source.name);
+                if !from_cache {
+                    // A source with no entry yet has never been fetched
+                    // successfully (server start, new source in the config):
+                    // prime it silently rather than announcing its whole
+                    // backlog as new.
+                    let fps: HashSet<String> =
+                        alerts.iter().map(|a| a.fingerprint.clone()).collect();
+                    match known_before.get(&source.name) {
+                        Some(known) => new_fingerprints
+                            .extend(fps.difference(known).cloned()),
+                        None => tracing::debug!(
+                            "Priming {} known alert(s) for source {}",
+                            fps.len(),
+                            source.name
+                        ),
+                    }
+                    refreshed_fps.insert(source.name.clone(), fps);
+
+                    if use_cache {
+                        let mut cache = state.cache.write().await;
+                        cache.insert(cache_key, (alerts.clone(), Instant::now()));
+                    }
+                }
+
                 source_statuses.push(SourceStatus {
                     name: source.name.clone(),
                     status: "ok".to_string(),
@@ -350,60 +403,6 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                     error: None,
                 });
                 all_alerts.extend(alerts);
-                continue;
-            }
-            None => {
-                tracing::debug!("Fetching from source {}", source.name);
-            }
-        }
-
-        match fetch_source_alerts_with_retry(&state.client, source).await {
-            Ok(mut alerts) => {
-                let count = alerts.len();
-                tracing::debug!("Fetched {} alerts from {}", count, source.name);
-                
-                // Detect new alerts and broadcast them. A source with no entry
-                // yet has never been fetched successfully (server start, new
-                // source in the config): prime it silently rather than
-                // announcing its whole backlog as new.
-                let fps: HashSet<String> =
-                    alerts.iter().map(|a| a.fingerprint.clone()).collect();
-                match known_before.get(&source.name) {
-                    Some(known) => new_alerts.extend(
-                        alerts.iter().filter(|a| !known.contains(&a.fingerprint)).cloned(),
-                    ),
-                    None => tracing::debug!(
-                        "Priming {} known alert(s) for source {}",
-                        fps.len(),
-                        source.name
-                    ),
-                }
-                refreshed_fps.insert(source.name.clone(), fps);
-                
-                // Cache the results if caching is enabled
-                if use_cache {
-                    let mut cache = state.cache.write().await;
-                    cache.insert(cache_key, (alerts.clone(), Instant::now()));
-                    
-                    // Limit cache size to prevent memory exhaustion
-                    if cache.len() > MAX_CACHE_ENTRIES {
-                        // Remove oldest entries (simple strategy: remove first N)
-                        let keys_to_remove: Vec<String> = cache.keys().take(cache.len() - MAX_CACHE_ENTRIES).cloned().collect();
-                        let count = keys_to_remove.len();
-                        for key in &keys_to_remove {
-                            cache.remove(key);
-                        }
-                        tracing::warn!("Cache size limit reached, removed {} entries", count);
-                    }
-                }
-                
-                source_statuses.push(SourceStatus {
-                    name: source.name.clone(),
-                    status: "ok".to_string(),
-                    alert_count: count,
-                    error: None,
-                });
-                all_alerts.append(&mut alerts);
             }
             Err(e) => {
                 tracing::warn!("Failed to fetch from {}: {}", source.name, e);
@@ -421,48 +420,55 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
     // failed keep their previous entry, so a transient failure does not
     // re-announce everything once the source comes back.
     {
-        let configured: HashSet<&str> = config.sources.iter().map(|s| s.name.as_str()).collect();
+        let configured: HashSet<&str> = sources.iter().map(|s| s.name.as_str()).collect();
         let mut known = state.known_fps.write().await;
         known.extend(refreshed_fps);
         known.retain(|name, _| configured.contains(name.as_str()));
     }
 
-    // Broadcast new alerts to SSE clients
-    for alert in new_alerts {
-        let _ = state.tx.send(AppEvent::NewAlert(Box::new(alert)));
-    }
-
     // Per-source settings are already applied; fill in the config-wide ones.
     // A source that declares nothing inherits display.alert_link_template, and
     // display.source_link: false hides the ↗ button unless the source opts in.
-    if config.display.alert_link_template.is_some() || !config.display.source_link {
-        let sources: HashMap<&str, &config::Source> =
-            config.sources.iter().map(|s| (s.name.as_str(), s)).collect();
+    if display.alert_link_template.is_some() || !display.source_link {
+        let by_name: HashMap<&str, &config::Source> =
+            sources.iter().map(|s| (s.name.as_str(), s)).collect();
         for alert in &mut all_alerts {
-            let source = sources.get(alert.source.as_str());
-            if alert.alert_link_url.is_none() {
-                if let Some(template) = config.display.alert_link_template.as_deref() {
-                    if source.is_none_or(|s| s.alert_link_template.is_none()) {
-                        alert.alert_link_url = alerts::apply_link_template(template, alert);
-                    }
+            let source = by_name.get(alert.source.as_str());
+            // Note: a source that declares its own template but could not
+            // resolve it deliberately does *not* fall back to the global one.
+            if alert.alert_link_url.is_none()
+                && source.is_none_or(|s| s.alert_link_template.is_none())
+            {
+                if let Some(template) = display.alert_link_template.as_deref() {
+                    alert.alert_link_url = alerts::apply_link_template(template, alert);
                 }
             }
-            if !config.display.source_link && source.is_none_or(|s| s.source_link != Some(true)) {
+            if !display.source_link && source.is_none_or(|s| s.source_link != Some(true)) {
                 alert.link_url = None;
             }
         }
     }
 
-    let severity_order = &config.display.severity_order;
-    all_alerts.sort_by(|a, b| {
-        severity_rank(severity_order, &a.severity)
-            .cmp(&severity_rank(severity_order, &b.severity))
-            .then_with(|| b.starts_at.cmp(&a.starts_at))
-    });
+    // Broadcast after the links are filled in, so an SSE payload carries the
+    // same alert as /api/alerts.
+    if !new_fingerprints.is_empty() {
+        for alert in all_alerts.iter().filter(|a| new_fingerprints.contains(&a.fingerprint)) {
+            let _ = state.tx.send(AppEvent::NewAlert(Box::new(alert.clone())));
+        }
+    }
+
+    // Decorate-sort-undecorate: severity_rank walks the configured order and
+    // normalises aliases, too much work to redo on every comparison.
+    let mut ranked: Vec<(usize, Alert)> = all_alerts
+        .into_iter()
+        .map(|a| (severity_rank(&display.severity_order, &a.severity), a))
+        .collect();
+    ranked.sort_by(|(ra, a), (rb, b)| ra.cmp(rb).then_with(|| b.starts_at.cmp(&a.starts_at)));
+    let all_alerts: Vec<Alert> = ranked.into_iter().map(|(_, a)| a).collect();
 
     // Group alerts if group_by is configured
-    let groups = if !config.display.group_by.is_empty() {
-        alerts::group_alerts(&all_alerts, &config.display.group_by)
+    let groups = if !display.group_by.is_empty() {
+        alerts::group_alerts(&all_alerts, &display.group_by, &display.severity_order)
     } else {
         vec![]
     };
@@ -470,19 +476,22 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
     Json(AlertsResponse {
         alerts: all_alerts,
         sources: source_statuses,
-        refresh_interval: config.refresh_interval,
-        display_labels: config.display.labels.clone(),
-        timezone: Some(config.display.timezone.clone()),
-        theme: config.display.theme.clone(),
-        custom_css: config.display.custom_css.clone(),
-        play_sounds: config.display.play_sounds,
+        refresh_interval,
+        display_labels: display.labels,
+        timezone: Some(display.timezone),
+        theme: display.theme,
+        custom_css: display.custom_css,
+        play_sounds: display.play_sounds,
         groups,
-        group_by: config.display.group_by.clone(),
-        severity_order: severity_order.clone(),
-        prefix_labels: config.display.prefix_labels.clone(),
-        prefix_separator: config.display.prefix_separator.clone(),
-        tv_mode_default: config.display.tv_mode_default,
-        link_new_tab: config.display.link_new_tab,
+        group_by: display.group_by,
+        severity_order: display.severity_order,
+        prefix_labels: display.prefix_labels,
+        prefix_separator: display.prefix_separator,
+        tv_mode_default: display.tv_mode_default,
+        link_new_tab: display.link_new_tab,
+        show_alert_name: display.show_alert_name,
+        show_labels: display.show_labels,
+        critical_icon: display.critical_icon,
     })
 }
 
@@ -498,9 +507,15 @@ async fn fetch_source_alerts_with_retry(
     for attempt in 0..=max_retries {
         let timeout = Duration::from_secs(source.timeout);
         
-        // Calculate exponential backoff delay
+        // Exponential backoff, capped at max_delay_ms. The cap used to be
+        // applied to the multiplier instead of the delay, so it never bound.
         if attempt > 0 {
-            let delay_ms = source.retry_policy.initial_delay_ms * (1 << (attempt - 1)).min(source.retry_policy.max_delay_ms);
+            let factor = 1u64.checked_shl(attempt as u32 - 1).unwrap_or(u64::MAX);
+            let delay_ms = source
+                .retry_policy
+                .initial_delay_ms
+                .saturating_mul(factor)
+                .min(source.retry_policy.max_delay_ms);
             tracing::warn!(
                 "Retry attempt {}/{} for {} after {}ms delay (error: {})",
                 attempt,
@@ -522,8 +537,12 @@ async fn fetch_source_alerts_with_retry(
             Ok(Err(e)) => {
                 // Don't retry on HTTP 4xx: a 404, 401 or 403 is a configuration
                 // problem, retrying it only delays the error by several seconds.
+                // 429 and 408 are the two client errors worth retrying: the
+                // source is asking us to slow down, not telling us we are
+                // misconfigured.
                 if let Some(http) = e.downcast_ref::<alerts::HttpStatusError>() {
-                    if http.status.is_client_error() {
+                    let retryable = matches!(http.status.as_u16(), 408 | 429);
+                    if http.status.is_client_error() && !retryable {
                         return Err(e);
                     }
                 }

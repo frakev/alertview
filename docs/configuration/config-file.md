@@ -68,16 +68,37 @@ display:
     - alertname # Note: alertname is always shown as a badge
   
   # Theme settings
-  theme: "dark"               # "dark", "light", or URL to custom CSS (default: "dark")
-  
+  theme: "auto"              # "auto" (follow the OS), "dark" or "light" (default: "auto")
+  custom_css: ""             # URL of an extra stylesheet layered on the theme
+
   # Timezone settings
   timezone: "local"          # "local", "UTC", or IANA timezone (default: "local")
-  
+
   # Sound notifications
   play_sounds: false         # Enable sound notifications for new alerts (default: false)
-  
+
   # Alert grouping
   group_by: []              # Labels to group alerts by (e.g., ["namespace", "job"]) (default: [])
+
+  # Severity ranking, most severe first. Drives sorting, filter chips and sounds
+  severity_order: ["critical", "error", "high", "warning", "info", "none"]
+
+  # Labels shown in front of the alert name, in both normal and TV mode
+  prefix_labels: ["hostname"]
+  prefix_separator: " / "
+
+  # Alert body
+  show_alert_name: true      # false = show the summary annotation instead
+  show_labels: true          # false = hide the label chips
+  critical_icon: "🔥"         # marker on critical alerts, "" to disable
+
+  # Links
+  alert_link_template: ""    # makes the whole alert clickable, built from its labels
+  source_link: true          # show the ↗ "open in the source" button
+  link_new_tab: true         # false = open links in the same tab (kiosk)
+
+  # TV mode
+  tv_mode_default: false     # start in TV mode (a stored choice or ?tv= wins)
 ```
 
 ## Configuration Sections
@@ -89,7 +110,7 @@ display:
 | `port` | u16 | 8080 | Port number to listen on |
 | `refresh_interval` | u64 | 30 | Seconds between auto-refreshes |
 | `tls_insecure` | bool | false | Skip TLS certificate verification |
-| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). Maximum 1000 cached entries |
+| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). One entry per source |
 | `log_format` | string | "text" | Log format: "text" or "json" |
 | `config_watch_method` | string | "polling" | Method to watch config file: "inotify" (native) or "polling" (default, works everywhere) |
 | `config_poll_interval` | u64 | 10 | Polling interval in seconds (only used with polling method) |
@@ -136,6 +157,7 @@ Each source must have:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `dashboard_url` | string | null | URL to link to from alert cards |
+| `severity_label` | string | "severity" | Label carrying the severity, matched case-insensitively (Alertmanager/Grafana) |
 | `link_template` | string | null | Template for the ↗ source link |
 | `alert_link_template` | string | null | Template making the whole alert clickable (overrides `display.alert_link_template`) |
 | `source_link` | bool | null | Show the ↗ source link for this source (overrides `display.source_link`) |
@@ -150,7 +172,12 @@ Each source must have:
 |-------|------|---------|-------------|
 | `max_retries` | usize | 3 | Maximum retry attempts |
 | `initial_delay_ms` | u64 | 1000 | Initial delay in milliseconds |
-| `max_delay_ms` | u64 | 30000 | Maximum delay in milliseconds |
+| `max_delay_ms` | u64 | 30000 | Cap on the delay between attempts |
+
+A failed attempt is retried after `initial_delay_ms × 2^(attempt-1)`, capped at
+`max_delay_ms`. HTTP 4xx responses are **not** retried — a 404, 401 or 403 is a
+configuration problem, and retrying it only delays the error — except `408` and
+`429`, which mean "try again later". 5xx and network errors are always retried.
 
 The retry delay follows an exponential backoff pattern:
 - Attempt 1: Immediate
@@ -163,11 +190,25 @@ The retry delay follows an exponential backoff pattern:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `labels` | array | see below | Labels to display on alert cards |
-| `theme` | string | "dark" | Theme: "dark", "light", or CSS URL |
+| `labels` | array | see below | Labels shown as chips on alert cards |
+| `theme` | string | "auto" | "auto" (follow the OS), "dark" or "light". A URL is still accepted and treated as `custom_css` |
+| `custom_css` | string | null | URL of an extra stylesheet layered on top of the theme |
 | `timezone` | string | "local" | Timezone for date display |
 | `play_sounds` | bool | false | Enable sound notifications |
 | `group_by` | array | [] | Labels to group alerts by (e.g., ["namespace", "job"]) |
+| `severity_order` | array | critical, error, high, warning, info, none | Severity ranking, most severe first. Unlisted severities sort last |
+| `prefix_labels` | array | ["hostname"] | Labels shown in front of the alert name, in both modes |
+| `prefix_separator` | string | " / " | Separator between prefix labels |
+| `show_alert_name` | bool | true | false shows the `summary` annotation instead of the alert name |
+| `show_labels` | bool | true | false hides the label chips |
+| `critical_icon` | string | "🔥" | Marker on critical alerts, `""` to disable |
+| `alert_link_template` | string | null | Makes the whole alert clickable (see Link Templates) |
+| `source_link` | bool | true | Show the ↗ "open in the source" button |
+| `link_new_tab` | bool | true | false opens links in the same tab |
+| `tv_mode_default` | bool | false | Start in TV mode when the browser has no stored choice |
+
+Every one of these is documented in more detail, with examples, in
+[Display Options](display-options.md).
 
 #### Default Labels
 
@@ -222,14 +263,29 @@ link_template: "https://grafana.example.com/d/{{.Annotations.dashboardUid}}?view
 link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&triggerids[]={{.Labels.triggerid}}"
 ```
 
-### Priority Order
+### Two independent destinations
 
-AlertView uses the following priority for link generation:
+An alert can carry two links, and either can be left out:
 
-1. `dashboard_url` from config
-2. `link_template` from config (with variables replaced)
-3. `generator_url` from Alertmanager/Grafana response
-4. Default Zabbix URL (for Zabbix sources)
+| | Declared by | Rendered as |
+|---|---|---|
+| Alert link | `alert_link_template` (source, then `display`) | the whole card or row is clickable |
+| Source link | `link_template`, then the alert's generator URL, then `dashboard_url` | the ↗ button on the right |
+
+For Zabbix, the source link falls back to a `problem.view` URL built from the
+trigger id when nothing else applies. `display.source_link: false` hides the ↗
+button; a source can opt back in with `source_link: true`.
+
+### Rules
+
+- Substituted values are **percent-encoded**, so a label containing a space,
+  `&` or `/` cannot change the shape of the URL. A value therefore cannot be
+  used as a path separator.
+- If the alert does not carry a label the template asks for, the template is
+  **not used**: the source link falls back to the next candidate, and the alert
+  link is dropped. No URL is ever emitted with `{{.Labels.foo}}` left in it.
+- Only `http` and `https` links are rendered. Anything else — including a
+  `javascript:` generator URL coming from a source — is ignored.
 
 ## Complete Examples
 

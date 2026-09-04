@@ -9,6 +9,7 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 **Features:**
 - Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
 - Severity-colored cards (critical / error / high / warning / info), ranking configurable via `display.severity_order`
+- Search by label straight from the search box: `team=sre, hostname~web` (`=`, `!=`, `~`), mixed with free text
 - Clickable alerts with a link built from their labels (`display.alert_link_template`), independent from the ↗ "open in the source" button
 - Labels shown in front of the alert name (`display.prefix_labels`)
 - Automatic light/dark theme following the OS, TV mode startable by default

@@ -1,4 +1,15 @@
 /* -- Utilities -- */
+/* localStorage throws, it does not just return null: private browsing and
+   "block site data" both make every access raise. Reading it unguarded at
+   startup took the whole script down and left a blank page. */
+function lsGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function lsSet(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
 function esc(s) {
   if (s == null) return '';
   const d = document.createElement('div');
@@ -85,6 +96,13 @@ function sevOrderList() {
   return order?.length ? order : DEFAULT_SEV_ORDER;
 }
 
+/* Severity comes from an alert label, i.e. from outside. It ends up in a CSS
+   class, so reduce it to a safe token instead of interpolating it raw. */
+function sevClass(sev) {
+  const slug = String(sev || 'none').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  return 'sev-' + (slug || 'none');
+}
+
 function canonSev(sev) {
   const s = (sev || 'none').trim().toLowerCase();
   return SEV_ALIASES[s] ?? s;
@@ -114,7 +132,11 @@ function resolveTheme(pref) {
 function applyTheme(pref, { persist = true } = {}) {
   if (!THEME_PREFS.includes(pref)) pref = 'auto';
   App.themePref = pref;
-  if (persist) localStorage.setItem('av-theme', pref);
+  if (persist) {
+    lsSet('av-theme', pref);
+    // Without this the config theme would overwrite the click on the next poll.
+    App.themeFromUser = true;
+  }
 
   const resolved = resolveTheme(pref);
   document.documentElement.setAttribute('data-theme', resolved);
@@ -159,7 +181,7 @@ document.getElementById('tv-theme-btn').addEventListener('click', cycleTheme);
 /* -- knownFps persistence -- */
 function loadKnownFps() {
   try {
-    const raw = localStorage.getItem('av-known-fps');
+    const raw = lsGet('av-known-fps');
     if (!raw) return null;
     const { fps, ts } = JSON.parse(raw);
     if (Date.now() - ts > 86400000) return null;
@@ -169,7 +191,7 @@ function loadKnownFps() {
 
 function saveKnownFps(fps) {
   try {
-    localStorage.setItem('av-known-fps', JSON.stringify({ fps: [...fps], ts: Date.now() }));
+    lsSet('av-known-fps', JSON.stringify({ fps: [...fps], ts: Date.now() }));
   } catch {}
 }
 
@@ -283,16 +305,16 @@ function sendNotif(newAlerts) {
 /* -- App state (filters persisted in localStorage) -- */
 const App = {
   data:           null,
-  themePref:      localStorage.getItem('av-theme') || 'auto',
-  themeFromUser:  localStorage.getItem('av-theme') !== null,
+  themePref:      lsGet('av-theme') || 'auto',
+  themeFromUser:  lsGet('av-theme') !== null,
   themeFromUrl:   false,
   tvFromUrl:      false,
   knownFps:       loadKnownFps(),
   freshFps:       new Set(),
   searchQ:        '',
-  sevFilter:      localStorage.getItem('av-sev-filter') || 'all',
-  srcFilter:      (() => { try { const r = localStorage.getItem('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
-  showSilenced:   localStorage.getItem('av-show-silenced') === 'true',
+  sevFilter:      lsGet('av-sev-filter') || 'all',
+  srcFilter:      (() => { try { const r = lsGet('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
+  showSilenced:   lsGet('av-show-silenced') === 'true',
   refreshTimer:   null,
   countdownTimer: null,
   countdown:      0,
@@ -313,6 +335,7 @@ SearchClear.addEventListener('click', () => {
   SearchInput.value = App.searchQ = '';
   SearchClear.style.display = 'none';
   renderAlerts();
+  pushUrl();
 });
 
 /* -- Silence toggle -- */
@@ -325,7 +348,7 @@ function updateSilenceBtn() {
 }
 function toggleSilenced() {
   App.showSilenced = !App.showSilenced;
-  localStorage.setItem('av-show-silenced', App.showSilenced);
+  lsSet('av-show-silenced', App.showSilenced);
   updateSilenceBtn();
   renderAlerts();
   pushUrl();
@@ -337,7 +360,7 @@ document.getElementById('tv-silence-btn').addEventListener('click', toggleSilenc
 function toggleSrc(name) {
   if (App.srcFilter.has(name)) App.srcFilter.delete(name);
   else App.srcFilter.add(name);
-  localStorage.setItem('av-src-filter', JSON.stringify([...App.srcFilter]));
+  lsSet('av-src-filter', JSON.stringify([...App.srcFilter]));
   renderSourceChips();
   renderAlerts();
   pushUrl();
@@ -348,8 +371,8 @@ function renderSourceChips() {
   const chips = sources.map(s => {
     const active = App.srcFilter.has(s.name);
     const count  = s.status === 'ok' ? `&thinsp;(${s.alert_count})` : '';
-    return `<span class="src-flt-chip${active ? ' active' : ''}" onclick='toggleSrc(${JSON.stringify(s.name)})'>` +
-      `<span class="src-dot ${s.status}"></span>${esc(s.name)}${count}</span>`;
+    return `<span class="src-flt-chip${active ? ' active' : ''}" data-src="${esc(s.name)}">` +
+      `<span class="src-dot ${esc(s.status)}"></span>${esc(s.name)}${count}</span>`;
   }).join('');
   ['src-filter-chips', 'tv-src-chips'].forEach(id => {
     const el = document.getElementById(id);
@@ -442,17 +465,63 @@ function applyTvDefault(data) {
   TV._apply();
 }
 
+/* Split a query into label filters and free text. Comma-separated parts that
+   look like `key=value` (also `!=` and `~` for "contains") become filters;
+   anything else stays free text, so the plain search keeps working.
+   Example: "team=sre, hostname~web, disk full" */
+function parseQuery(q) {
+  const filters = [];
+  const text = [];
+  for (const raw of q.split(',')) {
+    const part = raw.trim();
+    if (!part) continue;
+    const m = part.match(/^([A-Za-z_][\w.\-\/]*)\s*(!=|=~|~|=)\s*(.+)$/);
+    if (m) filters.push({ key: m[1].toLowerCase(), op: m[2], value: m[3].trim().toLowerCase() });
+    else text.push(part);
+  }
+  return { filters, text: text.join(' ').toLowerCase() };
+}
+
+/* Value a filter key refers to: an alert field first, then its labels
+   (case-insensitive, like the server does). */
+function alertField(a, key) {
+  switch (key) {
+    case 'source': return a.source;
+    case 'status': return a.status;
+    case 'name':
+    case 'alertname': return a.name;
+  }
+  const labels = a.labels ?? {};
+  const hit = Object.keys(labels).find(l => l.toLowerCase() === key);
+  if (hit) return labels[hit];
+  if (key === 'severity') return a.severity;
+  const ann = a.annotations ?? {};
+  const annHit = Object.keys(ann).find(l => l.toLowerCase() === key);
+  return annHit ? ann[annHit] : undefined;
+}
+
+function matchFilter(a, f) {
+  const raw = alertField(a, f.key);
+  // A label the alert does not carry only matches a negation.
+  if (raw === undefined) return f.op === '!=';
+  const value = String(raw).toLowerCase();
+  if (f.op === '=')  return value === f.value;
+  if (f.op === '!=') return value !== f.value;
+  return value.includes(f.value); // ~ and =~
+}
+
 /* -- Filters -- */
 function filteredAlerts() {
+  const { filters, text } = parseQuery(App.searchQ || '');
   return (App.data?.alerts ?? []).filter(a => {
     if (!App.showSilenced && a.status === 'silenced') return false;
     if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
     if (App.srcFilter.size > 0 && !App.srcFilter.has(a.source)) return false;
-    if (App.searchQ) {
-      const q = App.searchQ.toLowerCase();
+    if (filters.length && !filters.every(f => matchFilter(a, f))) return false;
+    if (text) {
       const hay = [a.name, a.severity, a.source, a.status,
         ...Object.values(a.labels ?? {}), ...Object.values(a.annotations ?? {})].join('\n').toLowerCase();
-      if (!hay.includes(q)) return false;
+      if (!hay.includes(text)) return false;
     }
     return true;
   });
@@ -460,7 +529,7 @@ function filteredAlerts() {
 
 function toggleSev(s) {
   App.sevFilter = App.sevFilter === s ? 'all' : s;
-  localStorage.setItem('av-sev-filter', App.sevFilter);
+  lsSet('av-sev-filter', App.sevFilter);
   renderStats();
   renderAlerts();
   TV.renderChips();
@@ -484,7 +553,7 @@ function renderStats() {
   (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
   const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
   document.getElementById('stats-bar').innerHTML = order
-    .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
+    .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" data-sev="${esc(s)}">${counts[s]}&thinsp;${esc(s)}</span>`)
     .join('');
 }
 
@@ -497,6 +566,9 @@ function renderSources() {
       ${s.status === 'ok' ? '· ' + s.alert_count + ' alert' + (s.alert_count !== 1 ? 's' : '') : `<span class="src-err-label" title="${esc(s.error)}">⚠ error</span>`}
     </span>`).join('');
 }
+
+/* Placeholder the server uses for an alert that lacks a grouping label. */
+const MISSING_LABEL = '<missing>';
 
 /* Build a single DOM element from an HTML string. */
 function htmlToEl(html) {
@@ -579,32 +651,33 @@ function renderAlerts() {
   });
 }
 
+/* Membership comes from the labels the server sends, not from re-parsing the
+   group key: a value containing "," or "=" used to scramble the split, and the
+   "<missing>" placeholder was compared as if it were a real label value, so
+   alerts without the grouping label matched nothing and vanished. */
 function alertsInGroup(group, filtered) {
-  const groupKeys = group.key.split(',').map(k => {
-    const [key, value] = k.split('=');
-    return { key, value };
-  });
-  return filtered.filter(a => groupKeys.every(({ key, value }) => a.labels?.[key] === value));
+  const entries = Object.entries(group.labels || {});
+  return filtered.filter(a => entries.every(([key, value]) =>
+    value === MISSING_LABEL ? a.labels?.[key] === undefined : a.labels?.[key] === value));
 }
 
 function groupSevBadges(group) {
   return Object.entries(group.severity_counts || {})
     .sort(([a], [b]) => severityOrder(a) - severityOrder(b))
-    .map(([sev, count]) => `<span class="sev-badge sev-${sev}">${count} ${sev}</span>`)
+    .map(([sev, count]) => `<span class="sev-badge ${sevClass(sev)}">${count} ${esc(sev)}</span>`)
     .join('');
 }
 
 /* Group shell (header + empty body); cards are reconciled separately so that
    expand/collapse state and individual cards survive a refresh. */
 function groupShellHtml(group) {
-  const groupLabel = group.key.split(',').map(k => {
-    const [key, value] = k.split('=');
-    return `<span class="lbl">${esc(key)}=<b>${esc(value)}</b></span>`;
-  }).join('');
+  const groupLabel = Object.entries(group.labels || {})
+    .map(([key, value]) => `<span class="lbl">${esc(key)}=<b>${esc(value)}</b></span>`)
+    .join('');
 
   return `
     <div class="alert-group" data-group-key="${esc(group.key)}">
-      <div class="group-header" onclick="toggleGroup('${esc(group.key)}')">
+      <div class="group-header">
         <span class="group-toggle">▶</span>
         <span class="group-label">${groupLabel}</span>
         <span class="group-count"></span>
@@ -662,19 +735,25 @@ function renderGroupedAlerts(listEl, groups, filtered) {
   }
 }
 
+let sevOrderCache = { source: null, canon: [] };
+
 function severityOrder(sev) {
-  const order = sevOrderList().map(canonSev);
-  const i = order.indexOf(canonSev(sev));
-  return i === -1 ? order.length : i;
+  const source = sevOrderList();
+  // Same array identity until a new payload arrives, so this maps once per
+  // refresh instead of once per comparison in every sort.
+  if (sevOrderCache.source !== source) {
+    sevOrderCache = { source, canon: source.map(canonSev) };
+  }
+  const i = sevOrderCache.canon.indexOf(canonSev(sev));
+  return i === -1 ? sevOrderCache.canon.length : i;
 }
 
-function toggleGroup(groupKey) {
+function toggleGroup(groupKey, groupEl) {
   if (App.openGroups.has(groupKey)) App.openGroups.delete(groupKey);
   else App.openGroups.add(groupKey);
 
-  const inner = document.getElementById('group-' + groupKey);
-  const groupEl = inner && inner.closest('.alert-group');
-  if (groupEl) applyGroupOpen(groupEl, App.openGroups.has(groupKey));
+  const el = groupEl || document.getElementById('group-' + groupKey)?.closest('.alert-group');
+  if (el) applyGroupOpen(el, App.openGroups.has(groupKey));
 }
 
 function getSourceLabel(sourceType) {
@@ -729,10 +808,28 @@ function prefixLabels() {
 /* Labels for the chips: the configured ones the alert carries, minus the ones
    already shown in the prefix. */
 function chipLabels(a) {
+  if (App.data?.show_labels === false) return [];
   const prefix = prefixLabels();
   return (App.data?.display_labels ?? [])
     .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
     .filter(l => !prefix.includes(l));
+}
+
+/* The main text of an alert: its name, or the summary when the config hides
+   the name. An alert with no summary keeps its name rather than showing
+   nothing. Returns the text and whether the summary was consumed by it. */
+function alertTitle(a) {
+  const summary = a.annotations?.summary || '';
+  if (App.data?.show_alert_name === false && summary) {
+    return { text: summary, usedSummary: true };
+  }
+  return { text: a.name, usedSummary: false };
+}
+
+function criticalIcon(a) {
+  const icon = App.data?.critical_icon;
+  if (!icon || canonSev(a.severity) !== 'critical') return '';
+  return `<span class="crit-icon" aria-hidden="true">${esc(icon)}</span>`;
 }
 
 function cardHtml(a) {
@@ -742,23 +839,25 @@ function cardHtml(a) {
   const labels = chipLabels(a)
     .map(l => `<span class="lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('');
 
-  const summary  = a.annotations?.summary || '';
+  const title    = alertTitle(a);
+  const summary  = title.usedSummary ? '' : (a.annotations?.summary || '');
   const desc     = a.annotations?.description || '';
-  const showDesc = desc && desc !== summary;
+  const showDesc = desc && desc !== title.text && desc !== summary;
   
   // Check for silence/acknowledgement comments
   const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
 
   return `
-    <div class="alert-card sev-${sev}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
+    <div class="alert-card ${sevClass(sev)}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
       ${cardLinkHtml(a)}
       <div class="card-top">
         <div class="card-title">
-          <span class="sev-dot sev-${sev}"></span>
+          <span class="sev-dot ${sevClass(sev)}"></span>
+          ${criticalIcon(a)}
           ${prefixHtml(a)}
-          <span class="alert-name">${esc(a.name)}</span>
-          <span class="sev-badge sev-${sev}">${sev}</span>
-          <span class="status-badge status-${a.status}">${a.status}</span>
+          <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
+          <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
+          <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
         </div>
         <div class="card-meta">
           <span class="src-chip">${esc(a.source)}</span>
@@ -775,7 +874,8 @@ function cardHtml(a) {
 
 function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
-  const summary = a.annotations?.summary || '';
+  const title   = alertTitle(a);
+  const summary = title.usedSummary ? '' : (a.annotations?.summary || '');
   const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
   
   // A row only has space for 2 labels inline, the rest go behind the +N toggle.
@@ -798,13 +898,14 @@ function cardHtmlTV(a) {
   const showToggle = hiddenLabelsList.length > 0;
 
   return `
-    <div class="alert-card alert-row sev-${sev}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
+    <div class="alert-card alert-row ${sevClass(sev)}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
       ${cardLinkHtml(a)}
-      <span class="sev-dot sev-${sev}"></span>
+      <span class="sev-dot ${sevClass(sev)}"></span>
+      ${criticalIcon(a)}
       ${prefixHtml(a)}
-      <span class="alert-name">${esc(a.name)}</span>
-      <span class="sev-badge sev-${sev}">${sev}</span>
-      <span class="status-badge status-${a.status}">${a.status}</span>
+      <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
+      <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
+      <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
       <span class="row-summary">${esc(summary)}</span>
       ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
       ${labelsHtml}
@@ -825,8 +926,8 @@ const TV = {
   init() {
     // No stored preference means the config default applies, but the payload
     // has not arrived yet — see applyTvDefault().
-    this.chosen = localStorage.getItem('av-tv') !== null;
-    this.active = localStorage.getItem('av-tv') === 'true';
+    this.chosen = lsGet('av-tv') !== null;
+    this.active = lsGet('av-tv') === 'true';
     if (this.active) this._apply();
 
     document.getElementById('tv-btn').addEventListener('click',      () => this.toggle());
@@ -855,7 +956,7 @@ const TV = {
   toggle() {
     this.active = !this.active;
     this.chosen = true;
-    localStorage.setItem('av-tv', this.active);
+    lsSet('av-tv', this.active);
     this._apply();
     pushUrl();
   },
@@ -932,9 +1033,9 @@ const TV = {
     const counts = {};
     (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
     const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
-    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('all')">all</span>`;
+    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="all">all</span>`;
     document.getElementById('tv-sev-chips').innerHTML = all + order
-      .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
+      .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="${esc(s)}">${counts[s]}&thinsp;${esc(s)}</span>`)
       .join('');
   },
 
@@ -960,23 +1061,47 @@ function pushUrl() {
   history.replaceState(null, '', qs ? '?' + qs : location.pathname);
 }
 
+/* URL parameters apply to this visit only. They used to be written to
+   localStorage, so opening a shared "?tv=1" or "?sev=critical" link once pinned
+   that setting in the visitor's browser for good. */
 function initFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.has('theme')) { App.themeFromUrl = true; applyTheme(p.get('theme'), { persist: false }); }
-  if (p.has('sev'))   { App.sevFilter = p.get('sev');   localStorage.setItem('av-sev-filter', App.sevFilter); }
-  if (p.has('src'))   { const s = p.get('src').split(',').filter(Boolean); App.srcFilter = new Set(s); localStorage.setItem('av-src-filter', JSON.stringify(s)); }
-  if (p.has('q'))        {
+  if (p.has('sev'))   App.sevFilter = p.get('sev');
+  if (p.has('src'))   App.srcFilter = new Set(p.get('src').split(',').filter(Boolean));
+  if (p.has('q'))     {
     App.searchQ = p.get('q');
     SearchInput.value = App.searchQ;
     SearchClear.style.display = App.searchQ ? 'block' : 'none';
   }
-  if (p.has('silenced')) { App.showSilenced = p.get('silenced') === '1'; localStorage.setItem('av-show-silenced', App.showSilenced); }
+  if (p.has('silenced')) App.showSilenced = p.get('silenced') === '1';
   if (p.has('tv')) {
     App.tvFromUrl = true;
     const on = p.get('tv') === '1';
-    if (on !== TV.active) { TV.active = on; localStorage.setItem('av-tv', on); TV._apply(); }
+    if (on !== TV.active) { TV.active = on; TV._apply(); }
   }
 }
+
+/* Chips and group headers are rebuilt on every render, so the handlers live on
+   the containers. Inline onclick attributes carried alert-controlled values
+   (severity, source name, group key) straight into an HTML attribute and a JS
+   string literal — a quote in any of them broke out of both. */
+function delegate(containerId, selector, handler) {
+  const el = document.getElementById(containerId);
+  if (el) el.addEventListener('click', e => {
+    const hit = e.target.closest(selector);
+    if (hit && el.contains(hit)) handler(hit, e);
+  });
+}
+
+['stats-bar', 'tv-sev-chips'].forEach(id =>
+  delegate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
+['src-filter-chips', 'tv-src-chips'].forEach(id =>
+  delegate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
+delegate('alert-list', '.group-header', el => {
+  const groupEl = el.closest('.alert-group');
+  if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
+});
 
 /* -- Boot -- */
 // The <head> script already resolved the theme to avoid a flash; this syncs the

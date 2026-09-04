@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-04
+
+### Changed
+- **Sources are fetched concurrently** — `/api/alerts` used to take the sum of every source's latency; it now takes the slowest one (8 in flight at a time, results kept in config order). Measured with three sources answering in 2s: 2.0s instead of ~6s.
+- **The config lock is no longer held across the network I/O** — the handler snapshots the config and releases the read guard before fetching, so a config reload no longer waits for the slowest source.
+- **Groups no longer duplicate the alert payload** — `AlertGroup.alerts` repeated every alert already present in `alerts`, doubling the response when `group_by` was set. The frontend never read it: it picks the members out of the main list.
+- **Groups are ordered by severity** — most severe group first instead of alphabetically by key, so on a wall display the team with a critical is at the top.
+- **Sorting does less work** — the severity rank is computed once per alert instead of on every comparison, on both sides.
+- **`display.source_link` and the SSE payload agree** — new alerts are broadcast after the config-wide link settings are applied, so an SSE payload carries the same alert as `/api/alerts`.
+- **URL parameters no longer stick** — `?tv=1`, `?sev=`, `?src=` and `?silenced=` used to be written to `localStorage`, so opening a shared link once pinned that setting in the visitor's browser for good. They now apply to that visit only.
+- **CI** — a workflow now runs `cargo clippy -- -D warnings`, `cargo test` and a syntax check of the static assets on every push and pull request; nothing but tag builds ran before. Two integration tests were added against a stub Alertmanager, covering the failures that actually happened: the API path being dropped from the source URL, `silencedBy` not deserialising, a `javascript:` generator URL reaching the frontend, and a 404 surfacing as a typed status error. `release.yml` no longer uses the archived `actions-rs/toolchain`.
+
+### Fixed
+- **The theme picked by the user was overwritten 30s later** — `display.theme` was re-applied on the next poll because the "the user chose this" flag was computed once at startup and never updated when the theme button was clicked.
+- **Grouping hid alerts** — an alert missing the grouping label was placed in a `<missing>` group the frontend could never match, and a label value containing `,` or `=` scrambled the group key when it was re-parsed. Membership now comes from the labels the server sends. Measured on 6 alerts grouped by `team`: 2 were invisible and 2 were shown twice; all 6 now land in the right group.
+- **A blocked storage made the page blank** — `localStorage` raises rather than returning null in private browsing or with site data blocked, and it was read unguarded at startup, taking the whole script down. All access goes through guarded helpers.
+- **Clearing the search left `?q=` in the URL** — with label filters in the box, a reload silently brought the filter back.
+- **Exponential backoff was never capped** — `max_delay_ms` was applied to the multiplier instead of the delay.
+- **408 and 429 are retried again** — the "don't retry 4xx" rule covered them, although both mean "try again later" rather than "you are misconfigured".
+- **`ALERTVIEW_CONFIG` is read** — it was documented in `--help` but never looked at. `--config <path>` is accepted as well.
+- **Duplicate source names are rejected at startup** — they silently shared a cache key, an announced-fingerprint entry and a filter chip.
+- **Inhibited alerts are labelled as such** — an alert suppressed by another alert (`inhibitedBy`) showed up as silenced with no comment, indistinguishable from a real silence.
+- **HTML injection through the `severity` label** — the severity was interpolated raw into a CSS class, a chip's text and an inline `onclick`, so an alert carrying a crafted `severity` label (`x" onmouseover="alert(1)`) broke out of the attribute and injected a handler. Severity now goes through `esc()` for display and through a slug for the CSS class token. Same defect for source names and group keys, which broke the inline handler on any value containing a quote: the chips and group headers no longer carry inline `onclick` attributes at all, the values travel in `data-*` and one delegated listener per container handles the click.
+- **Silence comments were never displayed** — `AmStatus.silenced_by` was missing its `#[serde(rename = "silencedBy")]`, so the field Alertmanager actually sends never deserialized and the silence lookup always came up empty. Silenced alerts now show the silence comment again.
+- **A long summary broke the TV row layout** — with `show_alert_name: false` the summary landed in `.alert-name`, which has no flex or truncation, and pushed the trailing metadata out of the row. It now takes the free space and truncates with an ellipsis.
+
+### Added
+- **Label filters in the search box** — the search now accepts comma-separated `key=value` filters alongside free text: `team=sre, hostname~web`, `severity=critical, team!=dba`, or mixed with a plain search (`team=dba, slow queries`). `=` is an exact case-insensitive match, `!=` excludes (and matches alerts without the label), `~` means "contains". Keys are looked up in the alert's labels then its annotations, with `source`, `status`, `name`/`alertname` and `severity` also usable. Anything that is not a `key<op>value` pair stays free text, so the previous behaviour is unchanged. Filters live in `?q=` like before, so a per-team view can be bookmarked or put on a wall display.
+- **`display.show_alert_name`** — set to false, the `summary` annotation takes the place of the `alertname` in the card title and the TV row, and is not repeated below. An alert without a summary keeps its name so a row is never blank.
+- **`display.show_labels`** — hides the label chips (and the TV `+N` toggle) without having to empty `display.labels`. Prefix labels are unaffected.
+- **`display.critical_icon`** — an icon (🔥 by default, `""` to disable) shown right before the name of critical alerts.
+- **Version in TV mode** — the running version sits next to the TV clock, dimmed to 35% so it stays discreet on a wall display, and becomes fully readable when the HUD bar is hovered.
+
 ## [0.6.0] - 2026-09-04
 
 ### Changed

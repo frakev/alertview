@@ -77,7 +77,7 @@ mod tests {
         assert_eq!(config.port, 8080);
         assert_eq!(config.refresh_interval, 30);
         assert!(!config.tls_insecure);
-        assert!(config.sources.len() > 0);
+        assert!(!config.sources.is_empty());
     }
 
     #[test]
@@ -333,6 +333,17 @@ pub struct DisplayConfig {
     /// declare their own. No template means the alert is not clickable.
     #[serde(default)]
     pub alert_link_template: Option<String>,
+    /// Show the alert name (the `alertname` label). When false the summary
+    /// annotation takes its place, and alerts without a summary keep their name
+    /// rather than showing nothing.
+    #[serde(default = "default_true")]
+    pub show_alert_name: bool,
+    /// Show the label chips next to each alert.
+    #[serde(default = "default_true")]
+    pub show_labels: bool,
+    /// Icon marking critical alerts. Empty string disables it.
+    #[serde(default = "default_critical_icon")]
+    pub critical_icon: String,
     /// Show the ↗ "open in the source" button.
     #[serde(default = "default_true")]
     pub source_link: bool,
@@ -358,6 +369,9 @@ impl Default for DisplayConfig {
             prefix_separator: default_prefix_separator(),
             tv_mode_default: false,
             alert_link_template: None,
+            show_alert_name: true,
+            show_labels: true,
+            critical_icon: default_critical_icon(),
             source_link: true,
             link_new_tab: true,
         }
@@ -366,6 +380,10 @@ impl Default for DisplayConfig {
 
 fn default_prefix_labels() -> Vec<String> {
     vec!["hostname".to_string()]
+}
+
+fn default_critical_icon() -> String {
+    "🔥".to_string()
 }
 
 fn default_true() -> bool {
@@ -430,8 +448,14 @@ impl Config {
         }
         
         // Validate each source
+        let mut seen = std::collections::HashSet::new();
         for (i, source) in self.sources.iter().enumerate() {
             source.validate().with_context(|| format!("Invalid configuration for source at index {}", i))?;
+            // Names key the alert cache, the announced-fingerprint state and the
+            // source filter chips: two sources sharing one would shadow each other.
+            if !seen.insert(source.name.to_lowercase()) {
+                anyhow::bail!("Duplicate source name {:?} (names must be unique)", source.name);
+            }
         }
         
         Ok(())

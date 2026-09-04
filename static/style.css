@@ -311,6 +311,18 @@ a { color: inherit; }
   font-variant-numeric: tabular-nums;
   letter-spacing: .5px;
 }
+/* Version next to the TV clock: barely there, readable when you walk up to
+   the screen and hover the HUD bar. */
+.tv-version {
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: .35;
+  letter-spacing: .3px;
+  transition: opacity .15s, color .15s;
+  cursor: default;
+}
+.tv-bar:hover .tv-version { opacity: 1; color: var(--text-muted); }
+
 .tv-dots {
   display: flex;
   gap: 4px;
@@ -517,6 +529,21 @@ a { color: inherit; }
   flex: 0 1 auto;
   min-width: 0;
 }
+/* When the summary stands in for the alert name (display.show_alert_name:
+   false) it can be long, so it takes the free space and truncates instead of
+   pushing the trailing metadata out of a TV row. */
+.alert-row .alert-name.is-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Marker on critical alerts (display.critical_icon). */
+.crit-icon { font-size: 12px; line-height: 1; filter: saturate(1.2); }
+[data-tv="true"] .crit-icon { font-size: 15px; }
+
 .alert-prefix .prefix-sep { color: var(--text-dim); font-weight: 400; }
 
 .sev-badge, .status-badge {

@@ -21,6 +21,9 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 
 ### 🔍 Filtering & Search
 - **Severity Filter**: Filter by any severity present, ranked by `display.severity_order`
+- **Label Search**: The search box takes label filters — `team=sre, hostname~web` — with `=`, `!=` and `~`, mixed freely with plain text. Filters live in the URL, so a per-team view can be bookmarked
+- **Clickable Alerts**: The whole card can open a link built from the alert's labels, independent from the ↗ "open in the source" button
+- **Automatic Theme**: Follows the OS light/dark setting and switches live
 - **Status Filter**: Filter by firing, silenced, or pending
 - **Source Filter**: Filter by specific alert sources
 - **Text Search**: Search across all alert fields

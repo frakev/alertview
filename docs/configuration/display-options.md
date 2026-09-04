@@ -40,6 +40,11 @@ display:
   # Start in TV mode
   tv_mode_default: false
 
+  # Alert body
+  show_alert_name: true   # false = show the summary instead of the alertname
+  show_labels: true       # false = hide the label chips
+  critical_icon: "🔥"      # "" to disable
+
   # Whole-alert link, and the "open in the source" arrow
   alert_link_template: ""
   source_link: true
@@ -101,6 +106,50 @@ display:
   browser, then `display.theme`.
 - `custom_css` is layered on top of the theme. For backwards compatibility a
   `theme` holding a URL is still treated as a custom stylesheet.
+
+## Alert Body
+
+```yaml
+display:
+  show_alert_name: false   # show the summary instead of the alertname
+  show_labels: false       # hide the label chips
+  critical_icon: "🔥"       # marker on critical alerts, "" to disable
+```
+
+- `show_alert_name: false` puts the `summary` annotation where the alert name
+  normally sits, and does not repeat it below. An alert **without** a summary
+  keeps its name, so a row is never left blank.
+- `show_labels: false` hides the label chips (and the TV `+N` toggle) while
+  keeping `display.labels` declared. `prefix_labels` are not affected — they are
+  shown in front of the alert name, not in the chips.
+- `critical_icon` accepts any emoji or text, and is rendered right before the
+  alert name on critical alerts only. It follows `severity_order` aliases, so
+  `crit` counts as `critical`.
+
+## Searching by Label
+
+The search box takes label filters alongside free text, separated by commas:
+
+```
+team=sre, hostname~web
+team=sre, disk full
+severity=critical, team!=dba
+```
+
+| Operator | Meaning |
+|---|---|
+| `=` | exact match, case-insensitive |
+| `!=` | does not match — also matches alerts **without** that label |
+| `~` (or `=~`) | contains |
+
+- Keys are matched case-insensitively against the alert's labels, then its
+  annotations. `source`, `status`, `name` / `alertname` and `severity` also work
+  as keys even though they are not labels.
+- Anything that does not look like `key<op>value` stays free text and searches
+  names, labels and annotations exactly as before.
+- Filters combine with AND, and with the severity and source chips.
+- The query is kept in the URL (`?q=`), so a team filter can be bookmarked or
+  put on a wall display.
 
 ## Alert Links
 
@@ -173,6 +222,22 @@ display:
 2. **Collapsible Groups**: Groups are displayed as collapsible sections in the UI
 3. **Severity Counts**: Each group shows the count of alerts by severity
 4. **Group Label**: The group header displays the label key=value pairs
+5. **Ordering**: Groups are ordered by their most severe alert, following
+   `severity_order` — the team with a `critical` is at the top, not wherever the
+   alphabet puts it
+6. **Missing labels**: An alert that does not carry one of the `group_by` labels
+   is placed in a group showing `<missing>` for it. It is never dropped, and a
+   label value containing `,` or `=` is handled correctly
+
+Grouping by a `team` label is the usual way to give each team its own view:
+
+```yaml
+display:
+  group_by: ["team"]
+```
+
+For a per-team screen rather than one shared view, put a label filter in the URL
+instead: `?q=team=sre` (see [Searching by Label](#searching-by-label)).
 
 ### Examples
 
