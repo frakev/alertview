@@ -521,6 +521,13 @@ a { color: inherit; }
 .comment-toggle.active { opacity: 1; }
 
 /* The revealed comment gets its own line, like the revealed labels. */
+.comment-author {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text);
+}
+.comment-author::after { content: " ·"; color: var(--text-dim); font-weight: 400; }
+
 .row-comment {
   font-size: 11px;
   color: var(--text-muted);

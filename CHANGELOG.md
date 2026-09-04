@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Silence comments name their author** — the Alertmanager silence's `createdBy` was parsed and then thrown away; it now travels with the comment as a `silence_created_by` annotation and leads the revealed line (`alice · maintenance until 6pm`), as does the acknowledging user for Zabbix. The 💬 tooltip names them too, so you know who to ask without opening anything.
+
 ### Documentation
 - **Docs brought in line with 0.9.0** — seven places still described the whole card as the link rather than the severity dot (README, `features.md`, `config-file.md` in four spots, `source-types.md`, `api.md`); `status_icons` was missing from the configuration reference and from the API response schema; the README claimed a status filter that does not exist, and the TV mode description predated the permanent status bar. A **Keyboard Shortcuts** section was added — there was none, although `T` and `Escape` have been bound for a long time — now listing `Ctrl+F` / `Cmd+F`, `/`, `Escape` and `T`.
 

@@ -127,8 +127,7 @@ struct AmStatus {
 #[derive(Debug, Deserialize)]
 struct AmSilence {
     id: String,
-    #[serde(rename = "createdBy")]
-    #[allow(dead_code)]
+    #[serde(rename = "createdBy", default)]
     created_by: String,
     comment: String,
     // Other fields we don't need for now
@@ -544,10 +543,9 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
     } else {
         Vec::new()
     };
-    let silence_map: HashMap<String, String> = silences
-        .into_iter()
-        .map(|s| (s.id.clone(), s.comment.clone()))
-        .collect();
+    // Who silenced an alert is as useful as why, so both travel with the id.
+    let silence_map: HashMap<String, AmSilence> =
+        silences.into_iter().map(|s| (s.id.clone(), s)).collect();
 
     let alerts = am_alerts
         .into_iter()
@@ -593,8 +591,15 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             } else if status == "silenced" && !a.status.silenced_by.is_empty() {
                 // Try to find a matching silence comment
                 for silence_id in &a.status.silenced_by {
-                    if let Some(comment) = silence_map.get(silence_id) {
-                        annotations.insert("silence_comment".to_string(), comment.clone());
+                    if let Some(silence) = silence_map.get(silence_id) {
+                        annotations
+                            .insert("silence_comment".to_string(), silence.comment.clone());
+                        if !silence.created_by.is_empty() {
+                            annotations.insert(
+                                "silence_created_by".to_string(),
+                                silence.created_by.clone(),
+                            );
+                        }
                         break; // Use first matching silence
                     }
                 }
@@ -994,6 +999,11 @@ mod tests {
         assert_eq!(
             alert.annotations.get("silence_comment").map(String::as_str),
             Some("maintenance")
+        );
+        // Who silenced it comes from the silence's createdBy.
+        assert_eq!(
+            alert.annotations.get("silence_created_by").map(String::as_str),
+            Some("alice")
         );
         // A javascript: generator URL must never reach the frontend.
         assert_eq!(alert.link_url, None);

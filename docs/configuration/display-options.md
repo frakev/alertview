@@ -141,7 +141,9 @@ display:
   are marked — `silenced: "🔕"` and `pending: "⏳"` by default. A status missing
   from the map, or mapped to `""`, shows nothing. A silence or acknowledgement
   comment is no longer printed inline either: a 💬 button next to the icon
-  reveals it on its own line, and stays open across refreshes.
+  reveals it on its own line, and stays open across refreshes. The line names
+  who did it — the silence's `createdBy` for Alertmanager and Grafana, the
+  acknowledging user for Zabbix — and so does the button's tooltip.
 - `critical_icon` accepts any emoji or text and **replaces the coloured dot** on
   critical alerts, so they stand out at a glance; every other severity keeps its
   dot. Set it to `""` and criticals get the red dot back. It follows

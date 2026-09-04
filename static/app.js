@@ -924,18 +924,29 @@ function alertComment(a) {
   return a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
 }
 
+/* Who silenced or acknowledged the alert: the silence's createdBy for
+   Alertmanager and Grafana, the acknowledging user for Zabbix. */
+function commentAuthor(a) {
+  return a.annotations?.silence_created_by || a.labels?.acknowledged_by || '';
+}
+
 function commentToggleHtml(a) {
   if (!alertComment(a)) return '';
   const open = App.openComments.has(a.fingerprint);
+  const author = commentAuthor(a);
+  const what = author ? `the comment from ${author}` : 'the comment';
   return `<button class="comment-toggle${open ? ' active' : ''}" data-comment-toggle` +
-    ` title="${open ? 'Hide' : 'Show'} the comment">💬</button>`;
+    ` title="${esc(open ? 'Hide ' + what : 'Show ' + what)}">💬</button>`;
 }
 
 function commentHtml(a) {
   const comment = alertComment(a);
   if (!comment) return '';
   const open = App.openComments.has(a.fingerprint);
-  return `<span class="row-comment"${open ? '' : ' style="display:none"'}>${esc(comment)}</span>`;
+  const author = commentAuthor(a);
+  return `<span class="row-comment"${open ? '' : ' style="display:none"'}>` +
+    (author ? `<b class="comment-author">${esc(author)}</b> ` : '') +
+    esc(comment) + `</span>`;
 }
 
 function cardHtml(a) {
