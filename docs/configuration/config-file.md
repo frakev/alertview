@@ -136,7 +136,9 @@ Each source must have:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `dashboard_url` | string | null | URL to link to from alert cards |
-| `link_template` | string | null | Custom link template with variables |
+| `link_template` | string | null | Template for the ↗ source link |
+| `alert_link_template` | string | null | Template making the whole alert clickable (overrides `display.alert_link_template`) |
+| `source_link` | bool | null | Show the ↗ source link for this source (overrides `display.source_link`) |
 | `timeout` | u64 | 15 | Request timeout in seconds |
 | `basic_auth` | object | null | HTTP Basic Authentication |
 | `bearer_token` | string | null | Bearer token authentication |

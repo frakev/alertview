@@ -18,7 +18,8 @@ display:
     - hostgroup
   
   # Theme settings
-  theme: "dark"  # "dark", "light", or URL to custom CSS
+  theme: "auto"          # "auto" (follow the OS), "dark" or "light"
+  custom_css: ""         # optional extra stylesheet
   
   # Timezone settings
   timezone: "local"  # "local", "UTC", or IANA timezone
@@ -28,7 +29,132 @@ display:
   
   # Alert grouping
   group_by: []  # Labels to group alerts by (e.g., ["namespace", "job"])
+
+  # Severity levels, most severe first
+  severity_order: ["critical", "error", "high", "warning", "info", "none"]
+
+  # Labels shown in front of the alert name
+  prefix_labels: ["hostname"]
+  prefix_separator: " / "
+
+  # Start in TV mode
+  tv_mode_default: false
+
+  # Whole-alert link, and the "open in the source" arrow
+  alert_link_template: ""
+  source_link: true
+  link_new_tab: true
 ```
+
+## Prefix Labels
+
+Labels shown **in front of the alert name**, joined by a separator, in both
+normal and TV mode:
+
+```yaml
+display:
+  prefix_labels: ["hostname", "namespace"]
+  prefix_separator: " / "
+```
+
+```
+● srv-01 / prod  systemd_unit_failed  ERROR  FIRING  Systemd "salt-exporter.service" failed
+```
+
+- Defaults to `["hostname"]`, so a `hostname` label shows up without any
+  configuration.
+- Only the labels the alert actually carries are shown, in the order of the
+  list. Nothing is rendered — not even a stray separator — when it carries none.
+- A prefix label is shown even when it is **not** listed in `display.labels`,
+  and it is removed from the trailing label chips so it never appears twice.
+- The prefix is truncated with an ellipsis past ~22 characters so a long FQDN
+  cannot push the alert name out of a TV row.
+
+## TV Mode by Default
+
+```yaml
+display:
+  tv_mode_default: true
+```
+
+Starts in TV mode in a browser where **nobody has used the TV button yet**. An
+explicit choice wins over it, and stays: once someone toggles TV mode, that
+browser remembers their choice and ignores this setting.
+
+For a wall display, put `?tv=1` in the URL instead — it wins over both the
+stored choice and this setting, so the screen always comes up in TV mode.
+
+## Theme
+
+```yaml
+display:
+  theme: "auto"     # "auto" (default), "dark", "light"
+  custom_css: "https://example.com/alertview-theme.css"
+```
+
+- `auto` follows the browser/OS light-dark setting, and **switches live** when
+  the OS switches — a wall display goes light in the morning and dark at night
+  on its own.
+- The theme button cycles `auto → light → dark`; its icon shows the preference
+  (auto / sun / moon), and its tooltip the resolved theme.
+- Precedence: `?theme=auto|light|dark` in the URL, then the choice made in this
+  browser, then `display.theme`.
+- `custom_css` is layered on top of the theme. For backwards compatibility a
+  `theme` holding a URL is still treated as a custom stylesheet.
+
+## Alert Links
+
+Each alert can carry **two independent links**, and either can be left out:
+
+```yaml
+display:
+  alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}?host={{.Labels.hostname}}"
+  source_link: true
+  link_new_tab: true
+```
+
+| | Declared by | Rendered as |
+|---|---|---|
+| Alert link | `alert_link_template` | the whole card/row is clickable |
+| Source link | `link_template` → the alert's generator URL → `dashboard_url` | the ↗ button on the right |
+
+- Both can be overridden per source: `alert_link_template` and `source_link`
+  under a `sources:` entry win over the `display:` values.
+- No `alert_link_template` anywhere means the alert is simply not clickable;
+  `source_link: false` hides the ↗ button.
+- Placeholders: `{{.Labels.x}}`, `{{.Annotations.x}}`, `{{.Name}}`,
+  `{{.Severity}}`, `{{.Status}}`, `{{.Source}}`, `{{.SourceType}}`,
+  `{{.Fingerprint}}`, `{{.StartsAt}}`, `{{.EndsAt}}`.
+- Values are percent-encoded, so a label containing a space, `&` or `/` cannot
+  break the URL — note that this also means a value cannot be used as a path
+  separator.
+- If the alert does not carry a label the template asks for, the template is
+  **not** used: the source link falls back to the next candidate, and the alert
+  link is dropped (no URL with a leftover `{{.Labels.x}}` in it).
+- Only `http` and `https` links are rendered; anything else, including a
+  `javascript:` generator URL coming from a source, is ignored.
+
+## Severity Order
+
+Alerts are sorted by severity, most severe first, then by age. `severity_order`
+defines that ranking:
+
+```yaml
+display:
+  severity_order: ["critical", "error", "high", "warning", "info", "none"]
+```
+
+- The default is the list above, so `severity` labels such as `error` are ranked
+  without any configuration.
+- Any severity **not** listed sorts after every listed level. Add your own levels
+  to the list to place them: `["disaster", "critical", "error", "notice"]`.
+- Matching is case-insensitive and understands the aliases `crit`, `err`, `warn`
+  and `information`.
+- The same order drives the severity filter chips (normal and TV mode), the sound
+  picked for a batch of new alerts, and the severity badges on groups.
+
+Only `critical`, `error`, `high`, `warning`, `info` and `none` have dedicated
+colors; a custom level is displayed with the neutral style.
 
 ## Alert Grouping
 

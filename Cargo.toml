@@ -1,6 +1,6 @@
 [package]
 name = "alertview"
-version = "0.5.7"
+version = "0.6.0"
 edition = "2021"
 description = "A lightweight alert dashboard for Alertmanager, Grafana and Zabbix"
 license = "MIT"
@@ -22,3 +22,4 @@ notify = "6"
 notify-debouncer-mini = "0.4"
 tower-http = { version = "0.5", features = ["compression-gzip"] }
 futures = "0.3"
+percent-encoding = "2"

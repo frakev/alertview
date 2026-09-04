@@ -30,6 +30,9 @@ sources:
     # Set this if your alerts carry the level under a different label name.
     # severity_label: "Severity"
     # link_template: "https://grafana.example.com/alerts?query={{.Labels.alertname}}"
+    # Per-source overrides of the display settings above:
+    # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}"
+    # source_link: false   # no arrow for this source
     # basic_auth:
     #   username: admin
     #   password: secret
@@ -73,8 +76,11 @@ display:
     - host
     - hostgroup
   
-  # Theme: "dark", "light", or URL to custom CSS file
-  # theme: "dark"
+  # Theme: "auto" (follows the OS light/dark setting, default), "dark" or "light".
+  # A user who clicks the theme button in the UI overrides this in their browser.
+  # theme: "auto"
+  # Extra stylesheet layered on top of the theme
+  # custom_css: "https://example.com/alertview-theme.css"
   
   # Timezone: "local", "UTC", or any IANA timezone (e.g., "Europe/Paris", "America/New_York")
   # timezone: "local"
@@ -84,6 +90,36 @@ display:
   
   # Group alerts by labels (e.g., ["namespace", "job"])
   # group_by: ["namespace"]
+
+  # Labels shown in front of the alert name, in both normal and TV mode.
+  # Only the ones the alert carries are shown, joined by prefix_separator, and
+  # they are dropped from the label chips so nothing appears twice.
+  # Shown even if they are not listed in display.labels above.
+  # prefix_labels: ["hostname"]
+  # prefix_separator: " / "
+
+  # Start in TV mode. Only applies to a browser where nobody has used the TV
+  # button yet; "?tv=1" in the URL always wins (use it for a kiosk display).
+  # tv_mode_default: false
+
+  # Make the whole alert clickable, with a link built from its labels.
+  # Placeholders: {{.Labels.x}}, {{.Annotations.x}}, {{.Name}}, {{.Severity}},
+  # {{.Status}}, {{.Source}}, {{.SourceType}}, {{.StartsAt}}, {{.EndsAt}}.
+  # An alert missing one of the labels used here simply is not clickable.
+  # Can be overridden per source with alert_link_template.
+  # alert_link_template: "https://wiki.example.com/runbook/{{.Labels.alertname}}?host={{.Labels.hostname}}"
+
+  # Show the "open in the source" arrow on the right of each alert.
+  # Its destination is independent from alert_link_template above.
+  # source_link: true
+
+  # Open links in a new tab (false keeps them in the same tab, for kiosks)
+  # link_new_tab: true
+
+  # Severity levels, most severe first. Alerts are sorted in this order and the
+  # filter chips follow it. A severity that is not listed sorts last.
+  # Aliases are matched too: crit/err/warn/information.
+  # severity_order: ["critical", "error", "high", "warning", "info", "none"]
 
 # Environment variables that can be used instead of config file:
 # ALERTVIEW_PORT=8080

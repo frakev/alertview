@@ -8,7 +8,10 @@ A lightweight alert dashboard for Alertmanager, Grafana and Zabbix. Built with R
 
 **Features:**
 - Aggregates alerts from multiple Alertmanager, Grafana and/or Zabbix sources
-- Severity-colored cards (critical / high / warning / info)
+- Severity-colored cards (critical / error / high / warning / info), ranking configurable via `display.severity_order`
+- Clickable alerts with a link built from their labels (`display.alert_link_template`), independent from the ↗ "open in the source" button
+- Labels shown in front of the alert name (`display.prefix_labels`)
+- Automatic light/dark theme following the OS, TV mode startable by default
 - Filter by severity, status (firing / silenced / pending), and source
 - Multi-source filter chips
 - Direct links to specific alerts (Zabbix uses `filter_eventid`, Alertmanager/Grafana use `generator_url`)
@@ -439,7 +442,7 @@ AlertView provides a simple REST API for programmatic access to alerts.
 - `source`: Name of the source as configured
 - `source_type`: One of `alertmanager`, `grafana`, `zabbix`
 - `status`: One of `firing`, `silenced`, `pending`
-- `severity`: One of `critical`, `high`, `warning`, `info`, `none`
+- `severity`: One of `critical`, `error`, `high`, `warning`, `info`, `none`, or any level listed in `display.severity_order`
 - `name`: Alert name
 - `labels`: Object with alert labels
 - `annotations`: Object with alert annotations

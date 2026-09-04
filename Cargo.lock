@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "alertview"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -27,6 +27,7 @@ dependencies = [
  "futures",
  "notify",
  "notify-debouncer-mini",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

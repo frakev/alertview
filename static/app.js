@@ -29,7 +29,12 @@ function absTime(iso) {
   } catch { return iso; }
 }
 
-/* -- Theme -- */
+/* -- Theme --
+   The stored preference is "auto" | "light" | "dark"; `data-theme` on <html>
+   always holds the *resolved* value (light or dark) so the CSS never has to
+   know about "auto". In auto the OS preference is followed live. */
+const THEME_COLORS = { dark: '#0d1117', light: '#f6f8fa' };
+const AUTO = '<circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/>';
 const SUN  = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
 const MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
 
@@ -70,27 +75,76 @@ const AudioContext = (() => {
   };
 })();
 
+// Severity ranking. The server sends display.severity_order from the config;
+// these are only the fallback used before the first payload arrives.
+const DEFAULT_SEV_ORDER = ['critical','error','high','warning','info','none'];
+const SEV_ALIASES = { crit: 'critical', err: 'error', warn: 'warning', information: 'info' };
+
+function sevOrderList() {
+  const order = App.data?.severity_order;
+  return order?.length ? order : DEFAULT_SEV_ORDER;
+}
+
+function canonSev(sev) {
+  const s = (sev || 'none').trim().toLowerCase();
+  return SEV_ALIASES[s] ?? s;
+}
+
 // Sound presets by severity
 const SOUND_PRESETS = {
   critical: () => { AudioContext.playBeep(800, 300); AudioContext.playBeep(600, 300); },
+  error:    () => { AudioContext.playBeep(700, 250); AudioContext.playBeep(550, 250); },
   high:     () => { AudioContext.playBeep(600, 200); AudioContext.playBeep(500, 200); },
   warning:  () => { AudioContext.playBeep(400, 150); },
   info:     () => { AudioContext.playBeep(300, 100); }
 };
 
-function applyTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  localStorage.setItem('av-theme', t);
-  document.getElementById('theme-ico').innerHTML    = t === 'dark' ? MOON : SUN;
-  document.getElementById('tv-theme-ico').innerHTML = t === 'dark' ? MOON : SUN;
+const THEME_PREFS = ['auto', 'light', 'dark'];
+
+function osPrefersDark() {
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
 }
 
-// Apply custom theme CSS if provided
+function resolveTheme(pref) {
+  return pref === 'auto' ? (osPrefersDark() ? 'dark' : 'light') : pref;
+}
+
+/* `persist: false` applies a theme that came from the config, without
+   overwriting a choice the user made in this browser. */
+function applyTheme(pref, { persist = true } = {}) {
+  if (!THEME_PREFS.includes(pref)) pref = 'auto';
+  App.themePref = pref;
+  if (persist) localStorage.setItem('av-theme', pref);
+
+  const resolved = resolveTheme(pref);
+  document.documentElement.setAttribute('data-theme', resolved);
+
+  const icon = pref === 'auto' ? AUTO : pref === 'dark' ? MOON : SUN;
+  const title = pref === 'auto' ? `Theme: auto (${resolved})` : `Theme: ${pref}`;
+  ['theme-ico', 'tv-theme-ico'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.innerHTML = icon; el.parentElement.title = title; }
+  });
+
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_COLORS[resolved]);
+}
+
+function cycleTheme() {
+  applyTheme(THEME_PREFS[(THEME_PREFS.indexOf(App.themePref) + 1) % THEME_PREFS.length]);
+  pushUrl();
+}
+
+// Follow the OS while the preference is "auto".
+window.matchMedia?.('(prefers-color-scheme: dark)')
+  .addEventListener('change', () => { if (App.themePref === 'auto') applyTheme('auto', { persist: false }); });
+
+// Layer an extra stylesheet on top of the theme, if the config provides one.
 function applyCustomTheme(cssUrl) {
   const existing = document.getElementById('custom-theme-css');
   if (existing) existing.remove();
-  
-  if (cssUrl && cssUrl !== 'dark' && cssUrl !== 'light') {
+
+  if (cssUrl && !THEME_PREFS.includes(cssUrl)) {
     const link = document.createElement('link');
     link.id = 'custom-theme-css';
     link.rel = 'stylesheet';
@@ -99,15 +153,8 @@ function applyCustomTheme(cssUrl) {
   }
 }
 
-applyTheme(localStorage.getItem('av-theme') || 'dark');
-document.getElementById('theme-btn').addEventListener('click', () => {
-  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-  pushUrl();
-});
-document.getElementById('tv-theme-btn').addEventListener('click', () => {
-  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-  pushUrl();
-});
+document.getElementById('theme-btn').addEventListener('click', cycleTheme);
+document.getElementById('tv-theme-btn').addEventListener('click', cycleTheme);
 
 /* -- knownFps persistence -- */
 function loadKnownFps() {
@@ -179,32 +226,16 @@ function connectSSE() {
     }
   };
 
-  eventSource.addEventListener('new_alert', (event) => {
-    try {
-      const alert = JSON.parse(event.data);
-      console.log('New alert received via SSE:', alert);
-      
-      // Play sound if enabled
-      if (AppConfig.playSounds) {
-        playSoundForAlerts([alert]);
-      }
-      
-      // Show desktop notification if permitted
-      if (Notification?.permission === 'granted') {
-        sendNotif([alert]);
-      }
-      
-      // Refresh the alerts list
-      fetchAlerts();
-    } catch (e) {
-      console.error('Error processing SSE event:', e);
-    }
-  });
+  // An SSE event only means "something changed, refresh sooner than the next
+  // poll". The refresh is debounced (a burst of new alerts is one event per
+  // alert) and fetchAlerts() does its own new-alert diff, so the sound and the
+  // notification are not fired from here — doing both would double them.
+  eventSource.addEventListener('new_alert', () => scheduleRefresh());
 
   // Reload config when it changes (e.g., display_labels)
   eventSource.addEventListener('config_reloaded', () => {
     console.log('Config reloaded via SSE, refreshing alerts...');
-    fetchAlerts();
+    scheduleRefresh();
   });
 
   // Store reference for cleanup
@@ -227,12 +258,10 @@ function playSoundForAlerts(newAlerts) {
   if (!AppConfig.playSounds || !newAlerts.length) return;
   
   // Play sound for the highest severity
-  const severities = ['critical', 'high', 'warning', 'info'];
-  for (const sev of severities) {
-    if (newAlerts.some(a => a.severity === sev)) {
-      if (SOUND_PRESETS[sev]) {
-        SOUND_PRESETS[sev]();
-      }
+  for (const sev of sevOrderList()) {
+    if (newAlerts.some(a => canonSev(a.severity) === canonSev(sev))) {
+      const preset = SOUND_PRESETS[canonSev(sev)];
+      if (preset) preset();
       break; // Only play for the highest severity
     }
   }
@@ -241,7 +270,7 @@ function playSoundForAlerts(newAlerts) {
 function sendNotif(newAlerts) {
   if (Notification?.permission !== 'granted' || !newAlerts.length) return;
   const bySev = s => newAlerts.filter(a => a.severity === s).length;
-  const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
+  const icon = bySev('critical') ? '🔴' : bySev('error') ? '🟠' : bySev('high') ? '🟠' : '🟡';
   const alertWord = newAlerts.length > 1 ? 'alerts' : 'alert';
   const n = new Notification(
     `${icon} ${newAlerts.length} new ${alertWord}`,
@@ -254,6 +283,10 @@ function sendNotif(newAlerts) {
 /* -- App state (filters persisted in localStorage) -- */
 const App = {
   data:           null,
+  themePref:      localStorage.getItem('av-theme') || 'auto',
+  themeFromUser:  localStorage.getItem('av-theme') !== null,
+  themeFromUrl:   false,
+  tvFromUrl:      false,
   knownFps:       loadKnownFps(),
   freshFps:       new Set(),
   searchQ:        '',
@@ -327,6 +360,17 @@ function renderSourceChips() {
 /* -- Refresh -- */
 document.getElementById('refresh-btn').addEventListener('click', () => fetchAlerts());
 
+/* Refresh soon, coalescing bursts. Never fires while a fetch is in flight —
+   fetchAlerts() would drop the call and the update would be lost. */
+let sseRefreshTimer = null;
+function scheduleRefresh(delay = 1000) {
+  clearTimeout(sseRefreshTimer);
+  sseRefreshTimer = setTimeout(() => {
+    if (App.loading) scheduleRefresh(300);
+    else fetchAlerts();
+  }, delay);
+}
+
 /* -- Fetch -- */
 async function fetchAlerts() {
   if (App.loading) return;
@@ -355,10 +399,15 @@ async function fetchAlerts() {
     
     // Update config from API response
     if (data.timezone) AppConfig.timezone = data.timezone;
-    if (data.theme) applyCustomTheme(data.theme);
+    // `theme` holding a URL is the legacy way of declaring a custom stylesheet.
+    applyCustomTheme(data.custom_css || data.theme);
+    if (data.theme && THEME_PREFS.includes(data.theme) && !App.themeFromUser && !App.themeFromUrl) {
+      applyTheme(data.theme, { persist: false });
+    }
     if (data.play_sounds !== undefined) AppConfig.playSounds = data.play_sounds;
     
     App.data = data;
+    applyTvDefault(data);
 
     render();
 
@@ -384,6 +433,14 @@ async function fetchAlerts() {
   }
 }
 
+
+/* display.tv_mode_default only applies when this browser has no stored TV
+   preference and the URL did not force one. */
+function applyTvDefault(data) {
+  if (!data.tv_mode_default || TV.chosen || App.tvFromUrl || TV.active) return;
+  TV.active = true;
+  TV._apply();
+}
 
 /* -- Filters -- */
 function filteredAlerts() {
@@ -415,7 +472,7 @@ function updateTitle() {
   const firing = (App.data?.alerts ?? []).filter(a => a.status === 'firing');
   if (!firing.length) { document.title = 'AlertView'; return; }
   const bySev = s => firing.filter(a => a.severity === s).length;
-  const icon = bySev('critical') ? '🔴' : bySev('high') ? '🟠' : '🟡';
+  const icon = bySev('critical') ? '🔴' : bySev('error') ? '🟠' : bySev('high') ? '🟠' : '🟡';
   const alertWord = firing.length > 1 ? 'alerts' : 'alert';
   document.title = `${icon} ${firing.length} ${alertWord} — AlertView`;
 }
@@ -425,8 +482,8 @@ function render() { renderStats(); renderSources(); renderSourceChips(); renderA
 function renderStats() {
   const counts = {};
   (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
-  const order = ['critical','high','warning','info','none'];
-  document.getElementById('stats-bar').innerHTML = order.filter(s => counts[s])
+  const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
+  document.getElementById('stats-bar').innerHTML = order
     .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
     .join('');
 }
@@ -606,8 +663,9 @@ function renderGroupedAlerts(listEl, groups, filtered) {
 }
 
 function severityOrder(sev) {
-  const order = { critical: 0, high: 1, warning: 2, warn: 2, info: 3, none: 4 };
-  return order[sev] ?? 5;
+  const order = sevOrderList().map(canonSev);
+  const i = order.indexOf(canonSev(sev));
+  return i === -1 ? order.length : i;
 }
 
 function toggleGroup(groupKey) {
@@ -628,23 +686,60 @@ function getSourceLabel(sourceType) {
   return labels[sourceType] || "Open in source";
 }
 
+function linkTarget() {
+  return App.data?.link_new_tab === false ? '' : ' target="_blank" rel="noopener noreferrer"';
+}
+
+/* Stretched link: an overlay covering the whole card. The ↗ button and the
+   TV "+N" toggle are raised above it in CSS so they keep their own action.
+   Using a real <a> keeps middle-click, ctrl+click and "copy link address". */
+function cardLinkHtml(a) {
+  if (!a.alert_link_url) return '';
+  return `<a class="card-link" href="${esc(a.alert_link_url)}"${linkTarget()} aria-label="${esc(a.name)}"></a>`;
+}
+
 function genLinkHtml(url, sourceType, sourceName) {
   if (!url) return '';
   const label = sourceType ? getSourceLabel(sourceType) : "Open in Prometheus/Grafana";
   const title = sourceName ? `${sourceName} — ${label}` : label;
-  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="gen-link" title="${esc(title)}">
+  return `<a href="${esc(url)}"${linkTarget()} class="gen-link" title="${esc(title)}">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
       <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
     </svg></a>`;
 }
 
+/* Labels shown in front of the alert name, joined by the configured separator.
+   Only the ones the alert carries; empty string when it carries none. */
+function prefixHtml(a) {
+  const sep = App.data?.prefix_separator ?? ' / ';
+  const parts = prefixLabels()
+    .filter(l => a.labels?.[l] !== undefined)
+    .map(l => esc(a.labels[l]));
+  if (!parts.length) return '';
+  return `<span class="alert-prefix">` +
+    parts.join(`<span class="prefix-sep">${esc(sep)}</span>`) +
+    `</span>`;
+}
+
+function prefixLabels() {
+  return App.data?.prefix_labels ?? [];
+}
+
+/* Labels for the chips: the configured ones the alert carries, minus the ones
+   already shown in the prefix. */
+function chipLabels(a) {
+  const prefix = prefixLabels();
+  return (App.data?.display_labels ?? [])
+    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
+    .filter(l => !prefix.includes(l));
+}
+
 function cardHtml(a) {
   if (TV.active) return cardHtmlTV(a);
 
   const sev    = a.severity || 'none';
-  const labels = (App.data?.display_labels ?? [])
-    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
+  const labels = chipLabels(a)
     .map(l => `<span class="lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('');
 
   const summary  = a.annotations?.summary || '';
@@ -655,10 +750,12 @@ function cardHtml(a) {
   const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
 
   return `
-    <div class="alert-card sev-${sev}" data-fp="${esc(a.fingerprint)}">
+    <div class="alert-card sev-${sev}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
+      ${cardLinkHtml(a)}
       <div class="card-top">
         <div class="card-title">
           <span class="sev-dot sev-${sev}"></span>
+          ${prefixHtml(a)}
           <span class="alert-name">${esc(a.name)}</span>
           <span class="sev-badge sev-${sev}">${sev}</span>
           <span class="status-badge status-${a.status}">${a.status}</span>
@@ -681,21 +778,19 @@ function cardHtmlTV(a) {
   const summary = a.annotations?.summary || '';
   const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
   
-  // Prepare labels for TV mode
-  const display_labels = App.data?.display_labels ?? [];
-  const visible_labels = display_labels.slice(0, 2); // Show first 2 labels by default
-  const hidden_labels = display_labels.slice(2); // Rest are hidden
-  const has_hidden_labels = hidden_labels.length > 0;
+  // A row only has space for 2 labels inline, the rest go behind the +N toggle.
+  // Presence is filtered *before* slicing so a row never hides every label it
+  // has; labels already shown in the prefix are excluded by chipLabels().
+  const ordered_labels = chipLabels(a);
+  const visible_labels = ordered_labels.slice(0, 2); // Show first 2 labels by default
   
   // Generate label HTML for visible labels
   const labelsHtml = visible_labels
-    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
     .map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`)
     .join('');
   
   // Generate hidden labels HTML (initially hidden)
-  const hiddenLabelsList = hidden_labels
-    .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity');
+  const hiddenLabelsList = ordered_labels.slice(2);
   const hiddenLabelsHtml = hiddenLabelsList.length > 0
     ? `<span class="tv-hidden-labels" style="display:none;">` +
       hiddenLabelsList.map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('') +
@@ -703,8 +798,10 @@ function cardHtmlTV(a) {
   const showToggle = hiddenLabelsList.length > 0;
 
   return `
-    <div class="alert-card alert-row sev-${sev}" data-fp="${esc(a.fingerprint)}">
+    <div class="alert-card alert-row sev-${sev}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
+      ${cardLinkHtml(a)}
       <span class="sev-dot sev-${sev}"></span>
+      ${prefixHtml(a)}
       <span class="alert-name">${esc(a.name)}</span>
       <span class="sev-badge sev-${sev}">${sev}</span>
       <span class="status-badge status-${a.status}">${a.status}</span>
@@ -726,6 +823,9 @@ const TV = {
   hideTimer:  null,
 
   init() {
+    // No stored preference means the config default applies, but the payload
+    // has not arrived yet — see applyTvDefault().
+    this.chosen = localStorage.getItem('av-tv') !== null;
     this.active = localStorage.getItem('av-tv') === 'true';
     if (this.active) this._apply();
 
@@ -754,6 +854,7 @@ const TV = {
 
   toggle() {
     this.active = !this.active;
+    this.chosen = true;
     localStorage.setItem('av-tv', this.active);
     this._apply();
     pushUrl();
@@ -788,6 +889,7 @@ const TV = {
   },
 
   startClock() {
+    this.stopClock(); // never stack two intervals
     this.updateClock();
     this.clockTimer = setInterval(() => this.updateClock(), 1000);
   },
@@ -829,9 +931,9 @@ const TV = {
   renderChips() {
     const counts = {};
     (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
-    const order = ['critical','high','warning','info','none'];
+    const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
     const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('all')">all</span>`;
-    document.getElementById('tv-sev-chips').innerHTML = all + order.filter(s => counts[s])
+    document.getElementById('tv-sev-chips').innerHTML = all + order
       .map(s => `<span class="stat-chip sev-${s}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" onclick="toggleSev('${s}')">${counts[s]}&thinsp;${s}</span>`)
       .join('');
   },
@@ -848,8 +950,7 @@ TV.init();
 /* -- URL state sync -- */
 function pushUrl() {
   const p = new URLSearchParams();
-  const theme = document.documentElement.getAttribute('data-theme');
-  if (theme !== 'dark')        p.set('theme', theme);
+  if (App.themePref !== 'auto') p.set('theme', App.themePref);
   if (App.sevFilter !== 'all') p.set('sev',      App.sevFilter);
   if (App.srcFilter.size > 0)  p.set('src', [...App.srcFilter].join(','));
   if (App.searchQ)             p.set('q',        App.searchQ);
@@ -861,7 +962,7 @@ function pushUrl() {
 
 function initFromUrl() {
   const p = new URLSearchParams(location.search);
-  if (p.has('theme')) applyTheme(p.get('theme'));
+  if (p.has('theme')) { App.themeFromUrl = true; applyTheme(p.get('theme'), { persist: false }); }
   if (p.has('sev'))   { App.sevFilter = p.get('sev');   localStorage.setItem('av-sev-filter', App.sevFilter); }
   if (p.has('src'))   { const s = p.get('src').split(',').filter(Boolean); App.srcFilter = new Set(s); localStorage.setItem('av-src-filter', JSON.stringify(s)); }
   if (p.has('q'))        {
@@ -871,12 +972,16 @@ function initFromUrl() {
   }
   if (p.has('silenced')) { App.showSilenced = p.get('silenced') === '1'; localStorage.setItem('av-show-silenced', App.showSilenced); }
   if (p.has('tv')) {
+    App.tvFromUrl = true;
     const on = p.get('tv') === '1';
     if (on !== TV.active) { TV.active = on; localStorage.setItem('av-tv', on); TV._apply(); }
   }
 }
 
 /* -- Boot -- */
+// The <head> script already resolved the theme to avoid a flash; this syncs the
+// button icons and the theme-color meta with it.
+applyTheme(App.themePref, { persist: false });
 initFromUrl();
 updateSilenceBtn();
 fetchAlerts();

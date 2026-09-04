@@ -12,7 +12,9 @@ All source types share these common fields:
   url: "http://host:port"    # Required: Base URL
   timeout: 15               # Optional: Request timeout in seconds (default: 15)
   dashboard_url: "..."       # Optional: Link for alert cards
-  link_template: "..."      # Optional: Custom link template
+  link_template: "..."      # Optional: Template for the ↗ source link
+  alert_link_template: "..." # Optional: Makes the whole alert clickable
+  source_link: true         # Optional: Show the ↗ source link for this source
   retry_policy:             # Optional: Retry configuration
     max_retries: 3
     initial_delay_ms: 1000

@@ -196,7 +196,14 @@ pub struct Source {
     pub source_type: SourceType,
     pub url: String,
     pub dashboard_url: Option<String>,
+    /// Template for the ↗ button ("open in the source"). Falls back to the
+    /// alert's own generator URL, then to `dashboard_url`.
     pub link_template: Option<String>,
+    /// Template making the whole alert clickable. Overrides
+    /// `display.alert_link_template` for this source.
+    pub alert_link_template: Option<String>,
+    /// Overrides `display.source_link` for this source.
+    pub source_link: Option<bool>,
     /// Name of the label used to classify severity (Alertmanager/Grafana only).
     /// Lookup is case-insensitive. Defaults to "severity".
     #[serde(default = "default_severity_label")]
@@ -289,18 +296,91 @@ pub struct BasicAuth {
     pub password: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DisplayConfig {
     #[serde(default = "default_labels")]
     pub labels: Vec<String>,
+    /// "auto" (follow the OS), "dark" or "light". A URL is still accepted for
+    /// backwards compatibility and treated as `custom_css`.
     #[serde(default)]
-    pub theme: Option<String>, // "dark", "light", or custom CSS URL
+    pub theme: Option<String>,
+    /// URL of an extra stylesheet layered on top of the theme.
+    #[serde(default)]
+    pub custom_css: Option<String>,
     #[serde(default = "default_timezone")]
     pub timezone: String, // "local", "UTC", or IANA timezone (e.g., "Europe/Paris")
     #[serde(default)]
     pub play_sounds: bool,
     #[serde(default)]
     pub group_by: Vec<String>, // Labels to group alerts by (e.g., ["namespace", "job"])
+    /// Severity levels from most to least severe. Any severity not listed here
+    /// (including ones a source invents) sorts after every listed level.
+    #[serde(default = "default_severity_order")]
+    pub severity_order: Vec<String>,
+    /// Labels shown in front of the alert name, joined by `prefix_separator`,
+    /// in both normal and TV mode. Only the ones the alert carries are shown,
+    /// and they are dropped from the trailing label chips so nothing appears
+    /// twice. Shown even if absent from `labels`.
+    #[serde(default = "default_prefix_labels")]
+    pub prefix_labels: Vec<String>,
+    #[serde(default = "default_prefix_separator")]
+    pub prefix_separator: String,
+    /// Start in TV mode when this browser has no stored preference and the URL
+    /// says nothing. An explicit choice (the TV button, or `?tv=`) still wins.
+    #[serde(default)]
+    pub tv_mode_default: bool,
+    /// Template making the whole alert clickable, for sources that do not
+    /// declare their own. No template means the alert is not clickable.
+    #[serde(default)]
+    pub alert_link_template: Option<String>,
+    /// Show the ↗ "open in the source" button.
+    #[serde(default = "default_true")]
+    pub source_link: bool,
+    /// Open links in a new tab. False keeps them in the same tab (kiosk).
+    #[serde(default = "default_true")]
+    pub link_new_tab: bool,
+}
+
+// `display:` may be omitted entirely, in which case serde builds the struct
+// through `Default` and never sees the per-field defaults above — so `Default`
+// has to produce the same values.
+impl Default for DisplayConfig {
+    fn default() -> Self {
+        Self {
+            labels: default_labels(),
+            theme: None,
+            custom_css: None,
+            timezone: default_timezone(),
+            play_sounds: false,
+            group_by: Vec::new(),
+            severity_order: default_severity_order(),
+            prefix_labels: default_prefix_labels(),
+            prefix_separator: default_prefix_separator(),
+            tv_mode_default: false,
+            alert_link_template: None,
+            source_link: true,
+            link_new_tab: true,
+        }
+    }
+}
+
+fn default_prefix_labels() -> Vec<String> {
+    vec!["hostname".to_string()]
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_prefix_separator() -> String {
+    " / ".to_string()
+}
+
+fn default_severity_order() -> Vec<String> {
+    ["critical", "error", "high", "warning", "info", "none"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn default_labels() -> Vec<String> {

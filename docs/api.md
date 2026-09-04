@@ -91,7 +91,7 @@ Accept: application/json
 | `starts_at` | string | When the alert started (ISO 8601) |
 | `ends_at` | string | When the alert ended (ISO 8601), null if still firing |
 | `status` | string | Alert status: firing, silenced, pending |
-| `severity` | string | Alert severity: critical, high, warning, info, none |
+| `severity` | string | Alert severity: critical, error, high, warning, info, none (or any custom level, see `display.severity_order`) |
 | `name` | string | Alert name (from alertname label) |
 | `source` | string | Source name from configuration |
 | `source_type` | string | Source type: alertmanager, grafana, zabbix |

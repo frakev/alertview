@@ -4,6 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AlertView</title>
+  <script>
+    // Resolve the theme before the first paint, otherwise a light-theme user
+    // gets a flash of the dark palette hardcoded on <html> above.
+    (function () {
+      try {
+        var pref = localStorage.getItem('av-theme') || 'auto';
+        var dark = pref === 'auto'
+          ? matchMedia('(prefers-color-scheme: dark)').matches
+          : pref === 'dark';
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/style.css">
 
   <!-- PWA: installable on Android (Chrome) / iOS (Safari) -->

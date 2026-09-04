@@ -1,4 +1,4 @@
-use alerts::{severity_order, Alert, AlertsResponse, SourceStatus};
+use alerts::{severity_rank, Alert, AlertsResponse, SourceStatus};
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 use config::{Config, SharedConfig};
 use futures::stream;
@@ -72,6 +72,12 @@ struct AppState {
     cache: SharedAlertCache,
     tx: broadcast::Sender<AppEvent>,
     sse_connections: Arc<AtomicUsize>,
+    /// Fingerprints already announced over SSE, per source name. Kept here
+    /// instead of being derived from `cache`: caching is opt-in
+    /// (`cache_ttl_seconds`, disabled by default), so with the default config
+    /// the cache is always empty and every poll re-announced every alert as
+    /// new — which made clients refresh in a loop.
+    known_fps: Arc<tokio::sync::RwLock<HashMap<String, HashSet<String>>>>,
 }
 
 #[tokio::main]
@@ -128,10 +134,13 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("TLS certificate verification is DISABLED - this is insecure for production!");
     }
 
+    // No global request timeout: each fetch is wrapped in the source's own
+    // `timeout` (see fetch_source_alerts_with_retry). A client-wide timeout
+    // would silently cap a source configured with a longer one.
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(config.tls_insecure)
-        .timeout(std::time::Duration::from_secs(15))
-        .user_agent("alertview/0.1")
+        .connect_timeout(Duration::from_secs(10))
+        .user_agent(concat!("alertview/", env!("ALERTVIEW_VERSION")))
         .build()?;
 
     let shared_config = Arc::new(tokio::sync::RwLock::new(config));
@@ -146,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         cache,
         tx: tx.clone(),
         sse_connections: Arc::new(AtomicUsize::new(0)),
+        known_fps: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
     });
 
     // Start config file watcher
@@ -307,13 +317,10 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
     let cache_ttl = Duration::from_secs(config.cache_ttl_seconds);
     let use_cache = cache_ttl > Duration::from_secs(0);
     
-    // Get previous fingerprints to detect new alerts
-    let prev_fingerprints: HashSet<String> = {
-        let cache = state.cache.read().await;
-        cache.iter()
-            .flat_map(|(_, (alerts, _))| alerts.iter().map(|a| a.fingerprint.clone()))
-            .collect()
-    };
+    // Fingerprints already announced, per source. Snapshotted so the lock is not
+    // held across the network I/O below.
+    let known_before: HashMap<String, HashSet<String>> = state.known_fps.read().await.clone();
+    let mut refreshed_fps: HashMap<String, HashSet<String>> = HashMap::new();
 
     for source in &config.sources {
         // Generate cache key based on source config
@@ -355,12 +362,23 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
                 let count = alerts.len();
                 tracing::debug!("Fetched {} alerts from {}", count, source.name);
                 
-                // Detect new alerts and broadcast them
-                for alert in &alerts {
-                    if !prev_fingerprints.contains(&alert.fingerprint) {
-                        new_alerts.push(alert.clone());
-                    }
+                // Detect new alerts and broadcast them. A source with no entry
+                // yet has never been fetched successfully (server start, new
+                // source in the config): prime it silently rather than
+                // announcing its whole backlog as new.
+                let fps: HashSet<String> =
+                    alerts.iter().map(|a| a.fingerprint.clone()).collect();
+                match known_before.get(&source.name) {
+                    Some(known) => new_alerts.extend(
+                        alerts.iter().filter(|a| !known.contains(&a.fingerprint)).cloned(),
+                    ),
+                    None => tracing::debug!(
+                        "Priming {} known alert(s) for source {}",
+                        fps.len(),
+                        source.name
+                    ),
                 }
+                refreshed_fps.insert(source.name.clone(), fps);
                 
                 // Cache the results if caching is enabled
                 if use_cache {
@@ -399,14 +417,46 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         }
     }
 
+    // Remember what has been announced. Sources served from cache or that
+    // failed keep their previous entry, so a transient failure does not
+    // re-announce everything once the source comes back.
+    {
+        let configured: HashSet<&str> = config.sources.iter().map(|s| s.name.as_str()).collect();
+        let mut known = state.known_fps.write().await;
+        known.extend(refreshed_fps);
+        known.retain(|name, _| configured.contains(name.as_str()));
+    }
+
     // Broadcast new alerts to SSE clients
     for alert in new_alerts {
         let _ = state.tx.send(AppEvent::NewAlert(Box::new(alert)));
     }
 
+    // Per-source settings are already applied; fill in the config-wide ones.
+    // A source that declares nothing inherits display.alert_link_template, and
+    // display.source_link: false hides the ↗ button unless the source opts in.
+    if config.display.alert_link_template.is_some() || !config.display.source_link {
+        let sources: HashMap<&str, &config::Source> =
+            config.sources.iter().map(|s| (s.name.as_str(), s)).collect();
+        for alert in &mut all_alerts {
+            let source = sources.get(alert.source.as_str());
+            if alert.alert_link_url.is_none() {
+                if let Some(template) = config.display.alert_link_template.as_deref() {
+                    if source.is_none_or(|s| s.alert_link_template.is_none()) {
+                        alert.alert_link_url = alerts::apply_link_template(template, alert);
+                    }
+                }
+            }
+            if !config.display.source_link && source.is_none_or(|s| s.source_link != Some(true)) {
+                alert.link_url = None;
+            }
+        }
+    }
+
+    let severity_order = &config.display.severity_order;
     all_alerts.sort_by(|a, b| {
-        severity_order(&a.severity)
-            .cmp(&severity_order(&b.severity))
+        severity_rank(severity_order, &a.severity)
+            .cmp(&severity_rank(severity_order, &b.severity))
             .then_with(|| b.starts_at.cmp(&a.starts_at))
     });
 
@@ -424,9 +474,15 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         display_labels: config.display.labels.clone(),
         timezone: Some(config.display.timezone.clone()),
         theme: config.display.theme.clone(),
+        custom_css: config.display.custom_css.clone(),
         play_sounds: config.display.play_sounds,
         groups,
         group_by: config.display.group_by.clone(),
+        severity_order: severity_order.clone(),
+        prefix_labels: config.display.prefix_labels.clone(),
+        prefix_separator: config.display.prefix_separator.clone(),
+        tv_mode_default: config.display.tv_mode_default,
+        link_new_tab: config.display.link_new_tab,
     })
 }
 
@@ -464,16 +520,14 @@ async fn fetch_source_alerts_with_retry(
         match result {
             Ok(Ok(alerts)) => return Ok(alerts),
             Ok(Err(e)) => {
-                last_error = Some(e);
-                // Don't retry on HTTP 4xx client errors
-                if let Some(status_code) = last_error.as_ref().and_then(|e| {
-                    e.to_string().split_whitespace().next()
-                        .and_then(|s| s.parse::<u16>().ok())
-                }) {
-                    if (400..500).contains(&status_code) {
-                        return Err(last_error.unwrap());
+                // Don't retry on HTTP 4xx: a 404, 401 or 403 is a configuration
+                // problem, retrying it only delays the error by several seconds.
+                if let Some(http) = e.downcast_ref::<alerts::HttpStatusError>() {
+                    if http.status.is_client_error() {
+                        return Err(e);
                     }
                 }
+                last_error = Some(e);
             }
             Err(_) => {
                 last_error = Some(anyhow::anyhow!("Timeout after {}s", source.timeout));

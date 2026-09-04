@@ -8,6 +8,7 @@
   --text-dim:   #484f58;
   --accent:     #818cf8;
   --c-critical: #f85149;
+  --c-error:    #ff7b72;
   --c-high:     #fb923c;
   --c-warning:  #d29922;
   --c-info:     #58a6ff;
@@ -103,6 +104,7 @@ a { color: inherit; }
 .stat-chip.active { box-shadow: 0 0 0 2px var(--text); }
 
 .stat-chip.sev-critical { background: rgba(248,81,73,.15);  color: var(--c-critical); border-color: rgba(248,81,73,.3); }
+.stat-chip.sev-error    { background: rgba(255,123,114,.15);color: var(--c-error);    border-color: rgba(255,123,114,.3); }
 .stat-chip.sev-high     { background: rgba(251,146,60,.15); color: var(--c-high);     border-color: rgba(251,146,60,.3); }
 .stat-chip.sev-warning  { background: rgba(210,153,34,.15); color: var(--c-warning);  border-color: rgba(210,153,34,.3); }
 .stat-chip.sev-info     { background: rgba(88,166,255,.15); color: var(--c-info);     border-color: rgba(88,166,255,.3); }
@@ -441,6 +443,7 @@ a { color: inherit; }
 
 /* -- Alert card -- */
 .alert-card {
+  position: relative;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--border);
   border-left-width: 3px;
@@ -455,7 +458,20 @@ a { color: inherit; }
   transform: translateY(-1px);
 }
 
+/* Whole-card link. It sits above the content so a click anywhere follows it;
+   the controls below opt back out by raising themselves. */
+.card-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.alert-card.clickable { cursor: pointer; }
+.alert-card.clickable:hover { border-color: var(--accent); }
+.gen-link, .tv-labels-toggle { position: relative; z-index: 2; }
+
 .alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(248,81,73,.07); }
+.alert-card.sev-error    { border-left-color: var(--c-error);    background: rgba(255,123,114,.07); }
 .alert-card.sev-high     { border-left-color: var(--c-high);     background: rgba(251,146,60,.06); }
 .alert-card.sev-warning  { border-left-color: var(--c-warning);  background: rgba(210,153,34,.05); }
 .alert-card.sev-info     { border-left-color: var(--c-info);     background: rgba(88,166,255,.05); }
@@ -480,12 +496,28 @@ a { color: inherit; }
   flex-shrink: 0;
 }
 .sev-dot.sev-critical { background: var(--c-critical); }
+.sev-dot.sev-error    { background: var(--c-error); }
 .sev-dot.sev-high     { background: var(--c-high); }
 .sev-dot.sev-warning  { background: var(--c-warning); }
 .sev-dot.sev-info     { background: var(--c-info); }
 .sev-dot.sev-none     { background: var(--c-none); }
 
 .alert-name { font-weight: 600; font-size: 13px; }
+
+/* Labels shown in front of the alert name. Capped so a long FQDN cannot push
+   the alert name out of the row. */
+.alert-prefix {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.alert-prefix .prefix-sep { color: var(--text-dim); font-weight: 400; }
 
 .sev-badge, .status-badge {
   font-size: 10px;
@@ -496,6 +528,7 @@ a { color: inherit; }
   border-radius: 3px;
 }
 .sev-badge.sev-critical { background: rgba(248,81,73,.15);   color: var(--c-critical); }
+.sev-badge.sev-error    { background: rgba(255,123,114,.15); color: var(--c-error); }
 .sev-badge.sev-high     { background: rgba(251,146,60,.15);  color: var(--c-high); }
 .sev-badge.sev-warning  { background: rgba(210,153,34,.15);  color: var(--c-warning); }
 .sev-badge.sev-info     { background: rgba(88,166,255,.15);  color: var(--c-info); }
@@ -596,12 +629,14 @@ a { color: inherit; }
 /* -- TV mode: bright colors -- */
 [data-tv="true"] {
   --c-critical: #ff2d20;
+  --c-error:    #ff6347;
   --c-high:     #ff7500;
   --c-warning:  #ffbf00;
   --c-info:     #00aaff;
 }
 [data-tv="true"] .alert-card { border-left-width: 4px; }
 [data-tv="true"] .alert-card.sev-critical { background: rgba(255,45,32,.14); }
+[data-tv="true"] .alert-card.sev-error    { background: rgba(255,99,71,.13); }
 [data-tv="true"] .alert-card.sev-high     { background: rgba(255,117,0,.12); }
 [data-tv="true"] .alert-card.sev-warning  { background: rgba(255,191,0,.09); }
 [data-tv="true"] .alert-card.sev-info     { background: rgba(0,170,255,.09); }

@@ -16,8 +16,27 @@ pub struct Alert {
     pub annotations: HashMap<String, String>,
     pub starts_at: String,
     pub ends_at: Option<String>,
+    /// Link behind the ↗ button ("open in the source").
     pub link_url: Option<String>,
+    /// Link the whole alert points to, when a template declares one.
+    pub alert_link_url: Option<String>,
 }
+
+/// A non-2xx response from a source. Carried as a typed error (rather than a
+/// formatted string) so the retry loop can tell a 4xx from a 5xx.
+#[derive(Debug)]
+pub struct HttpStatusError {
+    pub status: reqwest::StatusCode,
+    pub url: String,
+}
+
+impl std::fmt::Display for HttpStatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP {} from {}", self.status, self.url)
+    }
+}
+
+impl std::error::Error for HttpStatusError {}
 
 #[derive(Debug, Serialize)]
 pub struct SourceStatus {
@@ -38,12 +57,24 @@ pub struct AlertsResponse {
     pub timezone: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_css: Option<String>,
     #[serde(default)]
     pub play_sounds: bool,
     #[serde(default)]
     pub groups: Vec<AlertGroup>,
     #[serde(default)]
     pub group_by: Vec<String>,
+    #[serde(default)]
+    pub severity_order: Vec<String>,
+    #[serde(default)]
+    pub prefix_labels: Vec<String>,
+    #[serde(default)]
+    pub prefix_separator: String,
+    #[serde(default)]
+    pub tv_mode_default: bool,
+    #[serde(default)]
+    pub link_new_tab: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,7 +257,7 @@ where
     }
     let resp = req.send().await?;
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("HTTP {} from {}", resp.status(), url));
+        return Err(HttpStatusError { status: resp.status(), url: url.to_string() }.into());
     }
     let rpc: ZabbixRpcResponse<T> = resp.json().await?;
     if let Some(err) = rpc.error {
@@ -401,51 +432,11 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 None
             };
 
-            // Build direct URL to Zabbix alert using triggerid
-            // Try: link_template -> dashboard_url -> default zabbix URL
-            // Note: Zabbix uses triggerids[] parameter to view specific problems
-            let link_url = source.link_template.clone().and_then(|t| {
-                apply_link_template(&t, &Alert {
-                    fingerprint: format!("{}:{}", source.name, p.eventid),
-                    source: source.name.clone(),
-                    source_type: "zabbix".to_string(),
-                    status: status.clone(),
-                    severity: severity.clone(),
-                    name: p.name.clone(),
-                    labels: labels.clone(),
-                    annotations: annotations.clone(),
-                    starts_at: unix_ts_to_iso(&p.clock),
-                    ends_at: ends_at.clone(),
-                    link_url: None,
-                })
-            }).or_else(|| {
-                source.dashboard_url.clone().map(|url| {
-                    // If dashboard_url already contains triggerids parameter, use it as-is
-                    if url.contains("triggerids") {
-                        url
-                    } else {
-                        // Remove any existing query params and rebuild with triggerids
-                        let clean_url = url.split_once('?').map(|(base, _)| base.to_string()).unwrap_or(url);
-                        let base = if clean_url.contains("zabbix.php") {
-                            clean_url
-                        } else if clean_url.ends_with('/') {
-                            format!("{}/zabbix.php", clean_url.trim_end_matches('/'))
-                        } else {
-                            format!("{}/zabbix.php", clean_url)
-                        };
-                        format!("{}/zabbix.php?action=problem.view&triggerids[]={}", 
-                            base.trim_end_matches("/zabbix.php"), p.objectid)
-                    }
-                })
-            }).or_else(|| {
-                Some(format!(
-                    "{}/zabbix.php?action=problem.view&triggerids[]={}",
-                    source.url.trim_end_matches('/'),
-                    p.objectid
-                ))
-            });
+            // Zabbix has no per-alert link of its own, so the fallback is a
+            // problem.view URL pointing at the trigger.
+            let fallbacks = vec![zabbix_problem_link(source, &p.objectid)];
 
-            Alert {
+            let mut alert = Alert {
                 fingerprint: format!("{}:{}", source.name, p.eventid),
                 source: source.name.clone(),
                 source_type: "zabbix".to_string(),
@@ -456,8 +447,14 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 annotations,
                 starts_at: unix_ts_to_iso(&p.clock),
                 ends_at,
-                link_url,
-            }
+                link_url: None,
+                alert_link_url: None,
+            };
+
+            let (link_url, alert_link_url) = build_links(&alert, source, &fallbacks);
+            alert.link_url = link_url;
+            alert.alert_link_url = alert_link_url;
+            alert
         })
         .collect();
 
@@ -511,18 +508,25 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
     let resp = req.send().await?;
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("HTTP {} from {}", resp.status(), url));
+        return Err(HttpStatusError { status: resp.status(), url }.into());
     }
 
     let am_alerts: Vec<AmAlert> = resp.json().await?;
     
-    // Fetch silences to get comment information for silenced alerts
-    let silences = match fetch_am_silences(client, source).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("Failed to fetch silences: {}", e);
-            Vec::new()
+    // Fetch silences to get comment information for silenced alerts. Skipped
+    // when nothing is silenced, which is the common case — no point in a second
+    // round-trip per source per poll just to look up comments nobody needs.
+    let any_silenced = am_alerts.iter().any(|a| !a.status.silenced_by.is_empty());
+    let silences = if any_silenced {
+        match fetch_am_silences(client, source).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to fetch silences: {}", e);
+                Vec::new()
+            }
         }
+    } else {
+        Vec::new()
     };
     let silence_map: HashMap<String, String> = silences
         .into_iter()
@@ -579,32 +583,13 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 }
             }
 
-            // Prefer per-alert links over the static dashboard_url:
-            // 1. link_template (explicit per-alert template from config)
-            // 2. generator_url (per-alert link provided by Grafana/Alertmanager)
-            // 3. dashboard_url (static fallback, same for every alert)
-            let link_url = source.link_template.clone()
-                .and_then(|t| apply_link_template(&t, &Alert {
-                    fingerprint: format!("{}:{}", source.name, a.fingerprint),
-                    source: source.name.clone(),
-                    source_type: source_type_str.clone(),
-                    status: status.clone(),
-                    severity: severity.clone(),
-                    name: name.clone(),
-                    labels: a.labels.clone(),
-                    annotations: annotations.clone(),
-                    starts_at: a.starts_at.clone(),
-                    ends_at: ends_at.clone(),
-                    link_url: None,
-                }))
-                .or(if a.generator_url.is_empty() {
-                    None
-                } else {
-                    Some(a.generator_url)
-                })
-                .or(source.dashboard_url.clone());
+            // Per-alert links come first, the static dashboard_url last.
+            let fallbacks: Vec<String> = [a.generator_url, source.dashboard_url.clone().unwrap_or_default()]
+                .into_iter()
+                .filter(|u| !u.is_empty())
+                .collect();
 
-            Alert {
+            let mut alert = Alert {
                 fingerprint: format!("{}:{}", source.name, a.fingerprint),
                 source: source.name.clone(),
                 source_type: source_type_str,
@@ -615,8 +600,14 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 annotations,
                 starts_at: a.starts_at,
                 ends_at,
-                link_url,
-            }
+                link_url: None,
+                alert_link_url: None,
+            };
+
+            let (link_url, alert_link_url) = build_links(&alert, source, &fallbacks);
+            alert.link_url = link_url;
+            alert.alert_link_url = alert_link_url;
+            alert
         })
         .collect();
 
@@ -665,17 +656,95 @@ fn lookup_label<'a>(labels: &'a HashMap<String, String>, key: &str) -> Option<&'
         .map(|(_, v)| v)
 }
 
-pub fn severity_order(severity: &str) -> u8 {
-    match severity {
-        "critical" => 0,
-        "high" => 1,
-        "warning" | "warn" => 2,
-        "info" | "information" => 3,
-        _ => 4,
+/// Canonical name of a severity, so common aliases share a rank.
+fn canonical_severity(severity: &str) -> String {
+    let sev = severity.trim().to_lowercase();
+    match sev.as_str() {
+        "crit" => "critical".to_string(),
+        "err" => "error".to_string(),
+        "warn" => "warning".to_string(),
+        "information" => "info".to_string(),
+        _ => sev,
     }
 }
 
+/// Rank of a severity within the configured order (lower = more severe).
+/// Severities missing from the configured list sort after every listed level.
+pub fn severity_rank(order: &[String], severity: &str) -> usize {
+    let sev = canonical_severity(severity);
+    order
+        .iter()
+        .position(|s| canonical_severity(s) == sev)
+        .unwrap_or(order.len())
+}
+
+/// Zabbix problem.view URL for a trigger, used when no template applies.
+/// Honours `dashboard_url` when it points at a Zabbix frontend.
+fn zabbix_problem_link(source: &Source, triggerid: &str) -> String {
+    let base = match source.dashboard_url.as_deref() {
+        // Already targets specific triggers: take it as-is.
+        Some(url) if url.contains("triggerids") => return url.to_string(),
+        Some(url) => url.split_once('?').map(|(base, _)| base).unwrap_or(url),
+        None => source.url.as_str(),
+    };
+    let base = base.trim_end_matches('/').trim_end_matches("/zabbix.php");
+    format!("{}/zabbix.php?action=problem.view&triggerids[]={}", base, triggerid)
+}
+
+/// Only http(s) links are ever handed to the frontend: an alert is a clickable
+/// element, and `generatorURL` or `dashboard_url` come from outside.
+fn sanitize_link(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        Some(trimmed.to_string())
+    } else {
+        tracing::debug!("Ignoring link with unsupported scheme: {}", trimmed);
+        None
+    }
+}
+
+/// The two links carried by an alert:
+/// - the ↗ button: `link_template`, then the given fallbacks (generator URL,
+///   dashboard URL…), unless the source disables it;
+/// - the alert itself: `alert_link_template` only. The config-wide template is
+///   applied later, in the handler, where the display config is available.
+fn build_links(
+    alert: &Alert,
+    source: &Source,
+    fallbacks: &[String],
+) -> (Option<String>, Option<String>) {
+    let source_link = if source.source_link == Some(false) {
+        None
+    } else {
+        source
+            .link_template
+            .as_deref()
+            .and_then(|t| apply_link_template(t, alert))
+            .or_else(|| fallbacks.iter().find_map(|u| sanitize_link(u)))
+    };
+
+    let alert_link = source
+        .alert_link_template
+        .as_deref()
+        .and_then(|t| apply_link_template(t, alert));
+
+    (source_link, alert_link)
+}
+
 /// Applique un template de lien avec les variables de l'alerte
+/// Percent-encode a value substituted into a URL: everything but the RFC 3986
+/// unreserved characters, so a label with a space, `&` or `/` cannot change the
+/// shape of the URL.
+fn encode_value(value: &str) -> String {
+    const UNRESERVED: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'_')
+        .remove(b'.')
+        .remove(b'~');
+    percent_encoding::utf8_percent_encode(value, UNRESERVED).to_string()
+}
+
 pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     if template.is_empty() {
         return None;
@@ -686,30 +755,38 @@ pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     // Remplacer les variables de labels
     for (key, value) in &alert.labels {
         let placeholder = format!("{{{{.Labels.{}}}}}", key);
-        result = result.replace(&placeholder, value);
+        result = result.replace(&placeholder, &encode_value(value));
     }
     
     // Remplacer les variables d'annotations
     for (key, value) in &alert.annotations {
         let placeholder = format!("{{{{.Annotations.{}}}}}", key);
-        result = result.replace(&placeholder, value);
+        result = result.replace(&placeholder, &encode_value(value));
     }
     
     // Remplacer les variables standards
-    result = result.replace("{{.Id}}", &alert.fingerprint);
-    result = result.replace("{{.Fingerprint}}", &alert.fingerprint);
-    result = result.replace("{{.Source}}", &alert.source);
-    result = result.replace("{{.SourceType}}", &alert.source_type);
-    result = result.replace("{{.Status}}", &alert.status);
-    result = result.replace("{{.Severity}}", &alert.severity);
-    result = result.replace("{{.Name}}", &alert.name);
-    result = result.replace("{{.StartsAt}}", &alert.starts_at);
+    result = result.replace("{{.Id}}", &encode_value(&alert.fingerprint));
+    result = result.replace("{{.Fingerprint}}", &encode_value(&alert.fingerprint));
+    result = result.replace("{{.Source}}", &encode_value(&alert.source));
+    result = result.replace("{{.SourceType}}", &encode_value(&alert.source_type));
+    result = result.replace("{{.Status}}", &encode_value(&alert.status));
+    result = result.replace("{{.Severity}}", &encode_value(&alert.severity));
+    result = result.replace("{{.Name}}", &encode_value(&alert.name));
+    result = result.replace("{{.StartsAt}}", &encode_value(&alert.starts_at));
     
     if let Some(ends_at) = &alert.ends_at {
-        result = result.replace("{{.EndsAt}}", ends_at);
+        result = result.replace("{{.EndsAt}}", &encode_value(ends_at));
     }
-    
-    Some(result)
+
+    // A placeholder left over means the alert does not carry what the template
+    // asks for. Emitting the URL with `{{.Labels.foo}}` still in it is worse
+    // than falling back to whatever comes next.
+    if result.contains("{{.") {
+        tracing::debug!("Link template has unresolved placeholders, ignoring: {}", result);
+        return None;
+    }
+
+    sanitize_link(&result)
 }
 
 /// Group alerts by specified labels
@@ -804,6 +881,38 @@ mod tests {
         assert_eq!(lookup_label(&labels, "severity"), None);
     }
 
+    #[test]
+    fn test_severity_rank_follows_configured_order() {
+        let order = crate::config::DisplayConfig::default().severity_order;
+        assert!(severity_rank(&order, "critical") < severity_rank(&order, "error"));
+        assert!(severity_rank(&order, "error") < severity_rank(&order, "high"));
+        assert!(severity_rank(&order, "high") < severity_rank(&order, "warning"));
+        assert!(severity_rank(&order, "warning") < severity_rank(&order, "info"));
+        assert!(severity_rank(&order, "info") < severity_rank(&order, "none"));
+    }
+
+    #[test]
+    fn test_severity_rank_aliases_and_unknown() {
+        let order = crate::config::DisplayConfig::default().severity_order;
+        // Aliases and casing rank with their canonical level.
+        assert_eq!(severity_rank(&order, "ERR"), severity_rank(&order, "error"));
+        assert_eq!(severity_rank(&order, "warn"), severity_rank(&order, "warning"));
+        // A severity nobody configured sorts after every listed level.
+        assert_eq!(severity_rank(&order, "pager"), order.len());
+    }
+
+    #[test]
+    fn test_severity_rank_custom_order() {
+        let order: Vec<String> = ["disaster", "error", "notice"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(severity_rank(&order, "disaster"), 0);
+        assert_eq!(severity_rank(&order, "notice"), 2);
+        // Levels dropped from the list lose their built-in rank.
+        assert_eq!(severity_rank(&order, "critical"), 3);
+    }
+
     fn source_with_url(source_type: SourceType, url: &str) -> Source {
         Source {
             name: "test".to_string(),
@@ -811,6 +920,8 @@ mod tests {
             url: url.to_string(),
             dashboard_url: None,
             link_template: None,
+            alert_link_template: None,
+            source_link: None,
             severity_label: "severity".to_string(),
             basic_auth: None,
             bearer_token: None,
@@ -891,6 +1002,7 @@ mod tests {
             starts_at: "2024-01-01T00:00:00Z".to_string(),
             ends_at: None,
             link_url: None,
+            alert_link_url: None,
         }
     }
 
@@ -929,6 +1041,7 @@ mod tests {
             starts_at: "2024-01-01T00:00:00Z".to_string(),
             ends_at: None,
             link_url: None,
+            alert_link_url: None,
         };
         
         let template = "https://grafana.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}";
@@ -950,11 +1063,27 @@ mod tests {
             starts_at: "2024-01-01T12:30:00Z".to_string(),
             ends_at: Some("2024-01-01T13:00:00Z".to_string()),
             link_url: None,
+            alert_link_url: None,
         };
         
-        let template = "{{.Source}}/{{.Name}}?severity={{.Severity}}&status={{.Status}}";
+        let template = "https://x.test/{{.Source}}/{{.Name}}?severity={{.Severity}}&status={{.Status}}";
         let result = apply_link_template(template, &alert).unwrap();
-        assert_eq!(result, "Alertmanager/MyAlert?severity=critical&status=firing");
+        assert_eq!(result, "https://x.test/Alertmanager/MyAlert?severity=critical&status=firing");
+    }
+
+    #[test]
+    fn test_apply_link_template_encodes_values() {
+        let mut alert = create_test_alert();
+        alert.labels.insert("host".to_string(), "srv 01/prod&x".to_string());
+        let result = apply_link_template("https://x.test/?h={{.Labels.host}}", &alert).unwrap();
+        assert_eq!(result, "https://x.test/?h=srv%2001%2Fprod%26x");
+    }
+
+    #[test]
+    fn test_apply_link_template_rejects_non_http_scheme() {
+        let alert = create_test_alert();
+        assert!(apply_link_template("javascript:alert(1)", &alert).is_none());
+        assert!(apply_link_template("/relative/path", &alert).is_none());
     }
 
     #[test]
@@ -967,10 +1096,38 @@ mod tests {
     #[test]
     fn test_apply_link_template_missing_var() {
         let alert = create_test_alert();
-        // Variable doesn't exist - should leave placeholder
+        // An unresolved placeholder makes the whole template unusable: emitting
+        // the URL with "{{.Labels.nonexistent}}" in it would be worse than
+        // falling back to the next candidate link.
         let template = "https://example.com/{{.Labels.nonexistent}}";
-        let result = apply_link_template(template, &alert).unwrap();
-        assert_eq!(result, "https://example.com/{{.Labels.nonexistent}}");
+        assert!(apply_link_template(template, &alert).is_none());
+    }
+
+    #[test]
+    fn test_sanitize_link() {
+        assert_eq!(sanitize_link(" https://x.test/a "), Some("https://x.test/a".to_string()));
+        assert_eq!(sanitize_link("HTTP://x.test"), Some("HTTP://x.test".to_string()));
+        assert!(sanitize_link("javascript:alert(1)").is_none());
+        assert!(sanitize_link("").is_none());
+    }
+
+    #[test]
+    fn test_zabbix_problem_link() {
+        let mut source = source_with_url(SourceType::Zabbix, "https://zbx.test/zabbix");
+        // No dashboard_url: derived from the source URL.
+        assert_eq!(
+            zabbix_problem_link(&source, "42"),
+            "https://zbx.test/zabbix/zabbix.php?action=problem.view&triggerids[]=42"
+        );
+        // A dashboard_url with query params is stripped back to its base.
+        source.dashboard_url = Some("https://zbx.test/zabbix/zabbix.php?action=problem.view".to_string());
+        assert_eq!(
+            zabbix_problem_link(&source, "42"),
+            "https://zbx.test/zabbix/zabbix.php?action=problem.view&triggerids[]=42"
+        );
+        // Already targets triggers: left alone.
+        source.dashboard_url = Some("https://zbx.test/custom?triggerids[]=7".to_string());
+        assert_eq!(zabbix_problem_link(&source, "42"), "https://zbx.test/custom?triggerids[]=7");
     }
 
     #[test]
@@ -988,6 +1145,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
             Alert {
                 fingerprint: "2".to_string(),
@@ -1001,6 +1159,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
             Alert {
                 fingerprint: "3".to_string(),
@@ -1014,6 +1173,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
         ];
 
@@ -1046,6 +1206,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
             Alert {
                 fingerprint: "2".to_string(),
@@ -1062,6 +1223,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
         ];
 
@@ -1086,6 +1248,7 @@ mod tests {
                 starts_at: "2024-01-01T00:00:00Z".to_string(),
                 ends_at: None,
                 link_url: None,
+                alert_link_url: None,
             },
         ];
 

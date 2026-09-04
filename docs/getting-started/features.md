@@ -13,14 +13,14 @@ AlertView is a lightweight, real-time alert dashboard designed for monitoring an
 - **Source Status**: Visual indication of each source's health
 
 ### 🎨 User Interface
-- **Severity Coloring**: Color-coded cards (critical, high, warning, info)
+- **Severity Coloring**: Color-coded cards (critical, error, high, warning, info)
 - **Responsive Design**: Works on desktop, tablet, and mobile
 - **Dark/Light Theme**: Built-in themes with custom CSS support
 - **TV Mode**: Full-screen display for wall monitors
 - **Sound Notifications**: Audio alerts for new alerts (configurable per severity)
 
 ### 🔍 Filtering & Search
-- **Severity Filter**: Filter by critical, high, warning, info, or none
+- **Severity Filter**: Filter by any severity present, ranked by `display.severity_order`
 - **Status Filter**: Filter by firing, silenced, or pending
 - **Source Filter**: Filter by specific alert sources
 - **Text Search**: Search across all alert fields
