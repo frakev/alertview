@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-04
+
+### Added
+- **A button to reveal what the config hides** — `display.show_labels: false` and `display.show_alert_name: false` no longer make things simply disappear: each alert carries a small `+N` button bringing back its labels and, when the summary took its place, its name as an `alertname=…` chip. One button covers both, on cards as well as TV rows, and it reuses the toggle TV rows already had for the labels they have no space for. The open state is now kept per alert rather than in the DOM, so it survives the auto-refresh.
+
+### Fixed
+- **TV rows were laid out with two gaps** — with `display.show_alert_name: false` the summary took the place of the alert name and both it and the (now empty) `.row-summary` grew to fill the row, so the free space was split in two and the severity badges ended up stranded in the middle. The summary now shrinks but never grows, leaving a single spacer, and the badges sit right after the text as they do in every other layout.
+- **Prefix labels were truncated too early** — the prefix was capped at 22 characters, which cut a row like `top1-mon-1 / coreiaas / top1-…` short even on a wide screen. TV rows show it in full and let it shrink (before the alert text does) only when the row actually runs out of room; cards keep a cap, raised to 40 characters. Its font size also matches the alert text now.
+
 ## [0.7.0] - 2026-09-04
 
 ### Changed

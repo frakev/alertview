@@ -480,7 +480,7 @@ a { color: inherit; }
 }
 .alert-card.clickable { cursor: pointer; }
 .alert-card.clickable:hover { border-color: var(--accent); }
-.gen-link, .tv-labels-toggle { position: relative; z-index: 2; }
+.gen-link, .labels-toggle { position: relative; z-index: 2; }
 
 .alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(248,81,73,.07); }
 .alert-card.sev-error    { border-left-color: var(--c-error);    background: rgba(255,123,114,.07); }
@@ -525,15 +525,18 @@ a { color: inherit; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 22ch;
+  /* Cards are narrower than a TV row, so the prefix is capped here. */
+  max-width: 40ch;
   flex: 0 1 auto;
   min-width: 0;
 }
 /* When the summary stands in for the alert name (display.show_alert_name:
-   false) it can be long, so it takes the free space and truncates instead of
-   pushing the trailing metadata out of a TV row. */
+   false) it can be long, so it shrinks with an ellipsis rather than pushing the
+   trailing metadata out of the row. It must NOT grow: the empty .row-summary is
+   already the row's single spacer, and two growing items split the free space
+   in two, leaving the badges stranded in the middle of the row. */
 .alert-row .alert-name.is-summary {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -678,7 +681,11 @@ a { color: inherit; }
   overflow: hidden;
   flex-wrap: nowrap;
 }
-.alert-row .alert-name  { font-size: 12px; white-space: nowrap; }
+.alert-row .alert-name    { font-size: 12px; white-space: nowrap; }
+/* A TV row is wide: show the prefix in full rather than capping it, and let it
+   be the first thing to give way (shrink factor 3) when the row does run out of
+   room, so the alert text keeps its space. */
+.alert-row .alert-prefix  { font-size: 12px; max-width: none; flex: 0 3 auto; }
 .alert-row .row-summary {
   flex: 1;
   min-width: 0;
@@ -691,7 +698,9 @@ a { color: inherit; }
 .alert-row .time-ago { font-size: 10px; white-space: nowrap; }
 .alert-row .src-chip { font-size: 10px; }
 
-.tv-labels-toggle {
+/* Reveals the labels kept behind it: the ones a TV row has no space for, or
+   all of them when display.show_labels is false. */
+.labels-toggle {
   display: inline-flex;
   align-items: center;
   padding: 1px 6px;
@@ -707,9 +716,20 @@ a { color: inherit; }
   vertical-align: middle;
   flex-shrink: 0;
 }
-.tv-labels-toggle:hover {
+.labels-toggle:hover {
   background: rgba(129,140,248,.24);
   box-shadow: 0 0 8px rgba(129,140,248,.2);
+}
+/* On a card the chips sit on their own line, so the revealed ones wrap under
+   the button instead of running off the side of the card. */
+.label-chips .hidden-labels {
+  display: contents;
+}
+.alert-row .hidden-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-width: 0;
 }
 
 /* -- Alert Groups -- */

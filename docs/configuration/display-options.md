@@ -118,10 +118,17 @@ display:
 
 - `show_alert_name: false` puts the `summary` annotation where the alert name
   normally sits, and does not repeat it below. An alert **without** a summary
-  keeps its name, so a row is never left blank.
-- `show_labels: false` hides the label chips (and the TV `+N` toggle) while
-  keeping `display.labels` declared. `prefix_labels` are not affected — they are
-  shown in front of the alert name, not in the chips.
+  keeps its name, so a row is never left blank. The name itself is not lost: it
+  moves behind the toggle described below, as an `alertname=…` chip.
+- `show_labels: false` puts every label chip behind a small `+N` button on each
+  alert instead of showing them: one click reveals them, another hides them
+  again. `display.labels` stays declared, and `prefix_labels` are not affected —
+  they are shown in front of the alert name, not in the chips.
+- **One button reveals everything the config hides.** With both options off, the
+  `+N` on an alert brings back its name *and* its labels; the count tells you
+  how much is behind it. In TV mode the same button also reveals the labels a
+  row has no space for (only the first 2 are shown inline). The open state is
+  per alert and survives the auto-refresh.
 - `critical_icon` accepts any emoji or text, and is rendered right before the
   alert name on critical alerts only. It follows `severity_order` aliases, so
   `crit` counts as `critical`.

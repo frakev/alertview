@@ -320,6 +320,7 @@ const App = {
   countdown:      0,
   loading:        false,
   openGroups:     new Set(),
+  openLabels:     new Set(),
 };
 
 /* -- Search -- */
@@ -808,7 +809,6 @@ function prefixLabels() {
 /* Labels for the chips: the configured ones the alert carries, minus the ones
    already shown in the prefix. */
 function chipLabels(a) {
-  if (App.data?.show_labels === false) return [];
   const prefix = prefixLabels();
   return (App.data?.display_labels ?? [])
     .filter(l => a.labels?.[l] !== undefined && l !== 'alertname' && l !== 'severity')
@@ -818,6 +818,46 @@ function chipLabels(a) {
 /* The main text of an alert: its name, or the summary when the config hides
    the name. An alert with no summary keeps its name rather than showing
    nothing. Returns the text and whether the summary was consumed by it. */
+/* What an alert shows inline, what sits behind the toggle, and whether the
+   toggle is open. Everything the config hides — the label chips with
+   show_labels: false, the alert name with show_alert_name: false — goes behind
+   the toggle rather than disappearing, so it is always one click away. The open
+   state is keyed by fingerprint so it survives a refresh: the card is
+   re-rendered every 30s. */
+function labelLayout(a, inlineCount) {
+  const labels = chipLabels(a);
+  const inline = App.data?.show_labels === false ? 0 : inlineCount;
+  const hidden = labels.slice(inline).map(l => ({ key: l, value: a.labels[l] }));
+
+  // The alert name is not a chip; when the summary takes its place it would be
+  // nowhere to be seen, so it leads the hidden list.
+  if (App.data?.show_alert_name === false && a.name) {
+    hidden.unshift({ key: 'alertname', value: a.name });
+  }
+
+  return {
+    visible: labels.slice(0, inline).map(l => ({ key: l, value: a.labels[l] })),
+    hidden,
+    open: App.openLabels.has(a.fingerprint),
+  };
+}
+
+function labelChip({ key, value }, extraClass = '') {
+  return `<span class="lbl${extraClass}">${esc(key)}=<b>${esc(value)}</b></span>`;
+}
+
+function hiddenLabelsHtml(hidden, open, extraClass = '') {
+  if (!hidden.length) return '';
+  const chips = hidden.map(i => labelChip(i, extraClass)).join('');
+  return `<span class="hidden-labels"${open ? '' : ' style="display:none"'}>${chips}</span>`;
+}
+
+function labelsToggleHtml(hidden, open) {
+  if (!hidden.length) return '';
+  return `<button class="labels-toggle" data-labels-toggle title="${open ? 'Hide' : 'Show'} details">` +
+    `${open ? '−' : '+' + hidden.length}</button>`;
+}
+
 function alertTitle(a) {
   const summary = a.annotations?.summary || '';
   if (App.data?.show_alert_name === false && summary) {
@@ -836,8 +876,12 @@ function cardHtml(a) {
   if (TV.active) return cardHtmlTV(a);
 
   const sev    = a.severity || 'none';
-  const labels = chipLabels(a)
-    .map(l => `<span class="lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('');
+  // A card has room for every label, so nothing is behind the toggle unless the
+  // config hides them.
+  const lay    = labelLayout(a, Infinity);
+  const labels = lay.visible.map(i => labelChip(i)).join('')
+    + labelsToggleHtml(lay.hidden, lay.open)
+    + hiddenLabelsHtml(lay.hidden, lay.open);
 
   const title    = alertTitle(a);
   const summary  = title.usedSummary ? '' : (a.annotations?.summary || '');
@@ -881,21 +925,8 @@ function cardHtmlTV(a) {
   // A row only has space for 2 labels inline, the rest go behind the +N toggle.
   // Presence is filtered *before* slicing so a row never hides every label it
   // has; labels already shown in the prefix are excluded by chipLabels().
-  const ordered_labels = chipLabels(a);
-  const visible_labels = ordered_labels.slice(0, 2); // Show first 2 labels by default
-  
-  // Generate label HTML for visible labels
-  const labelsHtml = visible_labels
-    .map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`)
-    .join('');
-  
-  // Generate hidden labels HTML (initially hidden)
-  const hiddenLabelsList = ordered_labels.slice(2);
-  const hiddenLabelsHtml = hiddenLabelsList.length > 0
-    ? `<span class="tv-hidden-labels" style="display:none;">` +
-      hiddenLabelsList.map(l => `<span class="lbl tv-lbl">${esc(l)}=<b>${esc(a.labels[l])}</b></span>`).join('') +
-      `</span>` : '';
-  const showToggle = hiddenLabelsList.length > 0;
+  const lay = labelLayout(a, 2);
+  const labelsHtml = lay.visible.map(i => labelChip(i, ' tv-lbl')).join('');
 
   return `
     <div class="alert-card alert-row ${sevClass(sev)}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
@@ -909,8 +940,8 @@ function cardHtmlTV(a) {
       <span class="row-summary">${esc(summary)}</span>
       ${ackComment ? `<span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}
       ${labelsHtml}
-      ${showToggle ? `<button class="tv-labels-toggle" onclick="TV.toggleLabels(this)">+${hiddenLabelsList.length}</button>` : ''}
-      ${hiddenLabelsHtml}
+      ${labelsToggleHtml(lay.hidden, lay.open)}
+      ${hiddenLabelsHtml(lay.hidden, lay.open, ' tv-lbl')}
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       ${genLinkHtml(a.link_url, a.source_type, a.source)}
     </div>`;
@@ -959,17 +990,6 @@ const TV = {
     lsSet('av-tv', this.active);
     this._apply();
     pushUrl();
-  },
-
-  // Toggle labels visibility in TV mode
-  toggleLabels(button) {
-    const hiddenLabels = button.parentElement.querySelector('.tv-hidden-labels');
-    if (hiddenLabels) {
-      const isHidden = hiddenLabels.style.display === 'none';
-      hiddenLabels.style.display = isHidden ? 'inline' : 'none';
-      const count = hiddenLabels.querySelectorAll('.lbl').length;
-      button.textContent = isHidden ? '−' : `+${count}`;
-    }
   },
 
   _apply() {
@@ -1098,6 +1118,16 @@ function delegate(containerId, selector, handler) {
   delegate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
   delegate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
+delegate('alert-list', '[data-labels-toggle]', (el, e) => {
+  // The card-wide link overlay sits under this button; stop the click there.
+  e.preventDefault();
+  e.stopPropagation();
+  const fp = el.closest('.alert-card')?.dataset.fp;
+  if (!fp) return;
+  if (App.openLabels.has(fp)) App.openLabels.delete(fp);
+  else App.openLabels.add(fp);
+  renderAlerts();
+});
 delegate('alert-list', '.group-header', el => {
   const groupEl = el.closest('.alert-group');
   if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
