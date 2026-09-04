@@ -239,7 +239,9 @@ a { color: inherit; }
 /* -- TV Mode -- */
 [data-tv="true"] .header  { display: none; }
 [data-tv="true"] .toolbar { display: none; }
-[data-tv="true"] .main    { padding: .5rem; }
+/* The HUD is fixed in the bottom-right corner and no longer fades out, so the
+   list needs to end above it. */
+[data-tv="true"] .main    { padding: .5rem; padding-bottom: 3.5rem; }
 
 .tv-overlay {
   position: fixed;
@@ -310,6 +312,11 @@ a { color: inherit; }
   gap: .5rem;
 }
 .tv-bar-more.open { display: inline-flex; }
+/* Expanded on a narrow screen, the bar would run off the left edge. */
+@media (max-width: 600px) {
+  .tv-bar { max-width: calc(100vw - 2rem); flex-wrap: wrap; justify-content: flex-end; }
+  .tv-overlay { left: 1rem; align-items: flex-end; }
+}
 .tv-more-btn { font-size: 15px; font-weight: 700; line-height: 1; }
 
 .tv-clock {
@@ -502,6 +509,17 @@ a { color: inherit; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* A 7px dot is a 13px tap target once padded — far below the ~44px a finger
+   needs. Grow the hit area without moving anything, and since there is no
+   hover to announce the link on a touchscreen, ring the dot permanently. */
+@media (hover: none), (pointer: coarse) {
+  .mark-link {
+    padding: 14px;
+    margin: -14px;
+    box-shadow: 0 0 0 1px rgba(129,140,248,.4);
+  }
+  .mark-link:active { background: rgba(129,140,248,.25); }
+}
 
 /* Status icon and comment button, in place of the old status badge. */
 .status-icon { font-size: 12px; line-height: 1; cursor: default; }
@@ -686,10 +704,16 @@ a { color: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 @media (max-width: 600px) {
-  .stats-bar { display: none; }
+  /* The severity chips used to be dropped entirely on a phone, taking the
+     severity filter with them. They get their own scrollable row instead. */
+  .header-top { flex-wrap: wrap; height: auto; padding: .4rem 1rem; }
+  .stats-bar { order: 3; flex-basis: 100%; padding-bottom: 2px; }
+  .search-wrap { min-width: 8rem; }
   .main { padding: .75rem; }
   .card-top { flex-direction: column; gap: .3rem; }
   .hdr-right .refresh-info span:not(.spinner) { display: none; }
+  /* Buttons and toggles are finger targets here. */
+  .labels-toggle, .comment-toggle, .icon-btn, .silence-toggle { min-height: 28px; }
 }
 
 /* -- TV mode: bright colors -- */
@@ -721,6 +745,9 @@ a { color: inherit; }
 
    Browsers without subgrid keep the flex layout below untouched. */
 @supports (grid-template-columns: subgrid) {
+ /* Nine columns need room: below this the rows go back to the flex layout,
+    which wraps instead of clipping what does not fit. */
+ @media (min-width: 700px) {
   [data-tv="true"] .alert-list,
   [data-tv="true"] .group-alerts {
     display: grid;
@@ -786,6 +813,7 @@ a { color: inherit; }
   }
   /* Ages are right-aligned so the digits line up, "for 4m" under "for 28m". */
   [data-tv="true"] .alert-row .time-ago { text-align: right; }
+ }
 }
 
 /* -- Compact line (TV mode) -- */

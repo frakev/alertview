@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-04
+
 ### Added
 - **Silence comments name their author** — the Alertmanager silence's `createdBy` was parsed and then thrown away; it now travels with the comment as a `silence_created_by` annotation and leads the revealed line (`alice · maintenance until 6pm`), as does the acknowledging user for Zabbix. The 💬 tooltip names them too, so you know who to ask without opening anything.
+
+### Changed
+- **Mobile pass** — the runbook link on the severity dot was a 13×13px tap target announced only by a hover effect, which a touchscreen has no way to show: the hit area grows to ~35px on coarse pointers, without moving anything, and the dot carries a permanent ring where hover is unavailable. TV mode falls back to the flowing layout below 700px, where nine aligned columns cannot fit and were being clipped rather than wrapped. The TV list now ends above the HUD instead of behind it, and the HUD wraps rather than running off the edge of a narrow screen. The severity filter chips come back on phones, on their own scrollable row, rather than being dropped entirely.
+
+### Fixed
+- **Zabbix alerts were left without a runbook link** — a `display.alert_link_template` written the usual way, around `{{.Labels.alertname}}`, resolved for Alertmanager and Grafana but never for Zabbix, whose labels carry no `alertname`. The problem name is now exposed under that key, so one template covers the three source types. It is not rendered as a chip, so nothing appears twice.
 
 ### Documentation
 - **Docs brought in line with 0.9.0** — seven places still described the whole card as the link rather than the severity dot (README, `features.md`, `config-file.md` in four spots, `source-types.md`, `api.md`); `status_icons` was missing from the configuration reference and from the API response schema; the README claimed a status filter that does not exist, and the TV mode description predated the permanent status bar. A **Keyboard Shortcuts** section was added — there was none, although `T` and `Escape` have been bound for a long time — now listing `Ctrl+F` / `Cmd+F`, `/`, `Escape` and `T`.

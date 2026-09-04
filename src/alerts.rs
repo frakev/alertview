@@ -396,6 +396,10 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             // Add Zabbix event and trigger IDs for template usage
             labels.insert("eventid".to_string(), p.eventid.clone());
             labels.insert("triggerid".to_string(), p.objectid.clone());
+            // Zabbix has no alertname label of its own, so a link template
+            // written for Alertmanager silently produced nothing here. Expose
+            // the problem name under the same key the other sources use.
+            labels.insert("alertname".to_string(), p.name.clone());
 
             if let Some(trigger) = trigger_map.get(&p.objectid) {
                 if let Some(host) = trigger.hosts.first() {
@@ -982,6 +986,20 @@ mod tests {
     }]"#;
     const ONE_SILENCE: &str =
         r#"[{"id": "sil-1", "createdBy": "alice", "comment": "maintenance"}]"#;
+
+    #[test]
+    fn test_zabbix_exposes_alertname() {
+        // A template written once, like
+        // "https://wiki/runbook/{{.Labels.alertname}}", has to resolve for
+        // every source type, not just the Alertmanager-shaped ones.
+        let problem: ZabbixProblem = serde_json::from_value(serde_json::json!({
+            "eventid": "1", "objectid": "2", "name": "Disque plein",
+            "severity": "5", "clock": "1788000000", "r_clock": "0",
+            "suppressed": "0", "acknowledged": "0", "tags": []
+        }))
+        .unwrap();
+        assert_eq!(problem.name, "Disque plein");
+    }
 
     #[tokio::test]
     async fn test_fetch_from_a_plain_base_url() {

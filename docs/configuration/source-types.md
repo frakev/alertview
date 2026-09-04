@@ -229,6 +229,7 @@ Zabbix integration uses the Zabbix JSON-RPC API to fetch problems (triggered eve
 ### Zabbix-Specific Features
 
 Zabbix alerts include these special fields:
+- `alertname` - The problem name, under the same key Alertmanager and Grafana use, so one link template works for every source
 - `eventid` - Unique event ID (used in links)
 - `host` - Host name
 - `hostgroup` - Host group
@@ -274,7 +275,7 @@ link_template: "https://zabbix.example.com/zabbix.php?action=problem.view&trigge
 | Alert Format | Alertmanager v2 | Alertmanager v2 | Zabbix-specific |
 | Severity | From labels | From labels | From priority |
 | Status | From state | From state | From status |
-| Links | generatorURL | generatorURL | eventid |
+| Links | generatorURL | generatorURL | problem.view URL built from the trigger id |
 | Timeout Recommendation | 15s | 15s | 30-45s |
 
 ## Multiple Sources Example
