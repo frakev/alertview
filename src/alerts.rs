@@ -466,12 +466,39 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
 
+/// Build the Alertmanager v2 API base URL for a source.
+///
+/// The configured `url` is documented as the plain service base
+/// (`http://host:9093`), so the API path is appended here. URLs that already
+/// point at the API — with or without a trailing `/alerts` — are kept as-is,
+/// and a query string is preserved for the alerts request.
+fn am_api_base(source: &Source) -> (String, String) {
+    let (path, query) = match source.url.split_once('?') {
+        Some((path, query)) => (path, format!("?{}", query)),
+        None => (source.url.as_str(), String::new()),
+    };
+
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix("/alerts").unwrap_or(path);
+
+    let base = if path.ends_with("/api/v2") {
+        path.to_string()
+    } else if source.source_type == SourceType::Grafana {
+        format!("{}/api/alertmanager/grafana/api/v2", path)
+    } else {
+        format!("{}/api/v2", path)
+    };
+
+    (base, query)
+}
+
 pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> Result<Vec<Alert>> {
     if source.source_type == SourceType::Zabbix {
         return fetch_zabbix_alerts(client, source).await;
     }
 
-    let url = format!("{}/alerts", source.url.trim_end_matches('/'));
+    let (api_base, query) = am_api_base(source);
+    let url = format!("{}/alerts{}", api_base, query);
 
     let mut req = client.get(&url);
 
@@ -602,7 +629,8 @@ async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<
         return Ok(vec![]);
     }
 
-    let url = format!("{}/silences", source.url.trim_end_matches('/'));
+    let (api_base, _) = am_api_base(source);
+    let url = format!("{}/silences", api_base);
     
     let mut req = client.get(&url);
     if let Some(auth) = &source.basic_auth {
@@ -774,6 +802,71 @@ mod tests {
             [("priority".to_string(), "warning".to_string())].into();
         assert_eq!(lookup_label(&labels, "priority"), Some(&"warning".to_string()));
         assert_eq!(lookup_label(&labels, "severity"), None);
+    }
+
+    fn source_with_url(source_type: SourceType, url: &str) -> Source {
+        Source {
+            name: "test".to_string(),
+            source_type,
+            url: url.to_string(),
+            dashboard_url: None,
+            link_template: None,
+            severity_label: "severity".to_string(),
+            basic_auth: None,
+            bearer_token: None,
+            timeout: 15,
+            retry_policy: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_am_api_base_appends_api_path() {
+        let source = source_with_url(SourceType::Alertmanager, "http://127.0.0.1:9093/");
+        assert_eq!(
+            am_api_base(&source),
+            ("http://127.0.0.1:9093/api/v2".to_string(), String::new())
+        );
+    }
+
+    #[test]
+    fn test_am_api_base_keeps_explicit_api_path() {
+        for url in [
+            "http://127.0.0.1:9093/api/v2",
+            "http://127.0.0.1:9093/api/v2/",
+            "http://127.0.0.1:9093/api/v2/alerts",
+        ] {
+            let source = source_with_url(SourceType::Alertmanager, url);
+            assert_eq!(am_api_base(&source).0, "http://127.0.0.1:9093/api/v2");
+        }
+    }
+
+    #[test]
+    fn test_am_api_base_grafana() {
+        let source = source_with_url(SourceType::Grafana, "http://grafana:3000");
+        assert_eq!(
+            am_api_base(&source).0,
+            "http://grafana:3000/api/alertmanager/grafana/api/v2"
+        );
+
+        // An already-complete Grafana API URL is left untouched.
+        let source = source_with_url(
+            SourceType::Grafana,
+            "http://grafana:3000/api/alertmanager/grafana/api/v2",
+        );
+        assert_eq!(
+            am_api_base(&source).0,
+            "http://grafana:3000/api/alertmanager/grafana/api/v2"
+        );
+    }
+
+    #[test]
+    fn test_am_api_base_preserves_query() {
+        let source =
+            source_with_url(SourceType::Alertmanager, "http://127.0.0.1:9093/api/v2/alerts?active=true");
+        assert_eq!(
+            am_api_base(&source),
+            ("http://127.0.0.1:9093/api/v2".to_string(), "?active=true".to_string())
+        );
     }
 
     fn create_test_alert() -> Alert {

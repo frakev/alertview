@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-09-04
+
+### Fixed
+- **404 on Alertmanager and Grafana sources** — the source `url` was used as the full API path, so a documented base URL (`http://127.0.0.1:9093`) was queried as `/alerts` instead of `/api/v2/alerts` and every fetch returned `HTTP 404`. The API path is built again from the source type: `{url}/api/v2` for Alertmanager, `{url}/api/alertmanager/grafana/api/v2` for Grafana. URLs that already point at the API (with or without a trailing `/alerts`) are kept as-is, so existing workarounds keep working, and a query string such as `?active=true` is preserved on the alerts request.
+
 ## [0.5.6] - 2026-06-23
 
 ### Changed
