@@ -495,8 +495,8 @@ The tests verify:
 
 ## Credits
 
-AlertView is maintained by [frakev](https://github.com/frakev), who
-designed it, decided what it should do and runs it in production.
+AlertView is maintained by [@frakev](https://github.com/frakev), who designed
+it, decided what it should do and runs it in production.
 
 The code itself — the Rust backend, the frontend, the tests and this
 documentation — is written by **Claude** (Anthropic), through
