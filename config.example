@@ -152,8 +152,17 @@ display:
   # back. `labels` above stays declared.
   # show_labels: true
 
-  # Marker rendered just before the name of critical alerts, "" to disable
+  # Replaces the coloured dot on critical alerts, so they stand out at a glance.
+  # Any emoji or text; "" gives criticals their red dot back like every other
+  # severity.
   # critical_icon: "🔥"
+
+  # Status markers. Alerts carry no status badge: "firing" is the norm and
+  # saying so on every row is noise, so only the exceptions get an icon. A
+  # status missing from the map, or mapped to "", shows nothing.
+  # status_icons:
+  #   silenced: "🔕"
+  #   pending: "⏳"
 
   # ─── Severity ────────────────────────────────────────────────────────────
 
@@ -166,8 +175,9 @@ display:
 
   # ─── Links ───────────────────────────────────────────────────────────────
 
-  # Makes the whole alert clickable, with a URL built from its labels. This is
-  # independent from the ↗ button, which keeps its own destination.
+  # Turns the coloured dot (or the critical icon) into a link built from the
+  # alert's labels — it lights up on hover to say so. Independent from the ↗
+  # button, which keeps its own destination.
   # Placeholders: {{.Labels.x}}, {{.Annotations.x}}, {{.Name}}, {{.Severity}},
   # {{.Status}}, {{.Source}}, {{.SourceType}}, {{.Fingerprint}}, {{.StartsAt}},
   # {{.EndsAt}}. Values are percent-encoded; an alert missing a label the
@@ -232,7 +242,8 @@ display:
 #  URL parameters — they apply to the visit only, nothing is stored in the
 #  browser, so they are safe to share or to put on a wall display:
 #
-#    ?q=team=sre          filter by label (also ?q=hostname~web, ?q=team!=dba)
+#    ?q=team=sre          filter by label (also ?q=team=sre|dba for several
+#                         teams at once, ?q=hostname~web, ?q=team!=dba)
 #    ?tv=1                force TV mode          ?tv=0 force it off
 #    ?sev=critical        filter by severity     ?src=Zabbix filter by source
 #    ?silenced=1          show silenced alerts

@@ -81,6 +81,8 @@ pub struct AlertsResponse {
     pub show_labels: bool,
     #[serde(default)]
     pub critical_icon: String,
+    #[serde(default)]
+    pub status_icons: HashMap<String, String>,
 }
 
 /// A group header. The alerts themselves are not repeated here — the frontend

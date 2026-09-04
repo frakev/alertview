@@ -492,6 +492,7 @@ async fn get_alerts(State(state): State<Arc<AppState>>) -> Json<AlertsResponse> 
         show_alert_name: display.show_alert_name,
         show_labels: display.show_labels,
         critical_icon: display.critical_icon,
+        status_icons: display.status_icons,
     })
 }
 

@@ -129,9 +129,16 @@ display:
   how much is behind it. In TV mode the same button also reveals the labels a
   row has no space for (only the first 2 are shown inline). The open state is
   per alert and survives the auto-refresh.
-- `critical_icon` accepts any emoji or text, and is rendered right before the
-  alert name on critical alerts only. It follows `severity_order` aliases, so
-  `crit` counts as `critical`.
+- `status_icons` replaces the status badge, which is gone from the rows: `firing`
+  is the norm and repeating it on every alert is noise, so only the exceptions
+  are marked — `silenced: "🔕"` and `pending: "⏳"` by default. A status missing
+  from the map, or mapped to `""`, shows nothing. A silence or acknowledgement
+  comment is no longer printed inline either: a 💬 button next to the icon
+  reveals it on its own line, and stays open across refreshes.
+- `critical_icon` accepts any emoji or text and **replaces the coloured dot** on
+  critical alerts, so they stand out at a glance; every other severity keeps its
+  dot. Set it to `""` and criticals get the red dot back. It follows
+  `severity_order` aliases, so `crit` counts as `critical`.
 
 ## Searching by Label
 
@@ -139,6 +146,7 @@ The search box takes label filters alongside free text, separated by commas:
 
 ```
 team=sre, hostname~web
+team=sre|dba                 several teams at once
 team=sre, disk full
 severity=critical, team!=dba
 ```
@@ -148,13 +156,18 @@ severity=critical, team!=dba
 | `=` | exact match, case-insensitive |
 | `!=` | does not match — also matches alerts **without** that label |
 | `~` (or `=~`) | contains |
+| `\|` | separates alternatives inside one filter: `team=sre\|dba`, `hostname~srv\|db` |
 
 - Keys are matched case-insensitively against the alert's labels, then its
   annotations. `source`, `status`, `name` / `alertname` and `severity` also work
   as keys even though they are not labels.
 - Anything that does not look like `key<op>value` stays free text and searches
   names, labels and annotations exactly as before.
-- Filters combine with AND, and with the severity and source chips.
+- Filters on **different** keys combine with AND; filters on the **same** key
+  combine with OR, so `team=sre, team=dba` reads as "either team" and is
+  equivalent to `team=sre|dba`. Negations are always AND-ed: `team!=sre|dba`
+  and `team!=sre, team!=dba` both exclude the two.
+- They also combine with the severity and source chips.
 - The query is kept in the URL (`?q=`), so a team filter can be bookmarked or
   put on a wall display.
 
@@ -171,7 +184,7 @@ display:
 
 | | Declared by | Rendered as |
 |---|---|---|
-| Alert link | `alert_link_template` | the whole card/row is clickable |
+| Alert link | `alert_link_template` | the severity dot becomes a link, lighting up on hover |
 | Source link | `link_template` → the alert's generator URL → `dashboard_url` | the ↗ button on the right |
 
 - Both can be overridden per source: `alert_link_template` and `source_link`

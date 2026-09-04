@@ -344,6 +344,11 @@ pub struct DisplayConfig {
     /// Icon marking critical alerts. Empty string disables it.
     #[serde(default = "default_critical_icon")]
     pub critical_icon: String,
+    /// Icon shown instead of a status badge, per alert status. A status absent
+    /// from the map (or mapped to "") shows nothing — which is what `firing`
+    /// does by default, since it is the norm rather than the exception.
+    #[serde(default = "default_status_icons")]
+    pub status_icons: std::collections::HashMap<String, String>,
     /// Show the ↗ "open in the source" button.
     #[serde(default = "default_true")]
     pub source_link: bool,
@@ -372,6 +377,7 @@ impl Default for DisplayConfig {
             show_alert_name: true,
             show_labels: true,
             critical_icon: default_critical_icon(),
+            status_icons: default_status_icons(),
             source_link: true,
             link_new_tab: true,
         }
@@ -384,6 +390,13 @@ fn default_prefix_labels() -> Vec<String> {
 
 fn default_critical_icon() -> String {
     "🔥".to_string()
+}
+
+fn default_status_icons() -> std::collections::HashMap<String, String> {
+    [("silenced", "🔕"), ("pending", "⏳")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 fn default_true() -> bool {

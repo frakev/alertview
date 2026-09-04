@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-04
+
+### Added
+- **The runbook link moved onto the severity dot** — the whole card used to be a link, which meant clicking anywhere navigated away and nothing said so. The dot (or the critical icon) is now the link, and it grows and lights up on hover to announce itself. The ↗ button keeps its own destination, unchanged.
+- **`display.status_icons`** — the `firing` / `silenced` badges are gone from the alert rows: `firing` is the norm and saying so on every line is noise. Only the exceptions are marked, with an icon per status (`silenced: "🔕"`, `pending: "⏳"` by default, `""` to disable).
+- **Silence comments behind a button** — the comment was printed inline in the row; a 💬 button next to the status icon now reveals it on its own full-width line, and the open state survives the refresh.
+- **Ctrl+F / Cmd+F focuses the search box**, as does `/`, and Escape clears it then leaves it. The browser's find-in-page only ever finds what is already rendered, which is not what you want on a filtered list. Not bound in TV mode, where the search box is hidden and the native search stays available.
+- **The TV HUD keeps a permanent minimal half** — source dots, clock, last refresh time and version are always on, since that is the "everything is fine" glance of a wall display; the theme, filter and exit buttons hide behind a `+`. The bar no longer fades out after four seconds of stillness.
+- **Several values per label filter** — `team=sre|dba` matches either, and repeating a key does the same: `team=sre, team=dba`. Filters on different keys still combine with AND, so `team=sre|dba, severity=critical` narrows as expected. Negations are always AND-ed, so `team!=sre|dba` excludes both. Works with `~` too: `hostname~srv|db`.
+
+### Changed
+- **The version is always readable in TV mode** — it was dimmed to 35% and only came up on hover, which meant walking to the screen and finding a mouse to know what was running.
+- **Prefix labels can no longer be truncated** — their column is sized to the longest prefix and never shrinks. When a row genuinely does not fit, it is the alert message that gives way, as it should.
+- **The critical icon replaces the severity dot** instead of sitting next to it, so a critical reads at a glance; every other severity keeps its coloured dot, and so does a critical when `display.critical_icon` is empty. The marker is centred in its column, so dots and icons line up down the list.
+- **Prefix labels are no longer capped** — the leftmost column was limited to 32 characters and truncated longer host paths. It now takes the width of the longest prefix in the list, and only gives way when the row genuinely runs out of room.
+
+### Fixed
+- **Revealed labels were cut off in TV mode** — they were rendered inside the labels column, which is capped so one alert cannot starve the rest of the row, so opening them clipped the chips mid-word. They now get a full-width second line under the row: nothing is truncated, and the columns of the row above stay in place. In the fallback layout (browsers without `subgrid`) they wrap onto their own line as well instead of overflowing the end of the row.
+
 ## [0.8.1] - 2026-09-04
 
 ### Changed

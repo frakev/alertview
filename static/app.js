@@ -321,6 +321,7 @@ const App = {
   loading:        false,
   openGroups:     new Set(),
   openLabels:     new Set(),
+  openComments:   new Set(),
 };
 
 /* -- Search -- */
@@ -435,7 +436,9 @@ async function fetchAlerts() {
 
     render();
 
-    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('en-US');
+    const now = new Date().toLocaleTimeString('en-US');
+    document.getElementById('last-refresh').textContent = now;
+    document.getElementById('tv-last').textContent = now;
 
     App.countdown = data.refresh_interval;
     document.getElementById('countdown').textContent = App.countdown;
@@ -469,7 +472,8 @@ function applyTvDefault(data) {
 /* Split a query into label filters and free text. Comma-separated parts that
    look like `key=value` (also `!=` and `~` for "contains") become filters;
    anything else stays free text, so the plain search keeps working.
-   Example: "team=sre, hostname~web, disk full" */
+   Values can be OR-ed with "|", and repeating a key does the same.
+   Example: "team=sre|dba, hostname~web, disk full" */
 function parseQuery(q) {
   const filters = [];
   const text = [];
@@ -477,8 +481,13 @@ function parseQuery(q) {
     const part = raw.trim();
     if (!part) continue;
     const m = part.match(/^([A-Za-z_][\w.\-\/]*)\s*(!=|=~|~|=)\s*(.+)$/);
-    if (m) filters.push({ key: m[1].toLowerCase(), op: m[2], value: m[3].trim().toLowerCase() });
-    else text.push(part);
+    if (m) {
+      const values = m[3].split('|').map(v => v.trim().toLowerCase()).filter(Boolean);
+      if (values.length) filters.push({ key: m[1].toLowerCase(), op: m[2], values });
+      else text.push(part);
+    } else {
+      text.push(part);
+    }
   }
   return { filters, text: text.join(' ').toLowerCase() };
 }
@@ -506,9 +515,29 @@ function matchFilter(a, f) {
   // A label the alert does not carry only matches a negation.
   if (raw === undefined) return f.op === '!=';
   const value = String(raw).toLowerCase();
-  if (f.op === '=')  return value === f.value;
-  if (f.op === '!=') return value !== f.value;
-  return value.includes(f.value); // ~ and =~
+  const contains = f.op === '~' || f.op === '=~';
+  const hit = f.values.some(v => (contains ? value.includes(v) : value === v));
+  return f.op === '!=' ? !hit : hit;
+}
+
+/* Filters on the *same* key are OR-ed, filters on different keys AND-ed, so
+   "team=sre, team=dba" reads as "either team" while "team=sre, severity=critical"
+   still narrows. Negations are always AND-ed: "team!=sre, team!=dba" excludes
+   both, which is the only reading that makes sense. */
+function filtersMatch(a, filters) {
+  const positives = new Map();
+  for (const f of filters) {
+    if (f.op === '!=') {
+      if (!matchFilter(a, f)) return false;
+    } else {
+      if (!positives.has(f.key)) positives.set(f.key, []);
+      positives.get(f.key).push(f);
+    }
+  }
+  for (const group of positives.values()) {
+    if (!group.some(f => matchFilter(a, f))) return false;
+  }
+  return true;
 }
 
 /* -- Filters -- */
@@ -518,7 +547,7 @@ function filteredAlerts() {
     if (!App.showSilenced && a.status === 'silenced') return false;
     if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
     if (App.srcFilter.size > 0 && !App.srcFilter.has(a.source)) return false;
-    if (filters.length && !filters.every(f => matchFilter(a, f))) return false;
+    if (filters.length && !filtersMatch(a, filters)) return false;
     if (text) {
       const hay = [a.name, a.severity, a.source, a.status,
         ...Object.values(a.labels ?? {}), ...Object.values(a.annotations ?? {})].join('\n').toLowerCase();
@@ -770,12 +799,13 @@ function linkTarget() {
   return App.data?.link_new_tab === false ? '' : ' target="_blank" rel="noopener noreferrer"';
 }
 
-/* Stretched link: an overlay covering the whole card. The ↗ button and the
-   TV "+N" toggle are raised above it in CSS so they keep their own action.
-   Using a real <a> keeps middle-click, ctrl+click and "copy link address". */
-function cardLinkHtml(a) {
-  if (!a.alert_link_url) return '';
-  return `<a class="card-link" href="${esc(a.alert_link_url)}"${linkTarget()} aria-label="${esc(a.name)}"></a>`;
+/* The alert link hangs off the severity marker rather than the whole card: one
+   small, deliberate target that says what it does on hover, instead of a row
+   that navigates wherever you happen to click. */
+function severityMarkLink(a, mark) {
+  if (!a.alert_link_url) return mark;
+  return `<a class="mark-link" href="${esc(a.alert_link_url)}"${linkTarget()}` +
+    ` title="${esc(a.name)} — open the runbook">${mark}</a>`;
 }
 
 function genLinkHtml(url, sourceType, sourceName) {
@@ -872,6 +902,42 @@ function criticalIcon(a) {
   return `<span class="crit-icon" aria-hidden="true">${esc(icon)}</span>`;
 }
 
+/* The severity marker leading an alert: the critical icon replaces the dot
+   rather than sitting next to it, so a critical stands out at a glance. Other
+   severities keep their coloured dot, and so does a critical when
+   display.critical_icon is empty — the alert would otherwise lead with nothing. */
+function severityMark(a) {
+  const mark = criticalIcon(a) || `<span class="sev-dot ${sevClass(a.severity || 'none')}"></span>`;
+  return severityMarkLink(a, mark);
+}
+
+/* Status is a badge no more: `firing` is the norm and saying so on every row is
+   noise. Only the exceptions get a marker, from display.status_icons. */
+function statusMark(a) {
+  const icon = App.data?.status_icons?.[a.status];
+  if (!icon) return '';
+  return `<span class="status-icon" title="${esc(a.status)}">${esc(icon)}</span>`;
+}
+
+/* The silence or acknowledgement comment, behind its own button. */
+function alertComment(a) {
+  return a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
+}
+
+function commentToggleHtml(a) {
+  if (!alertComment(a)) return '';
+  const open = App.openComments.has(a.fingerprint);
+  return `<button class="comment-toggle${open ? ' active' : ''}" data-comment-toggle` +
+    ` title="${open ? 'Hide' : 'Show'} the comment">💬</button>`;
+}
+
+function commentHtml(a) {
+  const comment = alertComment(a);
+  if (!comment) return '';
+  const open = App.openComments.has(a.fingerprint);
+  return `<span class="row-comment"${open ? '' : ' style="display:none"'}>${esc(comment)}</span>`;
+}
+
 function cardHtml(a) {
   if (TV.active) return cardHtmlTV(a);
 
@@ -887,20 +953,15 @@ function cardHtml(a) {
   const summary  = title.usedSummary ? '' : (a.annotations?.summary || '');
   const desc     = a.annotations?.description || '';
   const showDesc = desc && desc !== title.text && desc !== summary;
-  
-  // Check for silence/acknowledgement comments
-  const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
 
   return `
-    <div class="alert-card ${sevClass(sev)}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
-      ${cardLinkHtml(a)}
+    <div class="alert-card ${sevClass(sev)}" data-fp="${esc(a.fingerprint)}">
       <div class="card-top">
         <div class="card-title">
-          <span class="sev-dot ${sevClass(sev)}"></span>
-          ${criticalIcon(a)}
+          ${severityMark(a)}
           ${prefixHtml(a)}
           <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
-          <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
+          ${statusMark(a)}${commentToggleHtml(a)}
           <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
         </div>
         <div class="card-meta">
@@ -911,7 +972,7 @@ function cardHtml(a) {
       </div>
       ${summary  ? `<div class="card-summary">${esc(summary)}</div>` : ''}
       ${showDesc ? `<div class="card-desc">${esc(desc)}</div>` : ''}
-      ${ackComment ? `<div class="card-ack-comment"><strong>Comment:</strong> ${esc(ackComment)}</div>` : ''}
+      ${commentHtml(a)}
       ${labels   ? `<div class="label-chips">${labels}</div>` : ''}
     </div>`;
 }
@@ -920,7 +981,6 @@ function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
   const title   = alertTitle(a);
   const summary = title.usedSummary ? '' : (a.annotations?.summary || '');
-  const ackComment = a.annotations?.acknowledgement || a.annotations?.silence_comment || '';
   
   // A row only has space for 2 labels inline, the rest go behind the +N toggle.
   // Presence is filtered *before* slicing so a row never hides every label it
@@ -932,17 +992,18 @@ function cardHtmlTV(a) {
   // so a missing element would shift the columns of that row only. This is what
   // lines the rows up — see the "TV mode: rows share one grid" block in the CSS.
   return `
-    <div class="alert-card alert-row ${sevClass(sev)}${a.alert_link_url ? ' clickable' : ''}" data-fp="${esc(a.fingerprint)}">
-      ${cardLinkHtml(a)}
-      <span class="row-lead"><span class="sev-dot ${sevClass(sev)}"></span>${criticalIcon(a)}</span>
+    <div class="alert-card alert-row ${sevClass(sev)}" data-fp="${esc(a.fingerprint)}">
+      <span class="row-lead">${severityMark(a)}</span>
       ${prefixHtml(a) || '<span class="alert-prefix"></span>'}
       <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
-      <span class="status-badge status-${esc(a.status)}">${esc(a.status)}</span>
+      <span class="row-status">${statusMark(a)}${commentToggleHtml(a)}</span>
       <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
-      <span class="row-summary">${esc(summary)}${ackComment ? ` <span class="tv-ack-comment">Comment: ${esc(ackComment)}</span>` : ''}</span>
-      <span class="row-labels">${labelsHtml}${labelsToggleHtml(lay.hidden, lay.open)}${hiddenLabelsHtml(lay.hidden, lay.open, ' tv-lbl')}</span>
+      <span class="row-summary">${esc(summary)}</span>
+      <span class="row-labels">${labelsHtml}${labelsToggleHtml(lay.hidden, lay.open)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       <span class="row-link">${genLinkHtml(a.link_url, a.source_type, a.source)}</span>
+      ${hiddenLabelsHtml(lay.hidden, lay.open, ' tv-lbl')}
+      ${commentHtml(a)}
     </div>`;
 }
 
@@ -950,8 +1011,8 @@ function cardHtmlTV(a) {
 const TV = {
   active:     false,
   panelOpen:  false,
+  moreOpen:   false,
   clockTimer: null,
-  hideTimer:  null,
 
   init() {
     // No stored preference means the config default applies, but the payload
@@ -963,10 +1024,7 @@ const TV = {
     document.getElementById('tv-btn').addEventListener('click',      () => this.toggle());
     document.getElementById('tv-settings-btn').addEventListener('click', e => { e.stopPropagation(); this.togglePanel(); });
     document.getElementById('tv-exit-btn').addEventListener('click', () => this.toggle());
-
-    // Show bar on any movement
-    document.addEventListener('mousemove', () => this.showBar());
-    document.addEventListener('click',     () => this.showBar());
+    document.getElementById('tv-more-btn').addEventListener('click', e => { e.stopPropagation(); this.toggleMore(); });
 
     // Close panel when clicking elsewhere
     document.addEventListener('click', e => {
@@ -978,7 +1036,11 @@ const TV = {
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      if (e.key === 'Escape') { if (this.panelOpen) this.closePanel(); else if (this.active) this.toggle(); }
+      if (e.key === 'Escape') {
+        if (this.panelOpen) this.closePanel();
+        else if (this.moreOpen) this.closeMore();
+        else if (this.active) this.toggle();
+      }
       if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) this.toggle();
     });
   },
@@ -996,14 +1058,13 @@ const TV = {
     document.getElementById('tv-btn').classList.toggle('active', this.active);
     if (this.active) {
       this.startClock();
-      this.showBar();
       this.renderChips();
       this.renderDots();
       renderSourceChips();
     } else {
       this.stopClock();
       this.closePanel();
-      clearTimeout(this.hideTimer);
+      this.closeMore();
     }
     renderAlerts();
   },
@@ -1023,14 +1084,21 @@ const TV = {
       new Date().toLocaleTimeString('en-US', options);
   },
 
-  showBar() {
-    if (!this.active) return;
-    const bar = document.getElementById('tv-bar');
-    bar.classList.add('visible');
-    clearTimeout(this.hideTimer);
-    if (!this.panelOpen) {
-      this.hideTimer = setTimeout(() => bar.classList.remove('visible'), 4000);
-    }
+  /* The controls half of the HUD. The minimal half — dots, clock, last refresh,
+     version — is always on, so there is no bar-wide hide timer any more. */
+  toggleMore() {
+    this.moreOpen ? this.closeMore() : this.openMore();
+  },
+  openMore() {
+    this.moreOpen = true;
+    document.getElementById('tv-bar-more').classList.add('open');
+    document.getElementById('tv-more-btn').textContent = '−';
+  },
+  closeMore() {
+    this.moreOpen = false;
+    document.getElementById('tv-bar-more').classList.remove('open');
+    document.getElementById('tv-more-btn').textContent = '+';
+    this.closePanel();
   },
 
   togglePanel() {
@@ -1039,13 +1107,10 @@ const TV = {
   openPanel() {
     this.panelOpen = true;
     document.getElementById('tv-panel').classList.add('open');
-    clearTimeout(this.hideTimer);
-    document.getElementById('tv-bar').classList.add('visible');
   },
   closePanel() {
     this.panelOpen = false;
     document.getElementById('tv-panel').classList.remove('open');
-    this.showBar();
   },
 
   renderChips() {
@@ -1117,6 +1182,15 @@ function delegate(containerId, selector, handler) {
   delegate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
   delegate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
+delegate('alert-list', '[data-comment-toggle]', (el, e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const fp = el.closest('.alert-card')?.dataset.fp;
+  if (!fp) return;
+  if (App.openComments.has(fp)) App.openComments.delete(fp);
+  else App.openComments.add(fp);
+  renderAlerts();
+});
 delegate('alert-list', '[data-labels-toggle]', (el, e) => {
   // The card-wide link overlay sits under this button; stop the click there.
   e.preventDefault();
@@ -1130,6 +1204,32 @@ delegate('alert-list', '[data-labels-toggle]', (el, e) => {
 delegate('alert-list', '.group-header', el => {
   const groupEl = el.closest('.alert-group');
   if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
+});
+
+/* Ctrl+F / Cmd+F and "/" focus the search box instead of the browser's
+   find-in-page, which only ever finds what is already on screen. Not in TV
+   mode: the header is hidden there, so the native search stays available. */
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+  const wants = (e.key === 'f' || e.key === 'F') ? (e.ctrlKey || e.metaKey)
+              : (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey);
+  if (!wants || TV.active) return;
+  e.preventDefault();
+  SearchInput.focus();
+  SearchInput.select();
+});
+
+// Escape leaves the search box, clearing it when it is empty of intent.
+SearchInput.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (App.searchQ) {
+    SearchInput.value = App.searchQ = '';
+    SearchClear.style.display = 'none';
+    renderAlerts();
+    pushUrl();
+  } else {
+    SearchInput.blur();
+  }
 });
 
 /* -- Boot -- */

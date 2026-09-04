@@ -54,7 +54,7 @@
       <svg class="search-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
       </svg>
-      <input type="search" id="search" class="search-input" placeholder="Search, or filter by label: team=sre, hostname~web" autocomplete="off" spellcheck="false">
+      <input type="search" id="search" class="search-input" placeholder="Search, or filter by label: team=sre|dba, hostname~web" autocomplete="off" spellcheck="false">
       <button class="search-clear" id="search-clear" title="Clear">✕</button>
     </div>
 
@@ -111,22 +111,29 @@
   </div>
   <!-- Floating HUD bar -->
   <div class="tv-bar" id="tv-bar">
-    <span class="tv-clock" id="tv-clock">00:00</span>
-    <span class="tv-version" title="AlertView v__APP_VERSION__">v__APP_VERSION__</span>
+    <!-- Always on: the "everything is fine" glance — one dot per source, the
+         time, when the data was last refreshed, and the running version. -->
     <div class="tv-dots" id="tv-dots"></div>
-    <span class="tv-cd">↻&thinsp;<span id="tv-cd">–</span>s</span>
-    <span class="tv-bar-sep"></span>
-    <button class="tv-hud-btn" id="tv-theme-btn" title="Toggle theme">
-      <svg id="tv-theme-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-      </svg>
-    </button>
-    <button class="tv-hud-btn" id="tv-settings-btn" title="Filters">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-        <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
-      </svg>
-    </button>
-    <button class="tv-hud-btn tv-hud-exit" id="tv-exit-btn" title="Exit TV Mode">✕</button>
+    <span class="tv-clock" id="tv-clock">00:00</span>
+    <span class="tv-refresh" title="Last refresh">↻&thinsp;<span id="tv-last">–</span></span>
+    <span class="tv-version" title="AlertView v__APP_VERSION__">v__APP_VERSION__</span>
+    <button class="tv-hud-btn tv-more-btn" id="tv-more-btn" title="More controls">+</button>
+    <!-- Revealed by the + button -->
+    <span class="tv-bar-more" id="tv-bar-more">
+      <span class="tv-bar-sep"></span>
+      <span class="tv-cd">↻&thinsp;<span id="tv-cd">–</span>s</span>
+      <button class="tv-hud-btn" id="tv-theme-btn" title="Toggle theme">
+        <svg id="tv-theme-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button class="tv-hud-btn" id="tv-settings-btn" title="Filters">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
+        </svg>
+      </button>
+      <button class="tv-hud-btn tv-hud-exit" id="tv-exit-btn" title="Exit TV Mode">✕</button>
+    </span>
   </div>
 </div>
 
