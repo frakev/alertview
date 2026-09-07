@@ -647,16 +647,29 @@ function toggleSev(s) {
 }
 
 /* -- Render -- */
-function updateTitle() {
+/* The tab title says the same thing as the toolbar counter: how many alerts
+   are on screen, out of how many arrived. It used to count the firing ones
+   whatever the filters said, so narrowing 54 alerts down to 3 with a search
+   still read "54 alerts" in the tab — and it was only refreshed after a poll,
+   never when a filter changed. Called from renderAlerts() now, which is the
+   one function every filter goes through.
+   `shown` and `total` are passed in by the caller that already computed them;
+   setStale() calls it without arguments. */
+function updateTitle(shown, total) {
   if (App.stale) { document.title = '⚠ stale — AlertView'; return; }
-  const firing = (App.data?.alerts ?? []).filter(a => a.status === 'firing');
-  if (!firing.length) { document.title = 'AlertView'; return; }
-  const icon = severityIcon(firing);
-  const alertWord = firing.length > 1 ? 'alerts' : 'alert';
-  document.title = `${icon} ${firing.length} ${alertWord} — AlertView`;
+  shown ??= filteredAlerts();
+  total ??= App.data?.alerts.length ?? 0;
+  if (!total) { document.title = 'AlertView'; return; }
+
+  const alertWord = total !== 1 ? 'alerts' : 'alert';
+  const count = shown.length < total ? `${shown.length} / ${total}` : String(total);
+  // Nothing left after filtering is not "all clear": say so with the glass the
+  // empty state uses, not with the colour of a severity nothing is showing.
+  const icon = shown.length ? severityIcon(shown) : '🔍';
+  document.title = `${icon} ${count} ${alertWord} — AlertView`;
 }
 
-function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); updateTitle(); }
+function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); }
 
 function renderStats() {
   const counts = {};
@@ -737,6 +750,9 @@ function renderAlerts() {
   document.getElementById('alert-count').textContent = filtered.length < total
     ? filtered.length + ' / ' + total + ' ' + alertWord
     : total + ' ' + alertWord;
+
+  // Same numbers in the tab, from the same two values.
+  updateTitle(filtered, total);
 
   if (!filtered.length) {
     listEl.innerHTML = `<div class="empty-state">

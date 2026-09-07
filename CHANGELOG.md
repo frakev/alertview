@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The browser tab counted alerts the filters had hidden** — narrowing 54 alerts to 3 with a search still read `54 alerts` in the tab, because the title counted every firing alert whatever the filters said. It now shows what the toolbar shows, from the same two numbers: `🟡 3 / 54 alerts`, and the plain `54 alerts` when nothing is filtered out. A filter that matches nothing reads `🔍 0 / 54 alerts` rather than borrowing the colour of a severity it is not showing.
+- **The tab was only refreshed after a poll** — `updateTitle()` was called from `render()`, which runs on a fetch, so typing in the search box, clicking a severity chip or toggling silenced alerts left the old number in place for up to 30 seconds. It is called from `renderAlerts()` now, the one function every filter change goes through.
 - **The Docker workflow no longer sets up QEMU.** It builds `linux/amd64` and nothing else, so the emulation layer contributed nothing — but the step pulls `tonistiigi/binfmt` from Docker Hub on every run, which is a rate limit waiting to happen. It duly failed on the `v0.10.1` tag and skipped the build behind it.
 
 ## [0.10.1] - 2026-09-04
