@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-09-09
+
 ### Fixed
 - **The age of an alert was illegible on the light theme** — `.time-ago` was painted with `--c-warning` (`#d29922`), an amber that reads as a warm accent on the dark background but turns to mud on white. It now goes through a `--c-time` token: the same amber on the dark theme, the ordinary text colour (`#1f2328`) on the light one.
 
