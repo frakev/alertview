@@ -15,6 +15,10 @@
   --c-none:     #6e7681;
   --c-resolved: #3fb950;
   --c-silenced: #bc8cff;
+  /* How long an alert has been firing. Amber reads as a warm accent on the
+     dark theme; on white it turns to mud, so the light theme takes it back to
+     the ordinary text colour. */
+  --c-time:     var(--c-warning);
   --radius:     6px;
   --shadow:     0 1px 3px rgba(0,0,0,.4), 0 4px 12px rgba(0,0,0,.25);
 }
@@ -27,6 +31,7 @@
   --text:       #1f2328;
   --text-muted: #636c76;
   --text-dim:   #9198a1;
+  --c-time:     var(--text);
   --shadow:     0 1px 3px rgba(31,35,40,.12), 0 4px 12px rgba(31,35,40,.08);
 }
 
@@ -656,7 +661,7 @@ a { color: inherit; }
 }
 .time-ago {
   font-size: 11px;
-  color: var(--c-warning);
+  color: var(--c-time);
   font-weight: 600;
   white-space: nowrap;
   cursor: default;
