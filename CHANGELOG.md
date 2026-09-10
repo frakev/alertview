@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-10
+
 ### Fixed
 - **The flame was the wrong colour, and changed colour once clicked.** The severity marker sits inside the runbook link when one is configured, and `.mark-link` declared no `color` of its own — so the icon inherited the browser's link colour, turning dark purple after the first visit. The emoji it replaced was a coloured glyph and immune to it; a `currentColor` icon is not. Links no longer repaint what they wrap, and the flame is painted deliberately: the body in the critical red, over a hot amber core. A single flat colour read as a leaf rather than as fire, which is what made it look nothing like the emoji.
 
