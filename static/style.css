@@ -22,6 +22,9 @@
   --c-info:     #58a6ff;
   --c-info-rgb: 88, 166, 255;
   --c-none-rgb: 110, 118, 129;
+  /* The hot core of the critical flame. The emoji it replaces was orange over
+     red; a single flat colour reads as a leaf rather than as fire. */
+  --c-flame-core: #ff9f2e;
   --c-none:     #6e7681;
   --c-resolved: #3fb950;
   --c-silenced: #bc8cff;
@@ -46,6 +49,7 @@
      critical badge is text. This one reads as more colour, not less. */
   --c-critical: #d1242f;
   --c-critical-rgb: 209, 36, 47;
+  --c-flame-core: #db7c0a;
   --shadow:     0 1px 3px rgba(31,35,40,.12), 0 4px 12px rgba(31,35,40,.08);
 }
 
@@ -509,6 +513,11 @@ a { color: inherit; }
 /* The runbook link hangs off the severity marker. It has to announce itself:
    a bare dot looks like decoration, so it grows and lights up on hover. */
 .mark-link {
+  /* An anchor takes the browser's link colour, which also changes once
+     visited. That was invisible while the marker was a coloured emoji glyph
+     and a background-painted dot; a `currentColor` icon inside it turned dark
+     purple after the first click. A link must not repaint what it wraps. */
+  color: inherit;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -644,7 +653,7 @@ a { color: inherit; }
 /* The built-in icons are inline SVG sized in `em`, so the font-size rules
    below drive them exactly as they drove the emoji they replace. No
    `saturate()` any more: the icon takes the severity colour itself. */
-.crit-icon { font-size: 12px; line-height: 1; }
+.crit-icon { font-size: 12px; line-height: 1; color: var(--c-critical); }
 [data-tv="true"] .crit-icon { font-size: 15px; }
 
 .crit-icon, .status-icon {
@@ -655,6 +664,11 @@ a { color: inherit; }
      box. */
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", inherit;
 }
+
+/* Two-tone: the body follows `currentColor`, the core is painted here. A CSS
+   rule rather than a `fill="var(…)"` attribute, which presentation attributes
+   do not support. */
+.ic .flame-core { fill: var(--c-flame-core); }
 
 .crit-icon .ic, .status-icon .ic {
   width: 1em;
