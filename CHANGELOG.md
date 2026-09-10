@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **A critical row is now tinted about twice as strongly** — `.07` to `.12`, and `.14` to `.20` in TV mode. At `.07` it was indistinguishable from an `error` row sitting at the same value, which defeats the purpose of colouring the row at all: it is meant to be read from across the room, not compared side by side.
 - **Critical stands out more, and is finally legible on the light theme.** The dark theme goes from `#f85149` to `#ff4438` — fully saturated, a shade deeper, the same contrast against the background. The light theme had no critical colour of its own, so it inherited a red that sat at **3.35:1 on white**, under WCAG AA for text — and a critical badge *is* text; it now uses `#d1242f`, at 5.24:1. TV mode is untouched, it already had its own brighter set.
 - **The severity colours are declared once.** Their translucent backgrounds were `rgba()` literals repeating the same channel numbers in 28 places, so changing a severity left half the interface on the old hue — a badge in the new red on a tint of the old one. Each severity now carries a `--c-*-rgb` companion token. Verified by resolving every one of the 56 `rgba` lines back to its former value: only the six critical ones move.
 

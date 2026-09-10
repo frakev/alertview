@@ -578,7 +578,10 @@ a { color: inherit; }
 }
 .alert-card > .row-comment { display: block; margin-top: .3rem; }
 
-.alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(var(--c-critical-rgb),.07); }
+/* Critical is tinted about twice as strongly as the rest: at .07 it was
+   indistinguishable from error, and the point of the row colour is to be read
+   from across the room rather than compared side by side. */
+.alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(var(--c-critical-rgb),.12); }
 .alert-card.sev-error    { border-left-color: var(--c-error);    background: rgba(var(--c-error-rgb),.07); }
 .alert-card.sev-high     { border-left-color: var(--c-high);     background: rgba(var(--c-high-rgb),.06); }
 .alert-card.sev-warning  { border-left-color: var(--c-warning);  background: rgba(var(--c-warning-rgb),.05); }
@@ -768,7 +771,7 @@ a { color: inherit; }
   --c-info-rgb: 0, 170, 255;
 }
 [data-tv="true"] .alert-card { border-left-width: 4px; }
-[data-tv="true"] .alert-card.sev-critical { background: rgba(var(--c-critical-rgb),.14); }
+[data-tv="true"] .alert-card.sev-critical { background: rgba(var(--c-critical-rgb),.20); }
 [data-tv="true"] .alert-card.sev-error    { background: rgba(var(--c-error-rgb),.13); }
 [data-tv="true"] .alert-card.sev-high     { background: rgba(var(--c-high-rgb),.12); }
 [data-tv="true"] .alert-card.sev-warning  { background: rgba(var(--c-warning-rgb),.09); }
