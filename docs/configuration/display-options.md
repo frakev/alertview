@@ -160,23 +160,28 @@ or free text:
 | `bell-off` | a bell with a bar through it | `status_icons.silenced` |
 | `hourglass` | an hourglass | `status_icons.pending` |
 
-The built-ins are inline SVG. They always draw, they take the severity colour
-from the surrounding text, and they stay sharp at any size — which matters on a
-wall display, where the icons are scaled up.
+These are the **Noto Color Emoji drawings themselves**, embedded in the
+stylesheet and served with the dashboard. They look like the emoji they stand
+for, and they appear everywhere.
 
-Anything else is rendered as text. **An emoji still works**, but only where the
-machine showing the dashboard has a colour emoji font: a kiosk browser, a
-minimal Linux box or a Windows N edition draws an empty box instead. That is
-why the defaults are drawn rather than typed. If you prefer the emoji, ask for
-it explicitly:
+Anything else is rendered as text. **A typed emoji still works**, but only
+where the machine showing the dashboard has a colour emoji font installed: a
+kiosk browser, a minimal Linux box or a Windows N edition draws an empty box
+instead. That is why the defaults ship the artwork rather than the character.
+Writing the character explicitly is still allowed, and means "use whatever font
+this machine has":
 
 ```yaml
 display:
-  critical_icon: "🔥"
+  critical_icon: "🔥"      # the machine's own emoji font, box if it has none
   status_icons:
     silenced: "🔕"
     pending: "⏳"
 ```
+
+The embedded artwork is © Google LLC under the SIL Open Font License 1.1; the
+attribution and the modifications made are recorded in
+[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
 ## Searching by Label
 

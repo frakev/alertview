@@ -153,11 +153,12 @@ display:
   # show_labels: true
 
   # Replaces the coloured dot on critical alerts, so they stand out at a
-  # glance. Three icons are built in and always render: "flame", "bell-off"
-  # and "hourglass". Any other value is drawn as text — an emoji works, but
-  # only where the machine showing the dashboard has a colour emoji font, and
-  # a kiosk or a minimal Linux box usually has none. "" gives criticals their
-  # red dot back like every other severity.
+  # glance. Three icons ship with AlertView and always render: "flame",
+  # "bell-off" and "hourglass" — the Noto Color Emoji drawings, embedded.
+  # Any other value is shown as text: a typed emoji works, but only where the
+  # machine displaying the dashboard has a colour emoji font, and a kiosk or a
+  # minimal Linux box usually has none. "" gives criticals their red dot back
+  # like every other severity.
   # critical_icon: "flame"
 
   # Status markers. Alerts carry no status badge: "firing" is the norm and

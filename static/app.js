@@ -994,21 +994,17 @@ function alertTitle(a) {
   return { text: a.name, usedSummary: false };
 }
 
-/* Icons drawn rather than typed. An emoji only appears if the machine showing
-   the page has a colour emoji font: a minimal Linux box, a kiosk browser or a
-   Windows N edition renders 🔥 as an empty box — on exactly the screen that
-   most needs to be readable. These are inline SVG, so they always draw, they
-   take the severity colour from `currentColor`, and they stay sharp on a wall
-   display. Any other string in the config is still rendered as text, so an
-   emoji remains available to whoever wants one. */
+/* The emoji artwork itself, shipped with the app instead of borrowed from the
+   machine displaying it. A typed emoji only appears if that machine has a
+   colour emoji font: a minimal Linux box, a kiosk browser or a Windows N
+   edition renders 🔥 as an empty box — on exactly the screen that most needs
+   to be readable. These names resolve to Noto Color Emoji drawings embedded in
+   the stylesheet, so the dashboard looks the same everywhere. Any other string
+   in the config is still rendered as text. */
 const BUILTIN_ICONS = {
-  flame: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
-    '<path d="M13 2 C 13 6 17 8 17 13 C 17 17.5 14.5 22 12 22 C 9 22 6.5 19 6.5 15 C 6.5 12 8.5 10.5 9.5 9 C 9.8 11 10.8 11.8 11.5 11.8 C 12.5 11.8 12.2 8 13 2 Z"/>' +
-    '<path class="flame-core" d="M12 12.2 C 12 14.8 14.6 15.6 14.6 18.2 C 14.6 20.3 13.4 21.7 12 21.7 C 10.6 21.7 9.4 20.3 9.4 18.2 C 9.4 16.2 11 15.2 12 12.2 Z"/></svg>',
-  'bell-off': '<svg class="ic" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true">' +
-    '<path d="M12 3 C 15.3 3 17.5 5.4 17.5 8.6 C 17.5 12 18.4 14.2 19.2 15.4 C 19.5 15.9 19.2 16.6 18.6 16.6 L 5.4 16.6 C 4.8 16.6 4.5 15.9 4.8 15.4 C 5.6 14.2 6.5 12 6.5 8.6 C 6.5 5.4 8.7 3 12 3 Z M9.9 18.1 C 9.9 18.1 10.4 20.6 12 20.6 C 13.6 20.6 14.1 18.1 14.1 18.1 Z M4.4 2.5 L 6.4 1.2 L 20.2 17.2 L 18.2 18.5 Z"/></svg>',
-  hourglass: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
-    '<path d="M5.5 2 H 18.5 V 4.2 H 5.5 Z M5.5 19.8 H 18.5 V 22 H 5.5 Z M7 4.2 H 17 L 12.9 12 L 17 19.8 H 7 L 11.1 12 Z"/></svg>',
+  flame: '<span class="ic ic-flame"></span>',
+  'bell-off': '<span class="ic ic-bell-off"></span>',
+  hourglass: '<span class="ic ic-hourglass"></span>',
 };
 
 /* A built-in name draws its icon; anything else is text from the config and is

@@ -524,3 +524,6 @@ under their review.
 ## License
 
 AlertView is released under the [MIT License](LICENSE).
+
+Three emoji icons are Noto Color Emoji artwork, © Google LLC, under the SIL
+Open Font License 1.1 — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

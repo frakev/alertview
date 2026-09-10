@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`flame`, `bell-off` and `hourglass` are now the emoji artwork itself**, embedded rather than drawn by hand. The hand-drawn silhouettes of 0.11.0 fixed the rendering but did not look like the emoji they replaced, which was the point of having them. AlertView now ships the Noto Color Emoji drawings for 🔥, 🔕 and ⏳ as `data:` URIs in the stylesheet: the dashboard looks like it did before 0.11.0, and it looks the same on every machine, including the ones with no emoji font. A typed emoji is still accepted and still means "use whatever font this machine has".
+  - Embedded as data URIs rather than inline SVG on purpose: each icon is then its own document, so the flame's two gradient ids cannot collide with the copy of themselves on the next row, and the artwork travels once with the stylesheet instead of being repeated in the markup of every alert. The three add ~9 KB to `style.css`, which is served compressed.
+  - **Licensing**: the drawings are © Google LLC under the SIL Open Font License 1.1, recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) with the upstream commit they were taken from, the full licence text in `LICENSES/`, and the modifications made. Upstream is not self-consistent — its README claims Apache-2.0 for image resources while linking to a file containing the OFL — so AlertView complies with the licence file that is actually there, which satisfies both readings. The SVGs were minified for embedding; the drawings are untouched, verified by comparing the parsed element trees before and after.
+
 ## [0.11.1] - 2026-09-10
 
 ### Fixed
