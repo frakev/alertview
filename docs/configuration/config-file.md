@@ -93,10 +93,10 @@ display:
   # Alert body
   show_alert_name: true      # false = show the summary annotation instead
   show_labels: true          # false = hide the label chips
-  critical_icon: "🔥"         # replaces the dot on critical alerts, "" to disable
+  critical_icon: "flame"      # replaces the dot on critical alerts, "" to disable
   status_icons:              # markers replacing the status badge
-    silenced: "🔕"
-    pending: "⏳"
+    silenced: "bell-off"
+    pending: "hourglass"
 
   # Links
   alert_link_template: ""    # turns the severity dot into a link built from the labels
@@ -207,8 +207,8 @@ The retry delay follows an exponential backoff pattern:
 | `prefix_separator` | string | " / " | Separator between prefix labels |
 | `show_alert_name` | bool | true | false shows the `summary` annotation instead of the alert name |
 | `show_labels` | bool | true | false hides the label chips |
-| `critical_icon` | string | "🔥" | Replaces the coloured dot on critical alerts, `""` to disable |
-| `status_icons` | map | silenced: 🔕, pending: ⏳ | Icon per alert status, in place of a status badge. A status absent from the map, or mapped to `""`, shows nothing |
+| `critical_icon` | string | "flame" | Replaces the coloured dot on critical alerts. A built-in icon name (`flame`, `bell-off`, `hourglass`) or any text; `""` to disable |
+| `status_icons` | map | silenced: `bell-off`, pending: `hourglass` | Icon per alert status, in place of a status badge. Built-in name or any text. A status absent from the map, or mapped to `""`, shows nothing |
 | `alert_link_template` | string | null | Turns the severity dot into a link (see Link Templates) |
 | `source_link` | bool | true | Show the ↗ "open in the source" button |
 | `link_new_tab` | bool | true | false opens links in the same tab |

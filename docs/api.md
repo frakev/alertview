@@ -73,8 +73,8 @@ Accept: application/json
   "prefix_separator": " / ",
   "show_alert_name": true,
   "show_labels": true,
-  "critical_icon": "🔥",
-  "status_icons": {"silenced": "🔕", "pending": "⏳"},
+  "critical_icon": "flame",
+  "status_icons": {"silenced": "bell-off", "pending": "hourglass"},
   "tv_mode_default": false,
   "link_new_tab": true
 }

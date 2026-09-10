@@ -43,7 +43,7 @@ display:
   # Alert body
   show_alert_name: true   # false = show the summary instead of the alertname
   show_labels: true       # false = hide the label chips
-  critical_icon: "🔥"      # "" to disable
+  critical_icon: "flame"   # "" to disable
 
   # Whole-alert link, and the "open in the source" arrow
   alert_link_template: ""
@@ -120,7 +120,7 @@ display:
 display:
   show_alert_name: false   # show the summary instead of the alertname
   show_labels: false       # hide the label chips
-  critical_icon: "🔥"       # marker on critical alerts, "" to disable
+  critical_icon: "flame"    # marker on critical alerts, "" to disable
 ```
 
 - `show_alert_name: false` puts the `summary` annotation where the alert name
@@ -138,16 +138,45 @@ display:
   per alert and survives the auto-refresh.
 - `status_icons` replaces the status badge, which is gone from the rows: `firing`
   is the norm and repeating it on every alert is noise, so only the exceptions
-  are marked — `silenced: "🔕"` and `pending: "⏳"` by default. A status missing
+  are marked — `silenced: "bell-off"` and `pending: "hourglass"` by default. A status missing
   from the map, or mapped to `""`, shows nothing. A silence or acknowledgement
   comment is no longer printed inline either: a 💬 button next to the icon
   reveals it on its own line, and stays open across refreshes. The line names
   who did it — the silence's `createdBy` for Alertmanager and Grafana, the
   acknowledging user for Zabbix — and so does the button's tooltip.
-- `critical_icon` accepts any emoji or text and **replaces the coloured dot** on
-  critical alerts, so they stand out at a glance; every other severity keeps its
-  dot. Set it to `""` and criticals get the red dot back. It follows
-  `severity_order` aliases, so `crit` counts as `critical`.
+- `critical_icon` **replaces the coloured dot** on critical alerts, so they
+  stand out at a glance; every other severity keeps its dot. Set it to `""` and
+  criticals get the red dot back. It follows `severity_order` aliases, so
+  `crit` counts as `critical`.
+
+### Built-in icons
+
+`critical_icon` and `status_icons` both accept either a **built-in icon name**
+or free text:
+
+| Name | Drawn as | Default for |
+|---|---|---|
+| `flame` | a flame | `critical_icon` |
+| `bell-off` | a bell with a bar through it | `status_icons.silenced` |
+| `hourglass` | an hourglass | `status_icons.pending` |
+
+The built-ins are inline SVG. They always draw, they take the severity colour
+from the surrounding text, and they stay sharp at any size — which matters on a
+wall display, where the icons are scaled up.
+
+Anything else is rendered as text. **An emoji still works**, but only where the
+machine showing the dashboard has a colour emoji font: a kiosk browser, a
+minimal Linux box or a Windows N edition draws an empty box instead. That is
+why the defaults are drawn rather than typed. If you prefer the emoji, ask for
+it explicitly:
+
+```yaml
+display:
+  critical_icon: "🔥"
+  status_icons:
+    silenced: "🔕"
+    pending: "⏳"
+```
 
 ## Searching by Label
 

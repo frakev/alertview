@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Critical stands out more, and is finally legible on the light theme.** The dark theme goes from `#f85149` to `#ff4438` — fully saturated, a shade deeper, the same contrast against the background. The light theme had no critical colour of its own, so it inherited a red that sat at **3.35:1 on white**, under WCAG AA for text — and a critical badge *is* text; it now uses `#d1242f`, at 5.24:1. TV mode is untouched, it already had its own brighter set.
+- **The severity colours are declared once.** Their translucent backgrounds were `rgba()` literals repeating the same channel numbers in 28 places, so changing a severity left half the interface on the old hue — a badge in the new red on a tint of the old one. Each severity now carries a `--c-*-rgb` companion token. Verified by resolving every one of the 56 `rgba` lines back to its former value: only the six critical ones move.
+
+### Fixed
+- **The critical flame did not render everywhere.** `critical_icon` defaulted to `🔥`, which only appears if the machine showing the dashboard has a colour emoji font — a kiosk browser, a minimal Linux box or a Windows N edition draws an empty box, on exactly the screen that most needs to be readable. The defaults are now drawn rather than typed: `flame`, `bell-off` and `hourglass` are built-in inline SVG that always render, take the severity colour from the surrounding text and stay sharp when a wall display scales them up. `status_icons` had the same exposure with `🔕` and `⏳`, and gets the same treatment. Any other value is still rendered as text, so `critical_icon: "🔥"` keeps the emoji for anyone who wants it.
+
 ## [0.10.3] - 2026-09-09
 
 ### Fixed

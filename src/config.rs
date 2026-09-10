@@ -359,7 +359,8 @@ pub struct DisplayConfig {
     /// Show the label chips next to each alert.
     #[serde(default = "default_true")]
     pub show_labels: bool,
-    /// Icon marking critical alerts. Empty string disables it.
+    /// Icon marking critical alerts: a built-in name (`flame`, `bell-off`,
+    /// `hourglass`) or any text, emoji included. Empty string disables it.
     #[serde(default = "default_critical_icon")]
     pub critical_icon: String,
     /// Icon shown instead of a status badge, per alert status. A status absent
@@ -406,12 +407,16 @@ fn default_prefix_labels() -> Vec<String> {
     vec!["hostname".to_string()]
 }
 
+// A built-in icon name rather than an emoji: an emoji needs a colour emoji
+// font on whatever machine displays the dashboard, and a kiosk or a minimal
+// Linux box has none — it draws an empty box instead. Known names are `flame`,
+// `bell-off` and `hourglass`; anything else is shown as text, emoji included.
 fn default_critical_icon() -> String {
-    "🔥".to_string()
+    "flame".to_string()
 }
 
 fn default_status_icons() -> std::collections::HashMap<String, String> {
-    [("silenced", "🔕"), ("pending", "⏳")]
+    [("silenced", "bell-off"), ("pending", "hourglass")]
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()

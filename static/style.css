@@ -7,11 +7,21 @@
   --text-muted: #8b949e;
   --text-dim:   #484f58;
   --accent:     #818cf8;
-  --c-critical: #f85149;
+  /* Each severity twice: the colour, and its channels for the translucent
+     backgrounds. Those used to be colour literals repeating the same numbers
+     in a dozen places, so changing a severity left half the UI on the old
+     hue — a badge in the new red on a tint of the old one. */
+  --c-critical: #ff4438;
+  --c-critical-rgb: 255, 68, 56;
   --c-error:    #ff7b72;
+  --c-error-rgb: 255, 123, 114;
   --c-high:     #fb923c;
+  --c-high-rgb: 251, 146, 60;
   --c-warning:  #d29922;
+  --c-warning-rgb: 210, 153, 34;
   --c-info:     #58a6ff;
+  --c-info-rgb: 88, 166, 255;
+  --c-none-rgb: 110, 118, 129;
   --c-none:     #6e7681;
   --c-resolved: #3fb950;
   --c-silenced: #bc8cff;
@@ -32,6 +42,10 @@
   --text-muted: #636c76;
   --text-dim:   #9198a1;
   --c-time:     var(--text);
+  /* On white the dark-theme red sits at 3.35:1, under AA for text — and a
+     critical badge is text. This one reads as more colour, not less. */
+  --c-critical: #d1242f;
+  --c-critical-rgb: 209, 36, 47;
   --shadow:     0 1px 3px rgba(31,35,40,.12), 0 4px 12px rgba(31,35,40,.08);
 }
 
@@ -108,12 +122,12 @@ a { color: inherit; }
 .stat-chip:hover { opacity: .85; }
 .stat-chip.active { box-shadow: 0 0 0 2px var(--text); }
 
-.stat-chip.sev-critical { background: rgba(248,81,73,.15);  color: var(--c-critical); border-color: rgba(248,81,73,.3); }
-.stat-chip.sev-error    { background: rgba(255,123,114,.15);color: var(--c-error);    border-color: rgba(255,123,114,.3); }
-.stat-chip.sev-high     { background: rgba(251,146,60,.15); color: var(--c-high);     border-color: rgba(251,146,60,.3); }
-.stat-chip.sev-warning  { background: rgba(210,153,34,.15); color: var(--c-warning);  border-color: rgba(210,153,34,.3); }
-.stat-chip.sev-info     { background: rgba(88,166,255,.15); color: var(--c-info);     border-color: rgba(88,166,255,.3); }
-.stat-chip.sev-none     { background: rgba(110,118,129,.15);color: var(--c-none);     border-color: rgba(110,118,129,.3); }
+.stat-chip.sev-critical { background: rgba(var(--c-critical-rgb),.15);  color: var(--c-critical); border-color: rgba(var(--c-critical-rgb),.3); }
+.stat-chip.sev-error    { background: rgba(var(--c-error-rgb),.15);color: var(--c-error);    border-color: rgba(var(--c-error-rgb),.3); }
+.stat-chip.sev-high     { background: rgba(var(--c-high-rgb),.15); color: var(--c-high);     border-color: rgba(var(--c-high-rgb),.3); }
+.stat-chip.sev-warning  { background: rgba(var(--c-warning-rgb),.15); color: var(--c-warning);  border-color: rgba(var(--c-warning-rgb),.3); }
+.stat-chip.sev-info     { background: rgba(var(--c-info-rgb),.15); color: var(--c-info);     border-color: rgba(var(--c-info-rgb),.3); }
+.stat-chip.sev-none     { background: rgba(var(--c-none-rgb),.15);color: var(--c-none);     border-color: rgba(var(--c-none-rgb),.3); }
 
 .search-wrap {
   flex: 1;
@@ -384,12 +398,12 @@ a { color: inherit; }
 }
 .tv-hud-exit {
   font-size: 13px;
-  background: rgba(248,81,73,.08);
+  background: rgba(var(--c-critical-rgb),.08);
   color: var(--c-critical);
 }
 .tv-hud-exit:hover {
-  background: rgba(248,81,73,.22);
-  box-shadow: 0 0 10px rgba(248,81,73,.25);
+  background: rgba(var(--c-critical-rgb),.22);
+  box-shadow: 0 0 10px rgba(var(--c-critical-rgb),.25);
   color: var(--c-critical);
 }
 
@@ -564,11 +578,11 @@ a { color: inherit; }
 }
 .alert-card > .row-comment { display: block; margin-top: .3rem; }
 
-.alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(248,81,73,.07); }
-.alert-card.sev-error    { border-left-color: var(--c-error);    background: rgba(255,123,114,.07); }
-.alert-card.sev-high     { border-left-color: var(--c-high);     background: rgba(251,146,60,.06); }
-.alert-card.sev-warning  { border-left-color: var(--c-warning);  background: rgba(210,153,34,.05); }
-.alert-card.sev-info     { border-left-color: var(--c-info);     background: rgba(88,166,255,.05); }
+.alert-card.sev-critical { border-left-color: var(--c-critical); background: rgba(var(--c-critical-rgb),.07); }
+.alert-card.sev-error    { border-left-color: var(--c-error);    background: rgba(var(--c-error-rgb),.07); }
+.alert-card.sev-high     { border-left-color: var(--c-high);     background: rgba(var(--c-high-rgb),.06); }
+.alert-card.sev-warning  { border-left-color: var(--c-warning);  background: rgba(var(--c-warning-rgb),.05); }
+.alert-card.sev-info     { border-left-color: var(--c-info);     background: rgba(var(--c-info-rgb),.05); }
 .alert-card.sev-none     { border-left-color: var(--c-none); }
 
 .card-top {
@@ -624,8 +638,27 @@ a { color: inherit; }
 }
 
 /* Marker on critical alerts (display.critical_icon). */
-.crit-icon { font-size: 12px; line-height: 1; filter: saturate(1.2); }
+/* The built-in icons are inline SVG sized in `em`, so the font-size rules
+   below drive them exactly as they drove the emoji they replace. No
+   `saturate()` any more: the icon takes the severity colour itself. */
+.crit-icon { font-size: 12px; line-height: 1; }
 [data-tv="true"] .crit-icon { font-size: 15px; }
+
+.crit-icon, .status-icon {
+  display: inline-flex;
+  align-items: center;
+  /* Only reached when the config asks for a character rather than a built-in
+     icon: give the browser its colour emoji font before it falls back to a
+     box. */
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", inherit;
+}
+
+.crit-icon .ic, .status-icon .ic {
+  width: 1em;
+  height: 1em;
+  display: block;
+  flex-shrink: 0;
+}
 
 .alert-prefix .prefix-sep { color: var(--text-dim); font-weight: 400; }
 
@@ -637,12 +670,12 @@ a { color: inherit; }
   padding: 1px 5px;
   border-radius: 3px;
 }
-.sev-badge.sev-critical { background: rgba(248,81,73,.15);   color: var(--c-critical); }
-.sev-badge.sev-error    { background: rgba(255,123,114,.15); color: var(--c-error); }
-.sev-badge.sev-high     { background: rgba(251,146,60,.15);  color: var(--c-high); }
-.sev-badge.sev-warning  { background: rgba(210,153,34,.15);  color: var(--c-warning); }
-.sev-badge.sev-info     { background: rgba(88,166,255,.15);  color: var(--c-info); }
-.sev-badge.sev-none     { background: rgba(110,118,129,.15); color: var(--c-none); }
+.sev-badge.sev-critical { background: rgba(var(--c-critical-rgb),.15);   color: var(--c-critical); }
+.sev-badge.sev-error    { background: rgba(var(--c-error-rgb),.15); color: var(--c-error); }
+.sev-badge.sev-high     { background: rgba(var(--c-high-rgb),.15);  color: var(--c-high); }
+.sev-badge.sev-warning  { background: rgba(var(--c-warning-rgb),.15);  color: var(--c-warning); }
+.sev-badge.sev-info     { background: rgba(var(--c-info-rgb),.15);  color: var(--c-info); }
+.sev-badge.sev-none     { background: rgba(var(--c-none-rgb),.15); color: var(--c-none); }
 
 
 .card-meta {
@@ -724,17 +757,22 @@ a { color: inherit; }
 /* -- TV mode: bright colors -- */
 [data-tv="true"] {
   --c-critical: #ff2d20;
+  --c-critical-rgb: 255, 45, 32;
   --c-error:    #ff6347;
+  --c-error-rgb: 255, 99, 71;
   --c-high:     #ff7500;
+  --c-high-rgb: 255, 117, 0;
   --c-warning:  #ffbf00;
+  --c-warning-rgb: 255, 191, 0;
   --c-info:     #00aaff;
+  --c-info-rgb: 0, 170, 255;
 }
 [data-tv="true"] .alert-card { border-left-width: 4px; }
-[data-tv="true"] .alert-card.sev-critical { background: rgba(255,45,32,.14); }
-[data-tv="true"] .alert-card.sev-error    { background: rgba(255,99,71,.13); }
-[data-tv="true"] .alert-card.sev-high     { background: rgba(255,117,0,.12); }
-[data-tv="true"] .alert-card.sev-warning  { background: rgba(255,191,0,.09); }
-[data-tv="true"] .alert-card.sev-info     { background: rgba(0,170,255,.09); }
+[data-tv="true"] .alert-card.sev-critical { background: rgba(var(--c-critical-rgb),.14); }
+[data-tv="true"] .alert-card.sev-error    { background: rgba(var(--c-error-rgb),.13); }
+[data-tv="true"] .alert-card.sev-high     { background: rgba(var(--c-high-rgb),.12); }
+[data-tv="true"] .alert-card.sev-warning  { background: rgba(var(--c-warning-rgb),.09); }
+[data-tv="true"] .alert-card.sev-info     { background: rgba(var(--c-info-rgb),.09); }
 [data-tv="true"] .alert-list { gap: .2rem; }
 
 /* ── TV mode: rows share one grid ────────────────────────────────────────
