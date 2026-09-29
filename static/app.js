@@ -1242,7 +1242,9 @@ function cardHtml(a) {
 function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
   const title   = alertTitle(a);
-  const summary = title.annotation === 'summary' ? '' : (a.annotations?.summary || '');
+  // A row has one line: once an annotation is the title, a second sentence next
+  // to it is noise. The slot itself stays, empty — see the subgrid note below.
+  const summary = title.annotation ? '' : (a.annotations?.summary || '');
   
   // A row only has space for 2 labels inline, the rest go behind the +N toggle.
   // Presence is filtered *before* slicing so a row never hides every label it

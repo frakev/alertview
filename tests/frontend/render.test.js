@@ -170,6 +170,11 @@ ok(H.alertTitle({ ...plain, annotations: { summary: 'SUM' } }).text === 'SUM', '
 ok(H.alertTitle(plain).text === 'DiskFull', 'no annotation keeps the name');
 const card = H.cardHtml(annotated);
 ok(card.split('DESC').length === 2 && card.includes('card-summary'), 'description not repeated, summary kept');
+TV.active = true;
+const tvRow = H.cardHtmlTV(annotated);
+ok(tvRow.includes('DESC') && !tvRow.includes('SUM'), 'TV row: an annotation as title, no summary beside it');
+ok(tvRow.includes('row-summary'), 'TV row: the summary slot stays, empty');
+TV.active = false;
 delete App.data.title_annotations;
 ok(H.alertTitle(annotated).text === 'SUM', 'summary by default');
 App.data.show_alert_name = true;
