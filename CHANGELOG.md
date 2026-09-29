@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-29
+
 ### Security
 - **An unauthenticated request no longer reaches your monitoring systems.** `/api/alerts` used to fetch upstream on every request: with caching off — the default — one anonymous HTTP call to AlertView became four to seven calls to Alertmanager, Grafana and Zabbix, and the load grew with the number of people watching. AlertView now polls on a schedule of its own and serves every browser from the result. **Measured: 50 concurrent dashboard requests → 0 upstream requests**, against 50 before, and the handler answers in 0.3 ms.
 - **A Content-Security-Policy, with `script-src 'self'` and no `unsafe-inline`** — which is what actually stops an injected `onmouseover=` from running, the shape of the escaping bug fixed in 0.10.0. The two scripts that were inline in `index.html` moved into `/theme.js` and `app.js` to make that possible. `style-src` still allows inline styles: six generated `style=` attributes remain, and inline CSS cannot execute. The custom stylesheet's host — `display.custom_css`, or a `theme` holding a URL — is added by origin to `style-src`, and to `font-src` and `img-src` for the fonts and images it loads. When a hot reload points it at another host, the page reloads itself to pick up the new policy. Also `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` — the dashboard URL, filters included, no longer travels to the runbooks it links to — and `X-Frame-Options: DENY`.
