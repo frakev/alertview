@@ -411,12 +411,29 @@ fn normalise_indices(path: &str) -> String {
     out
 }
 
-fn hint_for(path: &str) -> Option<&'static str> {
+fn hint_for(path: &str) -> Option<String> {
     let normalised = normalise_indices(path);
-    MIGRATION_HINTS
-        .iter()
-        .find(|(key, _)| *key == normalised)
-        .map(|(_, hint)| *hint)
+    if let Some((_, hint)) = MIGRATION_HINTS.iter().find(|(key, _)| *key == normalised) {
+        return Some(hint.to_string());
+    }
+    // A display option written at the top level — `play_sounds: true` next to
+    // `sources:` — is the most common misplacement, and was silently ignored
+    // for as long as there was no check.
+    (!path.contains('.') && is_display_field(path))
+        .then(|| format!("a display option: move it under `display:` (`display.{path}`)"))
+}
+
+/// Whether `DisplayConfig` has a field of that name. Asked of the struct itself
+/// rather than of a list of names that would drift from it: a key it does not
+/// know is reported to serde_ignored, and one it does know is taken — the null
+/// value may then fail to parse as that field's type, which says the same.
+fn is_display_field(key: &str) -> bool {
+    let mut probe = serde_yaml::Mapping::new();
+    probe.insert(key.into(), serde_yaml::Value::Null);
+    let mut ignored = false;
+    let _: Result<DisplayConfig, _> =
+        serde_ignored::deserialize(serde_yaml::Value::Mapping(probe), |_| ignored = true);
+    !ignored
 }
 
 impl Config {
@@ -713,6 +730,25 @@ mod tests {
         // And the message says what to write instead.
         assert!(msg.contains("cache_ttl_seconds"), "{msg}");
         assert!(msg.contains("tv_mode_default"), "{msg}");
+    }
+
+    #[test]
+    fn test_a_top_level_display_option_says_where_it_goes() {
+        let err = config_from(
+            "play_sounds: true\nshow_labels: false\nnot_an_option: 1\n\
+             sources:\n  - name: a\n    type: alertmanager\n    url: http://x\n",
+        )
+        .expect_err("a misplaced key must stop the server");
+        let msg = err.to_string();
+        assert!(
+            msg.contains(
+                "play_sounds — a display option: move it under `display:` (`display.play_sounds`)"
+            ),
+            "{msg}"
+        );
+        assert!(msg.contains("display.show_labels"), "{msg}");
+        // A key that is not a display option either gets no hint.
+        assert!(msg.contains("• not_an_option\n"), "{msg}");
     }
 
     #[test]

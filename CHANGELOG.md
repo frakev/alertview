@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **`rustls` 0.23.45** (from 0.23.40), for [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285): TLS 1.3 handshake messages were accepted across encryption level boundaries. AlertView uses it for every connection to a source. The advisory is dated 2026-09-14 and was caught by the audit added to CI in 0.13.0, on its first run.
+
+### Changed
+- **A display option written at the top level says where it goes.** `play_sounds: true` next to `sources:` — ignored in silence before 0.13.0, refused since — now reads ``play_sounds — a display option: move it under `display:` (`display.play_sounds`)``. The check asks `DisplayConfig` itself whether it knows the key, so it cannot drift from the options that exist.
+
+### Fixed
+- **The dependency audit could not report in CI.** `rustsec/audit-check` publishes a check run, which needs `checks: write`; the workflow grants `contents: read` only, and a pull request from a fork never gets more. It failed with "Resource not accessible by integration" whatever it found. CI now runs `cargo audit` itself, and the step fails on an advisory with no permission at all.
+
 ## [0.13.0] - 2026-09-29
 
 ### Security
