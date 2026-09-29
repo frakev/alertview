@@ -483,7 +483,7 @@ AlertView provides a simple REST API for programmatic access to alerts.
 
 **SourceStatus object:**
 - `name`: Source name
-- `status`: `ok` or `error`
+- `status`: `ok`, `error`, or `pending` (not answered yet since startup)
 - `alert_count`: Number of alerts from this source
 - `error`: Error message if status is `error`, otherwise null
 

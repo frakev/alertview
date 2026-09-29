@@ -111,10 +111,15 @@ alertview --config config.yaml
    ```
 
 3. **Check source status via API** — every source reports its own state in the
-   dashboard payload:
+   dashboard payload (`ok`, `error`, or `pending` until it first answers):
    ```bash
    curl -s http://localhost:8080/api/alerts | jq '.sources'
    ```
+
+4. **Read the empty list** — it says why it is empty. "No active alerts" with
+   ✅ means every source answered with nothing. "⏳ Waiting for …" names the
+   sources that have not answered since startup, and "⚠ … unreachable" the ones
+   that failed: their alerts, if any, are not shown.
 
 **Solutions:**
 
@@ -676,9 +681,11 @@ Note: AlertView currently only supports `tls_insecure` to skip TLS verification.
    python3 -c "import yaml; yaml.safe_load(open('config.yaml'))"
    ```
 
-2. **Check for typos:**
-   - Verify all field names are correct
-   - Check for missing colons, commas, etc.
+2. **Read the error** — an unknown key stops AlertView from starting, with its
+   full path (`sources[0].cache_ttl`) and, when the option lives elsewhere,
+   where to put it. A display option at the top level, such as `play_sounds`,
+   belongs under `display:`. See
+   [Unknown keys](configuration/config-file.md#unknown-keys).
 
 3. **Check with debug logging:**
    ```bash

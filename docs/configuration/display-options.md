@@ -132,9 +132,13 @@ display:
 - `show_alert_name: false` puts an annotation where the alert name normally
   sits, and does not repeat it below. `title_annotations` says which one: the
   first of the list the alert carries wins (default `["summary"]`). A single
-  name works too: `title_annotations: description`. An alert
-  carrying **none** of them keeps its name, so a row is never left blank. The name itself is not lost: it
-  moves behind the toggle described below, as an `alertname=…` chip.
+  name works too: `title_annotations: description`. An alert carrying **none**
+  of them keeps its name, so a row is never left blank. The name itself is not
+  lost: it moves behind the toggle described below, as an `alertname=…` chip.
+- `title_annotations` does nothing while `show_alert_name` is `true`: it only
+  chooses what replaces the name.
+- In TV mode a row has a single line, so once an annotation is the title the
+  summary is not shown beside it. Cards, which have the room, keep it below.
 - `show_labels: false` puts every label chip behind a small `+N` button on each
   alert instead of showing them: one click reveals them, another hides them
   again. `display.labels` stays declared, and `prefix_labels` are not affected —
@@ -569,7 +573,7 @@ display:
 
 ### How It Works
 
-1. **New Alert Detection**: AlertView detects when new alerts appear (not previously seen)
+1. **New Alert Detection**: AlertView detects when new alerts appear (not previously seen). This is tracked per source: a source answering late after startup, or coming back after an outage, does not make its whole backlog new.
 2. **Severity-Based Sounds**: Different sounds are played based on the highest severity of new alerts
 3. **Web Audio API**: Sounds are generated using the browser's Web Audio API (no external files needed)
 4. **Auto-Play**: Sounds play automatically when new alerts arrive
@@ -615,7 +619,7 @@ AlertView supports **Server-Sent Events (SSE)** for real-time push notifications
 #### How It Works
 
 1. **SSE Connection**: When the page loads, AlertView automatically connects to the `/events` endpoint
-2. **New Alert Detection**: The server detects new alerts (not previously seen in cache)
+2. **New Alert Detection**: The server compares each source's alerts with what it had from that source before; a source seen for the first time is recorded silently rather than announced
 3. **Push Notification**: New alerts are pushed to all connected clients via SSE
 4. **Desktop Notification**: If browser notifications are enabled, a desktop notification is shown
 5. **Sound Notification**: If `play_sounds` is enabled, a sound is played

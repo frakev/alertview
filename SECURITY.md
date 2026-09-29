@@ -24,8 +24,11 @@ minor versions; there are no maintenance branches.
 
 | Version | Supported |
 |---------|-----------|
-| 0.10.x  | ✅ Yes    |
-| < 0.10  | ❌ No — upgrade |
+| 0.13.x  | ✅ Yes    |
+| < 0.13  | ❌ No — upgrade |
+
+Dependencies are checked against the RustSec advisory database on every push
+and pull request (`cargo audit` in CI); an advisory fails the build.
 
 ## What AlertView Assumes About Its Environment
 
@@ -88,7 +91,8 @@ These **are** treated as vulnerabilities:
 ## What AlertView Does On Its Own
 
 - **Stores nothing.** No database, no files written, no state that survives a
-  restart. The optional cache is in memory and bounded by `cache_ttl_seconds`.
+  restart. The result of the last poll is kept in memory, and replaced by the
+  next one.
 - **Never writes to a source.** Every call is a read.
 - **Polls its sources on its own schedule.** A request to `/api/alerts` is
   served from the last poll and never reaches a source, so an unauthenticated
@@ -96,6 +100,9 @@ These **are** treated as vulnerabilities:
   systems.
 - **Sends a Content-Security-Policy** with `script-src 'self'` and no
   `unsafe-inline`, which is what stops an injected event handler from running.
+  The only outside host it allows is the custom stylesheet's, when one is
+  configured (`display.custom_css`, or a `theme` holding a URL), for that
+  stylesheet and the fonts and images it loads.
 - **Escapes alert content** before it reaches the page, in text and in
   attributes alike, and only ever hands the browser `http(s)` links —
   a `javascript:` generator URL is dropped, and values substituted into a link

@@ -67,15 +67,16 @@ This section covers everything you need to know to develop, build, test, and con
 ```
 alertview/
 ├── src/                  # Rust source code
-│   ├── main.rs           # Main application entry point
-│   ├── config.rs         # Configuration loading and parsing
-│   ├── alerts.rs         # Alert fetching and processing
-│   ├── cache.rs          # Caching implementation
-│   └── ...
-├── static/               # Static files (HTML, CSS, JS)
+│   ├── main.rs           # Server, background poller, API, CSP
+│   ├── config.rs         # Configuration loading, parsing and validation
+│   └── alerts.rs         # Alert fetching and processing
+├── static/               # Static files, embedded in the binary
 │   ├── index.html        # Main HTML page
 │   ├── app.js            # Frontend JavaScript
+│   ├── theme.js          # Resolves the theme before the first paint
+│   ├── sw.js             # Service worker (installable PWA)
 │   └── style.css         # Stylesheet
+├── tests/frontend/       # Frontend render tests (Node)
 ├── docs/                 # Documentation
 ├── 01-namespace.yaml    # Kubernetes namespace manifest
 ├── 02-configmap.yaml    # Kubernetes ConfigMap manifest

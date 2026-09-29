@@ -4,18 +4,28 @@ This guide covers testing AlertView, including running existing tests, writing n
 
 ## Test Structure
 
-AlertView uses Rust's built-in test framework. Tests are organized as follows:
+AlertView has two test suites, both run by CI on every push and pull request:
 
 ```
 alertview/
-└── src/
-    ├── main.rs           # HTTP handlers, retry logic
-    ├── config.rs         # Unit tests for config parsing and validation
-    └── alerts.rs         # Unit tests + integration tests against a stub server
+├── src/
+│   ├── main.rs           # Poller, /api/alerts, CSP — against stub sources
+│   ├── config.rs         # Config parsing, validation, unknown-key messages
+│   └── alerts.rs         # Source clients, against a stub server
+└── tests/frontend/
+    ├── extract.js        # Lifts functions out of static/app.js, unchanged
+    └── render.test.js    # Runs them: escaping, TV grid, titles, empty state…
 ```
 
-Everything lives in `#[cfg(test)] mod tests` blocks next to the code it covers.
-`cargo test` runs the lot; CI runs it on every push and pull request.
+The Rust tests live in `#[cfg(test)] mod tests` blocks next to the code they
+cover; `cargo test` runs them. The frontend tests need only Node:
+
+```bash
+node tests/frontend/render.test.js
+```
+
+They run the real functions from `static/app.js` rather than copies, so a
+change to the page is tested as the browser will run it.
 
 ## Running Tests
 
@@ -173,60 +183,6 @@ mod tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].labels["alertname"], "Test");
         assert_eq!(alerts[0].severity, Some("critical".to_string()));
-    }
-}
-```
-
-### Example: Testing Cache
-
-In `src/cache.rs`:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::thread::sleep;
-    use chrono::Duration;
-
-    #[test]
-    fn test_cache_set_and_get() {
-        let cache = Cache::new();
-        let alerts = vec![Alert::default()];
-
-        cache.set("test".to_string(), alerts.clone(), 60);
-        let result = cache.get("test");
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), alerts);
-    }
-
-    #[test]
-    fn test_cache_expiration() {
-        let cache = Cache::new();
-        let alerts = vec![Alert::default()];
-
-        cache.set("test".to_string(), alerts.clone(), 1); // 1 second TTL
-        
-        // Should exist immediately
-        assert!(cache.get("test").is_some());
-        
-        // Wait for expiration
-        sleep(Duration::seconds(2).to_std().unwrap());
-        
-        // Should be expired
-        assert!(cache.get("test").is_none());
-    }
-
-    #[test]
-    fn test_cache_invalidate() {
-        let cache = Cache::new();
-        let alerts = vec![Alert::default()];
-
-        cache.set("test".to_string(), alerts.clone(), 60);
-        assert!(cache.get("test").is_some());
-
-        cache.invalidate("test");
-        assert!(cache.get("test").is_none());
     }
 }
 ```
@@ -594,22 +550,9 @@ cargo test
 
 ### Test File Structure
 
-```
-src/
-├── config.rs          # Unit tests for config
-├── alerts.rs          # Unit tests for alerts
-├── cache.rs           # Unit tests for cache
-└── main.rs            # Can have integration tests
-
-tests/
-├── integration.rs     # Integration tests
-├── api.rs             # API endpoint tests
-├── fixtures.rs        # Test fixtures
-└── mod.rs             # Test module exports
-
-benches/
-└── benchmark.rs       # Performance benchmarks
-```
+See [Test Structure](#test-structure) at the top of this page: Rust tests sit
+next to the code in `src/`, frontend tests in `tests/frontend/`. There is no
+`tests/*.rs` integration crate and no benchmark suite.
 
 ### Test Naming Conventions
 
@@ -632,61 +575,23 @@ benches/
 
 ## Continuous Integration Testing
 
-### GitHub Actions Workflow
+### What CI runs
 
-Example `.github/workflows/test.yml`:
+`.github/workflows/ci.yml` runs three jobs. Running the same commands locally
+before pushing gives the same verdict:
 
-```yaml
-name: Test
+```bash
+# Rust
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 
-on: [push, pull_request]
+# Dependency advisories (cargo install cargo-audit, once)
+cargo audit
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      
-      - name: Run tests
-        run: cargo test --all-features
-      
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      
-      - name: Check format
-        run: cargo fmt --check
-      
-      - name: Run audit
-        run: cargo audit
-      
-      - name: Run coverage
-        run: |
-          cargo install cargo-tarpaulin
-          cargo tarpaulin --out Xml
-      
-      - name: Upload coverage
-        uses: actions/upload-artifact@v3
-        with:
-          name: coverage-report
-          path: cobertura.xml
-```
-
-### Coverage Reporting
-
-To report coverage to codecov.io:
-
-```yaml
-- name: Upload coverage to Codecov
-  uses: codecov/codecov-action@v3
-  with:
-    token: ${{ secrets.CODECOV_TOKEN }}
-    file: ./cobertura.xml
+# Frontend
+node --check static/app.js && node --check static/sw.js && node --check static/theme.js
+node tests/frontend/render.test.js
 ```
 
 ## Debugging Tests

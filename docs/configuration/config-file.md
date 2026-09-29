@@ -392,6 +392,13 @@ This also means a slow or dead source never delays a browser: the dashboard
 answers from the last successful poll and marks the source as failed next to its
 name.
 
+Each source is published as soon as it answers, so a slow one — or one working
+through its retries — does not hold back the others. Just after startup, a
+source that has not answered yet is listed as `pending`, and an empty list says
+what it is waiting for rather than showing "No active alerts". The very first
+request waits up to 10 seconds for the first poll, then answers with what has
+arrived.
+
 ## Validation
 
 AlertView validates the file on startup and on every reload, and refuses to
@@ -423,10 +430,15 @@ The message names the key by its full path and, where the option genuinely
 moved, says what to write instead:
 
 ```
-config.yaml: 2 key(s) AlertView does not understand:
+config.yaml: 3 key(s) AlertView does not understand:
+  • play_sounds — a display option: move it under `display:` (`display.play_sounds`)
   • sources[0].cache_ttl — caching is global: use the top-level `cache_ttl_seconds`
   • display.compact_mode — never existed; TV mode (`display.tv_mode_default`) gives the dense layout
 ```
+
+A display option written at the top level, next to `sources:`, is the most
+common case: every option of the `display` section is recognised there and the
+message says to move it.
 
 The options that were documented but never implemented are
 `display.filters`, `display.sort`, `display.group_sort`, `display.compact_mode`,

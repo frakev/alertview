@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A TV row shows one sentence, not two.** With `show_alert_name: false`, the annotation used as the title — the description, with `title_annotations: description` — was followed on the same line by the summary in grey. Once an annotation is the title, the row no longer adds the summary beside it; its column stays, empty, so rows still line up. Cards are unchanged: they have the room, and keep the summary below the title.
+
+### Fixed
+- **Documentation caught up with 0.13**: the polling section says each source is published as it answers and what `pending` means; the source `status` lists `pending` in the README; the unknown-key section shows the top-level display option hint; troubleshooting explains the ⏳ and ⚠ empty states and points configuration errors at the unknown-key message; `display-options.md` says `title_annotations` only applies with `show_alert_name: false`, and that new alerts are tracked per source. `SECURITY.md` listed 0.10.x as the supported version, described "an optional cache" that no longer exists, and did not say which outside host the CSP allows.
+- `docs/development/testing.md` described a `src/cache.rs`, a `tests/*.rs` integration crate, benchmarks and a Codecov upload, none of which exist, and did not mention the frontend tests. It now lists the two real suites and the exact commands CI runs. The project tree in `docs/development/README.md` lost its `cache.rs` too.
+
 ## [0.13.1] - 2026-09-29
 
 ### Security
