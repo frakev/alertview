@@ -8,7 +8,7 @@
 #  Every key here is checked: an option AlertView does not recognise stops it
 #  from starting, with a message naming the key. It is never ignored silently.
 #
-#  Full documentation: docs/configuration/
+#  Full documentation: docs/configuration.md and docs/display.md
 #  This file is watched: changes apply without restarting. Changing `port`,
 #  `tls_insecure` or `log_format` does need a restart — they are read once at
 #  startup.
@@ -22,8 +22,10 @@
 port: 8080             # HTTP port (env: ALERTVIEW_PORT)
 refresh_interval: 30   # seconds between two auto-refreshes in the browser
 
-# Ignore TLS certificate errors on every source (self-signed certificates).
-# Insecure: prefer adding your CA to the trust store.
+# Ignore TLS certificate errors on every source. AlertView trusts the public
+# certificate authorities bundled in it, not the system's store: a source with a
+# self-signed certificate or a private CA needs this. It disables the check for
+# every source.
 tls_insecure: false
 
 # How often AlertView polls its sources, in seconds. 0 means "use
@@ -51,7 +53,7 @@ config_poll_interval: 10   # seconds, only used with "polling"
 #  `url` is the plain service URL: the API path is appended for you
 #  (/api/v2 for Alertmanager, /api/alertmanager/grafana/api/v2 for Grafana,
 #  /api_jsonrpc.php for Zabbix). A URL already pointing at the API is accepted.
-#  Names must be unique: they key the cache and the source filter.
+#  Names must be unique: they identify the source in the dashboard and its filter.
 # ───────────────────────────────────────────────────────────────────────────
 
 sources:

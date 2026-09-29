@@ -467,7 +467,7 @@ impl Config {
             }
             message.push_str(
                 "\n\nEvery option is listed in config.example and in \
-                 docs/configuration/config-file.md. Remove the key or correct it \
+                 docs/configuration.md. Remove the key or correct it \
                  — it would have been ignored, which is worse than this error.",
             );
             anyhow::bail!(message);

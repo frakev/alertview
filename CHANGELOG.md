@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The documentation is eight pages instead of twenty-three.** `docs/` was 9,000 lines across six folders, much of it generic advice, duplicated between pages or describing things AlertView does not do. It is now: [Getting started](docs/getting-started.md), [Configuration](docs/configuration.md), [Display](docs/display.md), [Deployment](docs/deployment.md), [Troubleshooting](docs/troubleshooting.md), [API](docs/api.md) and [Development](docs/development.md), about 850 lines in all. The README went from 529 lines to a short presentation pointing to them.
+- `alertview --help` lists `--config <FILE>`, which worked but was documented nowhere in the help.
+
+### Fixed
+- **Documentation errors removed with the rewrite**: `bearer_token: "${GRAFANA_TOKEN}"` recommended as a best practice by the environment variables page, which said three paragraphs earlier that it is sent literally; `tls_insecure: true` as a per-source option in an example, which AlertView refuses; the advice to add a private CA to the system's certificate store, which AlertView does not read (it trusts the bundled public authorities only); `500` responses from `/api/alerts`, which never happen, while the `429` of `/events` and its `config_error` event were missing; serving AlertView under a sub-path, which cannot work since the page loads its files from the root; the statement that ConfigMap edits need a pod restart; an HPA and a persistent volume for a stateless single pod; multi-architecture images, which are `linux/amd64` only; and tests, benchmarks and a Codecov upload that do not exist.
+- **The documentation checks cover more**: internal links are checked down to the heading they point to, and every YAML block marked `alertview-config` must be a configuration AlertView accepts — the examples page claimed this was already the case.
+
 ## [0.13.2] - 2026-09-29
 
 ### Changed

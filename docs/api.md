@@ -1,273 +1,102 @@
-# API Documentation
+# API
 
-AlertView provides a RESTful API for fetching alerts and configuration.
+Three endpoints, all `GET`, without authentication (put a proxy in front, see
+[Deployment](deployment.md#reverse-proxy)).
 
-## Base URL
+| Endpoint | Returns |
+|---|---|
+| `/api/alerts` | every alert, the state of each source, and the display settings |
+| `/events` | a stream of server-sent events |
+| `/health` | `OK` when the server runs |
 
+The rest (`/`, `/app.js`, `/style.css`, `/theme.js`, `/sw.js`,
+`/manifest.webmanifest`, `/icons/…`) is the web page itself.
+
+## `GET /api/alerts`
+
+Served from the last poll of the sources: calling it never makes AlertView
+query a source. It always answers `200`; a failing source is reported in
+`sources`.
+
+```bash
+curl -s http://localhost:8080/api/alerts | jq '.sources'
 ```
-http://localhost:8080
-```
-
-Or whatever port you've configured AlertView to use.
-
-## Endpoints
-
-### GET /api/alerts
-
-Fetch all alerts from all configured sources.
-
-**Request:**
-
-```
-GET /api/alerts HTTP/1.1
-Host: localhost:8080
-Accept: application/json
-```
-
-**Response:**
 
 ```json
 {
   "alerts": [
     {
-      "fingerprint": "alertmanager:abc123",
-      "labels": {
-        "alertname": "HighCPUUsage",
-        "severity": "critical",
-        "instance": "server-01",
-        "service": "web"
-      },
-      "annotations": {
-        "summary": "High CPU usage on server-01",
-        "description": "CPU usage has been above 90% for 5 minutes"
-      },
-      "starts_at": "2024-01-15T10:30:00Z",
-      "ends_at": null,
+      "fingerprint": "Alertmanager:abc123",
+      "source": "Alertmanager",
+      "source_type": "alertmanager",
       "status": "firing",
       "severity": "critical",
       "name": "HighCPUUsage",
-      "source": "alertmanager",
-      "source_type": "alertmanager",
+      "labels": { "alertname": "HighCPUUsage", "instance": "server-01" },
+      "annotations": { "summary": "High CPU usage on server-01" },
+      "starts_at": "2026-09-29T10:30:00Z",
+      "ends_at": null,
       "link_url": "http://prometheus.example.com/graph?g0.expr=...",
-      "alert_link_url": "https://wiki.example.com/runbook/HighCPUUsage"
+      "alert_link_url": null
     }
   ],
   "sources": [
-    {
-      "name": "alertmanager",
-      "status": "ok",
-      "alert_count": 1,
-      "error": null
-    }
+    { "name": "Alertmanager", "status": "ok", "alert_count": 1, "error": null }
   ],
-  "refresh_interval": 30,
-  "display_labels": ["namespace", "job", "instance"],
-  "timezone": "local",
-  "theme": "auto",
-  "custom_css": null,
-  "play_sounds": false,
   "groups": [],
-  "group_by": [],
-  "severity_order": ["critical", "error", "high", "warning", "info", "none"],
-  "prefix_labels": ["hostname"],
-  "prefix_separator": " / ",
-  "show_alert_name": true,
-  "title_annotations": ["summary"],
-  "show_labels": true,
-  "critical_icon": "flame",
-  "status_icons": {"silenced": "bell-off", "pending": "hourglass"},
-  "tv_mode_default": false,
-  "link_new_tab": true
+  "refresh_interval": 30
 }
 ```
 
-**Response Fields:**
+**Alert**
 
-- `alerts`: Array of alert objects
-- `sources`: Array of source status objects
-- `refresh_interval`: Seconds between auto-refreshes
-- `display_labels`: Labels to display on alert cards
-- `timezone`: Current timezone setting
-- `theme`: Current theme (dark/light/custom URL)
-- `play_sounds`: Whether sound notifications are enabled
-- `groups`: Array of alert groups (if grouping is enabled)
-- `group_by`: Labels used for grouping
+| Field | Meaning |
+|---|---|
+| `fingerprint` | unique identifier |
+| `source`, `source_type` | source name, and `alertmanager`, `grafana` or `zabbix` |
+| `status` | `firing`, `silenced` or `pending` |
+| `severity` | normalised severity (`critical`, `error`, `high`, `warning`, `info`, `none`, or a custom level) |
+| `name` | the alert name (`alertname`) |
+| `labels`, `annotations` | as received from the source |
+| `starts_at`, `ends_at` | RFC 3339 timestamps; `ends_at` is `null` while active |
+| `link_url` | the ↗ link, or `null` |
+| `alert_link_url` | the link from `alert_link_template`, or `null` |
 
-The remaining fields mirror the `display` configuration section and exist so the
-frontend renders what the config asks for: `severity_order`, `prefix_labels`,
-`prefix_separator`, `show_alert_name`, `title_annotations`, `show_labels`, `critical_icon`,
-`tv_mode_default`, `link_new_tab`, `status_icons` and `custom_css`. See
-[Display Options](configuration/display-options.md).
+Links are always `http` or `https`.
 
-**Alert Object Fields:**
+**Source**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `fingerprint` | string | Unique alert identifier |
-| `labels` | object | Alert labels (key-value pairs) |
-| `annotations` | object | Alert annotations (key-value pairs) |
-| `starts_at` | string | When the alert started (ISO 8601) |
-| `ends_at` | string | When the alert ended (ISO 8601), null if still firing |
-| `status` | string | Alert status: firing, silenced, pending |
-| `severity` | string | Alert severity: critical, error, high, warning, info, none (or any custom level, see `display.severity_order`) |
-| `name` | string | Alert name (from alertname label) |
-| `source` | string | Source name from configuration |
-| `source_type` | string | Source type: alertmanager, grafana, zabbix |
-| `link_url` | string | URL behind the ↗ button ("open in the source"), null if none applies |
-| `alert_link_url` | string | URL behind the severity dot, from `alert_link_template`, null if the config declares none or the template could not be resolved |
+| Field | Meaning |
+|---|---|
+| `name` | source name |
+| `status` | `ok`, `error`, or `pending` (not answered yet since startup) |
+| `alert_count` | number of alerts |
+| `error` | the error message when `status` is `error`; passwords in URLs are masked |
 
-Both link fields are always `http`/`https` — other schemes are dropped
-server-side.
+**Group** (only with `display.group_by`): `key`, `labels` (the `group_by`
+values), `count` and `severity_counts`. The alerts themselves are in `alerts`.
 
-**Alert Group Object Fields:**
+The other fields of the response (`display_labels`, `timezone`, `theme`,
+`severity_order`, `title_annotations`…) repeat the `display` settings for the
+page; see [Display](display.md).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `key` | string | Opaque group identifier |
-| `labels` | object | The `group_by` labels and their values; a label the alerts do not carry is reported as `<missing>` |
-| `count` | integer | Number of alerts in the group |
-| `severity_counts` | object | Alert count per severity |
+## `GET /events`
 
-A group does **not** carry its alerts: they are already in the top-level
-`alerts` array, and the members are the alerts whose labels match `labels`.
-Groups are ordered by their most severe alert.
+A [server-sent events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
+stream:
 
-**Source Status Object Fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Source name |
-| `status` | string | Source status: ok, error, or pending (not answered yet since startup) |
-| `alert_count` | integer | Number of alerts from this source |
-| `error` | string | Error message if status is error, null otherwise. Credentials embedded in a source URL (`http://user:pass@host`) are replaced by `***@` before the message leaves the server |
-
-**Status Codes:**
-
-- `200 OK`: Success
-- `500 Internal Server Error`: Error fetching alerts
-
-### GET /health
-
-Health check endpoint.
-
-**Request:**
-
-```
-GET /health HTTP/1.1
-Host: localhost:8080
-```
-
-**Response:**
-
-```
-OK
-```
-
-**Status Codes:**
-
-- `200 OK`: Healthy
-
-### GET /events
-
-Server-Sent Events (SSE) endpoint for real-time alert notifications.
-
-**Request:**
-
-```
-GET /events HTTP/1.1
-Host: localhost:8080
-Accept: text/event-stream
-```
-
-**Response:**
-
-Stream of SSE events with the following format:
-
-```
-event: new_alert
-data: {"fingerprint":"alertmanager:abc123","labels":{"alertname":"HighCPUUsage","severity":"critical"},"annotations":{"summary":"High CPU usage"},"starts_at":"2024-01-15T10:30:00Z","status":"firing","severity":"critical","name":"HighCPUUsage","source":"alertmanager","source_type":"alertmanager","link_url":"http://prometheus.example.com/..."}
-
-```
-
-**Event Types:**
-
-- `new_alert`: A new alert has been detected (not previously seen)
-- `config_reloaded`: Configuration file has been reloaded (sent when config changes are detected)
-
-**Notes:**
-
-- The connection remains open and sends events as new alerts arrive
-- Automatic reconnection with exponential backoff is handled client-side
-- Each event contains a complete alert object in JSON format
-- Only alerts that are **new** (not previously seen in cache) trigger events
-
-**Status Codes:**
-
-- `200 OK`: Connection established, event stream begins
-
-## Error Handling
-
-AlertView returns appropriate HTTP status codes:
-
-| Status Code | Description |
-|-------------|-------------|
-| 200 | Success |
-| 500 | Internal Server Error |
-
-## CORS
-
-CORS is not currently implemented. All API endpoints are accessible without CORS headers.
-
-## API Versioning
-
-The current API is unversioned. All endpoints are at the root level (e.g., `/api/alerts`).
-
-## Examples
-
-### Fetch All Alerts
+| Event | Data |
+|---|---|
+| `new_alert` | an alert (same object as above) that was not there before |
+| `config_reloaded` | the configuration file was reloaded |
+| `config_error` | a configuration edit was refused; the data is the reason |
 
 ```bash
-curl http://localhost:8080/api/alerts
-```
-
-### Health Check
-
-```bash
-curl http://localhost:8080/health
-```
-
-### Stream Real-time Events
-
-```bash
-# Using curl (will hang and print events as they arrive)
 curl -N http://localhost:8080/events
-
-# Using curl with timeout
-curl -N --max-time 10 http://localhost:8080/events
 ```
 
-### JavaScript Example
+At most 100 streams are open at once; beyond that, the endpoint answers `429`.
 
-```javascript
-// Connect to SSE endpoint
-const eventSource = new EventSource('http://localhost:8080/events');
+## `GET /health`
 
-eventSource.onopen = () => {
-  console.log('Connection to server opened');
-};
-
-eventSource.onerror = () => {
-  console.log('EventSource failed.');
-};
-
-eventSource.addEventListener('new_alert', (event) => {
-  const alert = JSON.parse(event.data);
-  console.log('New alert:', alert);
-});
-```
-
-## Additional Resources
-
-- [Configuration Reference](configuration/config-file.md)
-- [Examples](examples/README.md)
-- [Troubleshooting](troubleshooting.md)
+Answers `200 OK` as soon as the server runs, whatever the state of the sources.

@@ -41,8 +41,9 @@ Arguments:
   CONFIG_FILE    Path to the configuration file (default: config.yaml)
 
 Options:
-  -h, --help     Show this help message and exit
-  -V, --version  Print the version and exit
+      --config <FILE>  Same as CONFIG_FILE
+  -h, --help           Show this help message and exit
+  -V, --version        Print the version and exit
 
 Environment Variables:
   ALERTVIEW_CONFIG               Path to the configuration file
@@ -1572,23 +1573,93 @@ mod docs {
             for (offset, _) in text.match_indices("](") {
                 let rest = &text[offset + 2..];
                 let Some(end) = rest.find(')') else { continue };
-                let target = rest[..end].split('#').next().unwrap_or("");
-                if target.is_empty() || target.contains("://") || target.starts_with('#') {
+                let link = &rest[..end];
+                let (target, anchor) = link.split_once('#').unwrap_or((link, ""));
+                if link.contains("://") {
                     continue;
                 }
-                if !(target.ends_with(".md") || target.ends_with(".example")) {
-                    continue;
-                }
-                let resolved = if let Some(stripped) = target.strip_prefix('/') {
-                    root.join(stripped)
+                let resolved = if target.is_empty() {
+                    path.clone()
+                } else if target.ends_with(".md") || target.ends_with(".example") {
+                    match target.strip_prefix('/') {
+                        Some(stripped) => root.join(stripped),
+                        None => dir.join(target),
+                    }
                 } else {
-                    dir.join(target)
+                    continue;
                 };
                 if !resolved.exists() {
-                    dead.push(format!("{} -> {}", path.display(), target));
+                    dead.push(format!("{} -> {}", path.display(), link));
+                } else if !anchor.is_empty()
+                    && resolved.extension().is_some_and(|e| e == "md")
+                    && !heading_anchors(&read(&resolved)).contains(&anchor.to_string())
+                {
+                    dead.push(format!("{} -> {} (no such heading)", path.display(), link));
                 }
             }
         }
         assert!(dead.is_empty(), "dead links:\n  {}", dead.join("\n  "));
+    }
+
+    /// The anchors GitHub generates for a page's headings: lower-cased, spaces
+    /// to dashes, punctuation other than `-` and `_` dropped. Headings inside
+    /// code blocks are skipped — a `# comment` in a shell block is not one.
+    fn heading_anchors(text: &str) -> Vec<String> {
+        let mut anchors = Vec::new();
+        let mut in_code = false;
+        for line in text.lines() {
+            if line.trim_start().starts_with("```") {
+                in_code = !in_code;
+                continue;
+            }
+            if in_code || !line.starts_with('#') {
+                continue;
+            }
+            let title = line.trim_start_matches('#').trim();
+            let slug: String = title
+                .to_lowercase()
+                .chars()
+                .filter_map(|c| match c {
+                    ' ' => Some('-'),
+                    c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                    _ => None,
+                })
+                .collect();
+            anchors.push(slug);
+        }
+        anchors
+    }
+
+    /// Every YAML block marked `alertview-config` in the docs is a whole
+    /// configuration file, and must be one AlertView accepts. The old docs
+    /// claimed their examples were checked; they were not, and showed keys
+    /// that no longer existed.
+    #[test]
+    fn every_config_example_in_the_docs_loads() {
+        let mut checked = 0;
+        let mut broken = Vec::new();
+        for path in markdown_files() {
+            let text = read(&path);
+            let mut lines = text.lines();
+            while let Some(line) = lines.next() {
+                if line.trim() != "```yaml alertview-config" {
+                    continue;
+                }
+                let block: Vec<&str> = lines.by_ref().take_while(|l| l.trim() != "```").collect();
+                checked += 1;
+                if let Err(e) = crate::config::Config::from_yaml("doc", &block.join("\n")) {
+                    broken.push(format!("{}: {e:#}", path.display()));
+                }
+            }
+        }
+        assert!(
+            checked > 0,
+            "no alertview-config block found — was the marker renamed?"
+        );
+        assert!(
+            broken.is_empty(),
+            "configs in the docs that do not load:\n  {}",
+            broken.join("\n  ")
+        );
     }
 }

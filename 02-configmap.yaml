@@ -5,7 +5,7 @@
 #   kubectl create secret generic alertview-config \
 #     --from-file=config.yaml=./config.yaml -n alertview
 #
-# then point the volume at it — see docs/deployment/kubernetes.md#secrets-management
+# then point the volume at it — see docs/deployment.md#credentials
 apiVersion: v1
 kind: ConfigMap
 metadata:

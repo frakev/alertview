@@ -70,12 +70,12 @@ These **are** treated as vulnerabilities:
 - Prefer a bearer token over basic auth, with **read-only** permissions.
 - Never commit `config.yaml`: it holds credentials, and it is gitignored for
   that reason. On Kubernetes, put it in a Secret rather than a ConfigMap —
-  see [the deployment guide](docs/deployment/kubernetes.md#secrets-management).
+  see [the deployment guide](docs/deployment.md#credentials).
 
 ### Deployment
 
 - **Put a reverse proxy in front** and authenticate there (see
-  [Reverse proxy](docs/deployment/reverse-proxy.md)). This is the one thing
+  [Reverse proxy](docs/deployment.md#reverse-proxy)). This is the one thing
   that matters most.
 - Deploy on a private network; do not publish the port directly.
 - Rate limit at the proxy, where it belongs.
