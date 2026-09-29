@@ -440,8 +440,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/your-org/alertview/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/your-org/alertview/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/your-org/alertview/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/your-org/alertview/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/your-org/alertview/releases/tag/v0.0.1
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/frakev/alertview/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/frakev/alertview/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/frakev/alertview/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/frakev/alertview/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/frakev/alertview/compare/v0.10.3...v0.11.0
+[0.10.3]: https://github.com/frakev/alertview/compare/v0.10.2...v0.10.3
+[0.10.2]: https://github.com/frakev/alertview/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/frakev/alertview/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/frakev/alertview/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/frakev/alertview/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/frakev/alertview/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/frakev/alertview/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/frakev/alertview/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/frakev/alertview/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/frakev/alertview/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/frakev/alertview/compare/v0.5.7...v0.6.0
+[0.5.7]: https://github.com/frakev/alertview/compare/v0.5.6...v0.5.7
+[0.5.6]: https://github.com/frakev/alertview/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/frakev/alertview/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/frakev/alertview/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/frakev/alertview/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/frakev/alertview/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/frakev/alertview/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/frakev/alertview/compare/v0.4.8...v0.5.0
+[0.4.6]: https://github.com/frakev/alertview/compare/v0.4.5...v0.4.6
