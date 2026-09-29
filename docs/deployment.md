@@ -10,12 +10,12 @@ AlertView is a single binary with no database. It needs a configuration file
 ## Docker
 
 Images are published for every release on `ghcr.io/frakev/alertview`, tagged
-with the version (`0.13.2`) and `latest`, for `linux/amd64`.
+with the version (`0.13.3`) and `latest`, for `linux/amd64`.
 
 ```bash
 docker run -d -p 8080:8080 \
   -v $(pwd)/conf:/config:ro \
-  ghcr.io/frakev/alertview:0.13.2
+  ghcr.io/frakev/alertview:0.13.3
 ```
 
 The image reads `/config/config.yaml` and runs as an unprivileged user (65532).
@@ -28,7 +28,7 @@ With Docker Compose:
 ```yaml
 services:
   alertview:
-    image: ghcr.io/frakev/alertview:0.13.2
+    image: ghcr.io/frakev/alertview:0.13.3
     ports: ["8080:8080"]
     volumes: ["./conf:/config:ro"]
     restart: unless-stopped

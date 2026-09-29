@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-09-29
+
 ### Changed
 - **The documentation is eight pages instead of twenty-three.** `docs/` was 9,000 lines across six folders, much of it generic advice, duplicated between pages or describing things AlertView does not do. It is now: [Getting started](docs/getting-started.md), [Configuration](docs/configuration.md), [Display](docs/display.md), [Deployment](docs/deployment.md), [Troubleshooting](docs/troubleshooting.md), [API](docs/api.md) and [Development](docs/development.md), about 850 lines in all. The README went from 529 lines to a short presentation pointing to them.
 - `alertview --help` lists `--config <FILE>`, which worked but was documented nowhere in the help.
@@ -457,7 +459,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.3...HEAD
+[0.13.3]: https://github.com/frakev/alertview/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/frakev/alertview/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/frakev/alertview/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/frakev/alertview/compare/v0.12.0...v0.13.0
