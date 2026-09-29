@@ -40,6 +40,10 @@ Consequently, the following are **not** treated as vulnerabilities:
 - The absence of rate limiting, CSRF tokens or session handling.
 - Anything that requires write access to the configuration file, which is
   trusted input: it holds the source credentials in the first place.
+- Exhausting the live-update stream. `/events` is capped at 100 concurrent
+  connections **in total**, not per client, so one client can take them all.
+  The dashboard degrades to polling rather than breaking, and per-client limits
+  belong at the proxy — where the client's identity is actually known.
 
 These **are** treated as vulnerabilities:
 
@@ -86,6 +90,12 @@ These **are** treated as vulnerabilities:
 - **Stores nothing.** No database, no files written, no state that survives a
   restart. The optional cache is in memory and bounded by `cache_ttl_seconds`.
 - **Never writes to a source.** Every call is a read.
+- **Polls its sources on its own schedule.** A request to `/api/alerts` is
+  served from the last poll and never reaches a source, so an unauthenticated
+  caller cannot amplify one cheap request into many against your monitoring
+  systems.
+- **Sends a Content-Security-Policy** with `script-src 'self'` and no
+  `unsafe-inline`, which is what stops an injected event handler from running.
 - **Escapes alert content** before it reaches the page, in text and in
   attributes alike, and only ever hands the browser `http(s)` links —
   a `javascript:` generator URL is dropped, and values substituted into a link

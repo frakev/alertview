@@ -355,11 +355,11 @@ kubectl get all -n alertview
 `.github/workflows/ci.yml` runs clippy (`-D warnings`), the test suite and a syntax check of the frontend on every push to `main` and on every pull request. `.github/workflows/release.yml` builds the Linux binary and creates the GitHub release, also on tags.
 
 ```
-push to main  →  ghcr.io/frakev/alertview:main
 push v1.2.3   →  ghcr.io/frakev/alertview:1.2.3 + :latest
 ```
 
-The workflow targets a `self-hosted` runner labeled `k8s-home`. Change `runs-on` in the workflow file if your runner has a different label.
+No `:main` or per-commit tag is produced: `latest` always points at the most
+recent release. All three workflows run on GitHub-hosted `ubuntu-latest`.
 
 ## Install as an App (PWA)
 
@@ -417,7 +417,7 @@ AlertView provides a simple REST API for programmatic access to alerts.
 | `GET` | `/style.css` | Dashboard stylesheet |
 | `GET` | `/app.js` | Dashboard JavaScript |
 
-> **Note:** All endpoints except `/health` support gzip compression automatically.
+> **Note:** Responses are gzip-compressed automatically, `/health` included. Server-sent events on `/events` are exempt, as compressing a stream would hold events back.
 
 ### `/api/alerts` Response Format
 

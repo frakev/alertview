@@ -13,10 +13,26 @@ spec:
       labels:
         app: alertview
     spec:
+      # The image ships as 65532 and writes nothing: its configuration is a
+      # read-only mount and it keeps no state.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: alertview
-          image: ghcr.io/frakev/alertview:latest
+          # Pin the version rather than track :latest. With :latest and
+          # IfNotPresent a restart silently keeps whatever the node already had,
+          # so a rollout never actually rolled anything out.
+          image: ghcr.io/frakev/alertview:0.12.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           command: ["alertview"]
           args: ["/config/config.yaml"]
           ports:

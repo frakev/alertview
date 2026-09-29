@@ -676,7 +676,7 @@ spec:
       containers:
       - name: alertview
         env:
-        - name: ALERTVIEW_CONFIG_PATH
+        - name: ALERTVIEW_CONFIG
           value: /etc/alertview/config-staging.yaml
         volumeMounts:
         - name: config

@@ -81,7 +81,7 @@ Open your browser and navigate to: `http://localhost:8080`
 - [Configure additional sources](../configuration/source-types.md)
 - [Customize the display](../configuration/display-options.md)
 - [Deploy to production](../deployment/README.md)
-- [Explore advanced features](../configuration/advanced.md)
+- [Read the configuration reference](../configuration/config-file.md)
 
 ## Troubleshooting
 

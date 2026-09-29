@@ -110,9 +110,10 @@ alertview --config config.yaml
    RUST_LOG=debug alertview --config config.yaml
    ```
 
-3. **Check source status via API:**
+3. **Check source status via API** — every source reports its own state in the
+   dashboard payload:
    ```bash
-   curl http://localhost:8080/api/sources
+   curl -s http://localhost:8080/api/alerts | jq '.sources'
    ```
 
 **Solutions:**
@@ -596,10 +597,9 @@ Note: AlertView currently only supports `tls_insecure` to skip TLS verification.
 
 **Diagnosis:**
 
-1. **Check refresh interval:**
+1. **Check the refresh interval** — it is a top-level key, not a `display:` one:
    ```yaml
-   display:
-     refresh_interval: 30  # Should be > 0
+   refresh_interval: 30  # seconds; 0 is rejected at startup
    ```
 
 2. **Check browser console:**
@@ -913,17 +913,17 @@ curl -H "Accept: application/json" http://localhost:8080/health
 Test the API with curl:
 
 ```bash
-# Get all alerts
-curl http://localhost:8080/api/alerts
+# Everything the dashboard sees, in one payload
+curl -s http://localhost:8080/api/alerts | jq
 
-# Get alerts from specific source
-curl http://localhost:8080/api/alerts/alertmanager
+# Per-source state: ok or error, with the reason
+curl -s http://localhost:8080/api/alerts | jq '.sources'
 
-# Get source information
-curl http://localhost:8080/api/sources
+# One source only (filtering is done client-side; the API returns them all)
+curl -s http://localhost:8080/api/alerts | jq '[.alerts[] | select(.source == "Alertmanager")]'
 
-# Get configuration
-curl http://localhost:8080/api/config
+# Is the server up at all?
+curl http://localhost:8080/health
 ```
 
 ### Browser Developer Tools
@@ -1024,4 +1024,3 @@ When asking for help, collect the following information:
 - [Examples](examples/README.md)
 - [API Documentation](api.md)
 - [Deployment Guide](deployment/README.md)
-- [FAQ](faq.md)

@@ -4,23 +4,40 @@ AlertView supports configuration through environment variables. This allows you 
 
 ## Configuration Priority
 
-Environment variables take precedence over configuration file settings. The priority order is:
+**The configuration file wins.** These variables are *defaults* for keys the
+file leaves out, not overrides:
 
-1. **Environment Variable** (highest priority)
-2. **Configuration File**
-3. **Default Value** (lowest priority)
+1. **Configuration File** (highest priority)
+2. **Environment Variable**
+3. **Built-in Default** (lowest priority)
+
+So setting `ALERTVIEW_PORT=9090` has no effect if `port:` is written in the
+file. Remove the key to let the variable through.
+
+> There is no `${VARIABLE}` interpolation inside the YAML. A token written as
+> `bearer_token: "${GRAFANA_TOKEN}"` is sent literally, as those nine
+> characters. Source credentials have no environment fallback at all — put the
+> whole file in a Kubernetes Secret instead, see
+> [Secrets Management](../deployment/kubernetes.md#secrets-management).
 
 ## Available Environment Variables
 
-### Server Configuration
+This is the complete list. A test asserts that it matches the variables the
+code actually reads, in both directions — nothing here is invented, and nothing
+real is missing.
 
 | Variable | Default | Description | Config File Equivalent |
 |----------|---------|-------------|------------------------|
+| `ALERTVIEW_CONFIG` | `config.yaml` | Path to the configuration file | — (also `--config`) |
 | `ALERTVIEW_PORT` | 8080 | Port to listen on | `port` |
-| `ALERTVIEW_REFRESH_INTERVAL` | 30 | Seconds between auto-refreshes | `refresh_interval` |
-| `ALERTVIEW_TLS_INSECURE` | false | Skip TLS certificate verification | `tls_insecure` |
-| `ALERTVIEW_CACHE_TTL` | 0 | Cache TTL in seconds (0 = disabled) | `cache_ttl_seconds` |
+| `ALERTVIEW_REFRESH_INTERVAL` | 30 | Seconds between browser refreshes | `refresh_interval` |
+| `ALERTVIEW_CACHE_TTL` | 0 | Seconds between source polls; 0 means use `refresh_interval` | `cache_ttl_seconds` |
 | `ALERTVIEW_LOG_FORMAT` | text | Log format: `text` or `json` | `log_format` |
+| `ALERTVIEW_CONFIG_WATCH_METHOD` | polling | How the config file is watched: `polling` or `inotify` | `config_watch_method` |
+| `ALERTVIEW_CONFIG_POLL_INTERVAL` | 10 | Seconds between checks when polling | `config_poll_interval` |
+
+`RUST_LOG` sets the log level (`error`, `warn`, `info`, `debug`, `trace`) and is
+read by the logging layer rather than by the configuration.
 
 ### Example: Server Configuration
 
@@ -29,12 +46,12 @@ Environment variables take precedence over configuration file settings. The prio
 export ALERTVIEW_PORT=9090
 export ALERTVIEW_REFRESH_INTERVAL=60
 
-# Enable JSON logs and caching
+# Enable JSON logs, and poll the sources once a minute
 export ALERTVIEW_LOG_FORMAT=json
 export ALERTVIEW_CACHE_TTL=60
 
-# Skip TLS verification (for development)
-export ALERTVIEW_TLS_INSECURE=true
+# React to config edits immediately rather than every 10 seconds
+export ALERTVIEW_CONFIG_WATCH_METHOD=inotify
 
 cargo run -- config.yaml
 ```

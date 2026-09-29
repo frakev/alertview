@@ -4,15 +4,14 @@ This section covers everything you need to know to develop, build, test, and con
 
 ## Getting Started
 
-- **[Structure](structure.md)** - Project structure and organization
 - **[Building](building.md)** - How to build AlertView from source
 - **[Testing](testing.md)** - Running tests and writing new ones
 - **[Contributing](contributing.md)** - How to contribute to the project
 
 ## Reference
 
-- **[API Documentation](../../api.md)** - REST API reference
-- **[Configuration](../../configuration/config-file.md)** - Configuration options
+- **[API Documentation](../api.md)** - REST API reference
+- **[Configuration](../configuration/config-file.md)** - Configuration options
 
 ## Quick Start for Developers
 

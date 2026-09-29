@@ -91,7 +91,8 @@ display:
   prefix_separator: " / "
 
   # Alert body
-  show_alert_name: true      # false = show the summary annotation instead
+  show_alert_name: true      # false = show an annotation instead (see below)
+  title_annotations: ["summary"]  # annotations tried in order for that title
   show_labels: true          # false = hide the label chips
   critical_icon: "flame"      # replaces the dot on critical alerts, "" to disable
   status_icons:              # markers replacing the status badge
@@ -116,7 +117,7 @@ display:
 | `port` | u16 | 8080 | Port number to listen on |
 | `refresh_interval` | u64 | 30 | Seconds between auto-refreshes |
 | `tls_insecure` | bool | false | Skip TLS certificate verification |
-| `cache_ttl_seconds` | u64 | 0 | Cache TTL in seconds (0 = disabled). One entry per source. While an entry is being refreshed, other browsers wait for that one fetch rather than each firing their own |
+| `cache_ttl_seconds` | u64 | 0 | How often the sources are polled, in seconds. `0` means "use `refresh_interval`". Raise it to poll the sources less often than the browsers refresh |
 | `log_format` | string | "text" | Log format: "text" or "json" |
 | `config_watch_method` | string | "polling" | Method to watch config file: "inotify" (native) or "polling" (default, works everywhere) |
 | `config_poll_interval` | u64 | 10 | Polling interval in seconds (only used with polling method) |
@@ -205,7 +206,8 @@ The retry delay follows an exponential backoff pattern:
 | `severity_order` | array | critical, error, high, warning, info, none | Severity ranking, most severe first. Unlisted severities sort last |
 | `prefix_labels` | array | ["hostname"] | Labels shown in front of the alert name, in both modes |
 | `prefix_separator` | string | " / " | Separator between prefix labels |
-| `show_alert_name` | bool | true | false shows the `summary` annotation instead of the alert name |
+| `show_alert_name` | bool | true | false shows an annotation (see `title_annotations`) instead of the alert name |
+| `title_annotations` | string or array | ["summary"] | Annotations tried in order for the title when `show_alert_name` is false; the first one the alert carries wins. A single string is a list of one |
 | `show_labels` | bool | true | false hides the label chips |
 | `critical_icon` | string | "flame" | Replaces the coloured dot on critical alerts. A built-in icon name (`flame`, `bell-off`, `hourglass`) or any text; `""` to disable |
 | `status_icons` | map | silenced: `bell-off`, pending: `hourglass` | Icon per alert status, in place of a status badge. Built-in name or any text. A status absent from the map, or mapped to `""`, shows nothing |
@@ -330,14 +332,14 @@ sources:
   - name: "Staging Grafana"
     type: grafana
     url: "https://grafana.staging.example.com"
-    bearer_token: "${GRAFANA_TOKEN}"  # Set via environment variable
+    bearer_token: "glsa_REPLACE_ME"   # written literally: AlertView does not expand ${VAR}
     timeout: 20
     link_template: "https://grafana.staging.example.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}"
 
   - name: "Zabbix"
     type: zabbix
     url: "https://zabbix.example.com/zabbix"
-    bearer_token: "${ZABBIX_TOKEN}"
+    bearer_token: "REPLACE_ME"
     timeout: 45
 
 # Display settings
@@ -375,6 +377,21 @@ display:
   play_sounds: false
 ```
 
+## How the sources are polled
+
+AlertView polls its sources on a schedule of its own and serves every browser
+from the result. A request to `/api/alerts` never reaches a source, so the load
+upstream follows the number of **sources**, not the number of people watching:
+one dashboard or fifty make the same number of calls to Alertmanager.
+
+The interval is `cache_ttl_seconds` when set, and `refresh_interval` otherwise.
+A configuration reload re-polls immediately rather than at the end of the
+current interval.
+
+This also means a slow or dead source never delays a browser: the dashboard
+answers from the last successful poll and marks the source as failed next to its
+name.
+
 ## Validation
 
 AlertView validates the file on startup and on every reload, and refuses to
@@ -382,6 +399,7 @@ start on anything it cannot honour rather than falling back in silence:
 
 | Rule | Message |
 |---|---|
+| **Every key is one AlertView knows** | `N key(s) AlertView does not understand:` followed by one line per key |
 | `port` ≠ 0 | `Port cannot be 0` |
 | `refresh_interval` ≠ 0 | `refresh_interval cannot be 0` |
 | `log_format` is `text` or `json` | `log_format must be "text" or "json", got …` |
@@ -394,8 +412,33 @@ start on anything it cannot honour rather than falling back in silence:
 An empty `sources:` list is allowed — it logs a warning and serves an empty
 dashboard.
 
+### Unknown keys
+
+A key AlertView does not recognise **stops it from starting**. It used to be
+ignored in silence, which meant a dashboard could quietly disregard half of
+someone's settings — and several of those keys were recommended by this
+project's own documentation before it was corrected.
+
+The message names the key by its full path and, where the option genuinely
+moved, says what to write instead:
+
+```
+config.yaml: 2 key(s) AlertView does not understand:
+  • sources[0].cache_ttl — caching is global: use the top-level `cache_ttl_seconds`
+  • display.compact_mode — never existed; TV mode (`display.tv_mode_default`) gives the dense layout
+```
+
+The options that were documented but never implemented are
+`display.filters`, `display.sort`, `display.group_sort`, `display.compact_mode`,
+`display.hide_header`, `display.hide_footer` and `display.severity_colors`.
+Three options genuinely live elsewhere: `cache_ttl` is the top-level
+`cache_ttl_seconds`, and `tls_insecure` and `refresh_interval` are top-level
+rather than per-source or under `display:`.
+
 A **reload** that fails validation is rejected and logged; the running
 configuration is kept, so a typo in a live edit cannot take the dashboard down.
+The dashboard shows an amber banner saying the edit was refused — otherwise a
+wall display looks as though the change had applied.
 
 To check a file without starting a server for good:
 

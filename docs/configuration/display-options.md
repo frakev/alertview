@@ -41,7 +41,8 @@ display:
   tv_mode_default: false
 
   # Alert body
-  show_alert_name: true   # false = show the summary instead of the alertname
+  show_alert_name: true   # false = show an annotation instead of the alertname
+  title_annotations: ["summary"]   # which annotation, first present wins
   show_labels: true       # false = hide the label chips
   critical_icon: "flame"   # "" to disable
 
@@ -111,21 +112,28 @@ display:
   (auto / sun / moon), and its tooltip the resolved theme.
 - Precedence: `?theme=auto|light|dark` in the URL, then the choice made in this
   browser, then `display.theme`.
-- `custom_css` is layered on top of the theme. For backwards compatibility a
-  `theme` holding a URL is still treated as a custom stylesheet.
+- `custom_css` is layered on top of the theme. Its host is allowed by the
+  page's Content-Security-Policy, for the stylesheet and for the fonts and
+  images it loads; pointing it at another host by hot reload makes open
+  dashboards reload themselves to pick up the new policy. For backwards
+  compatibility a `theme` holding a URL is still treated as a custom
+  stylesheet, and allowed the same way.
 
 ## Alert Body
 
 ```yaml
 display:
-  show_alert_name: false   # show the summary instead of the alertname
+  show_alert_name: false   # show an annotation instead of the alertname
+  title_annotations: ["description", "summary"]   # description, else summary
   show_labels: false       # hide the label chips
   critical_icon: "flame"    # marker on critical alerts, "" to disable
 ```
 
-- `show_alert_name: false` puts the `summary` annotation where the alert name
-  normally sits, and does not repeat it below. An alert **without** a summary
-  keeps its name, so a row is never left blank. The name itself is not lost: it
+- `show_alert_name: false` puts an annotation where the alert name normally
+  sits, and does not repeat it below. `title_annotations` says which one: the
+  first of the list the alert carries wins (default `["summary"]`). A single
+  name works too: `title_annotations: description`. An alert
+  carrying **none** of them keeps its name, so a row is never left blank. The name itself is not lost: it
   moves behind the toggle described below, as an `alertname=…` chip.
 - `show_labels: false` puts every label chip behind a small `+N` button on each
   alert instead of showing them: one click reveals them, another hides them

@@ -25,6 +25,20 @@ pub struct Config {
     pub config_poll_interval: u64, // seconds, only used with polling method
 }
 
+/// Every environment variable AlertView reads. The `--help` text and the
+/// documentation test both work from this list, so a variable cannot be added
+/// without being documented, nor documented without existing — the old docs
+/// invented four and omitted two.
+pub const ENV_VARS: &[&str] = &[
+    "ALERTVIEW_CONFIG",
+    "ALERTVIEW_PORT",
+    "ALERTVIEW_REFRESH_INTERVAL",
+    "ALERTVIEW_CACHE_TTL",
+    "ALERTVIEW_LOG_FORMAT",
+    "ALERTVIEW_CONFIG_WATCH_METHOD",
+    "ALERTVIEW_CONFIG_POLL_INTERVAL",
+];
+
 fn default_config_watch_method() -> String {
     std::env::var("ALERTVIEW_CONFIG_WATCH_METHOD")
         .ok()
@@ -65,148 +79,6 @@ fn default_cache_ttl() -> u64 {
         .unwrap_or(0) // 0 = disabled
 }
 
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_load_config() {
-        let config = Config::load("config.example").expect("Failed to load config.example");
-        assert_eq!(config.port, 8080);
-        assert_eq!(config.refresh_interval, 30);
-        assert!(!config.tls_insecure);
-        assert!(!config.sources.is_empty());
-    }
-
-    #[test]
-    fn test_source_defaults() {
-        let source: Source = serde_yaml::from_str(r#"
-            name: test
-            type: alertmanager
-            url: http://localhost:9093
-        "#).expect("Failed to parse source");
-        
-        assert_eq!(source.name, "test");
-        assert_eq!(source.source_type, SourceType::Alertmanager);
-        assert_eq!(source.url, "http://localhost:9093");
-        assert_eq!(source.timeout, 15); // default
-        // RetryPolicy defaults
-        assert_eq!(source.retry_policy.max_retries, 3); // default
-        assert_eq!(source.retry_policy.initial_delay_ms, 1000); // default
-        assert_eq!(source.retry_policy.max_delay_ms, 30000); // default
-    }
-
-    #[test]
-    fn test_source_custom_values() {
-        let source: Source = serde_yaml::from_str(r#"
-            name: test
-            type: grafana
-            url: http://localhost:3000
-            timeout: 30
-            retry_policy:
-              max_retries: 5
-              initial_delay_ms: 2000
-              max_delay_ms: 60000
-        "#).expect("Failed to parse source");
-        
-        assert_eq!(source.timeout, 30);
-        assert_eq!(source.retry_policy.max_retries, 5);
-        assert_eq!(source.retry_policy.initial_delay_ms, 2000);
-        assert_eq!(source.retry_policy.max_delay_ms, 60000);
-    }
-
-    #[test]
-    fn test_display_config_defaults() {
-        let display: DisplayConfig = serde_yaml::from_str("labels: [namespace, job]").expect("Failed to parse display");
-        assert_eq!(display.labels, ["namespace", "job"]);
-        assert_eq!(display.theme, None);
-        assert_eq!(display.timezone, "local");
-        assert!(!display.play_sounds);
-    }
-
-    #[test]
-    fn test_display_config_custom() {
-        let display: DisplayConfig = serde_yaml::from_str(r#"
-            labels: [namespace, pod]
-            theme: dark
-            timezone: Europe/Paris
-            play_sounds: true
-        "#).expect("Failed to parse display");
-        
-        assert_eq!(display.labels, ["namespace", "pod"]);
-        assert_eq!(display.theme, Some("dark".to_string()));
-        assert_eq!(display.timezone, "Europe/Paris");
-        assert!(display.play_sounds);
-    }
-
-    #[test]
-    fn test_link_template_parsing() {
-        let source: Source = serde_yaml::from_str(r#"
-            name: test
-            type: alertmanager
-            url: http://localhost:9093
-            link_template: "https://example.com/alerts?query={{.Labels.alertname}}"
-        "#).expect("Failed to parse source with link_template");
-        
-        assert_eq!(source.link_template, Some("https://example.com/alerts?query={{.Labels.alertname}}".to_string()));
-    }
-
-    #[test]
-    fn test_severity_label_default() {
-        let source: Source = serde_yaml::from_str(r#"
-            name: test
-            type: alertmanager
-            url: http://localhost:9093
-        "#).expect("Failed to parse source");
-
-        assert_eq!(source.severity_label, "severity");
-    }
-
-    #[test]
-    fn test_severity_label_custom() {
-        let source: Source = serde_yaml::from_str(r#"
-            name: test
-            type: alertmanager
-            url: http://localhost:9093
-            severity_label: Severity
-        "#).expect("Failed to parse source with severity_label");
-
-        assert_eq!(source.severity_label, "Severity");
-    }
-
-    #[test]
-    fn test_log_format_default() {
-        let config: Config = serde_yaml::from_str("sources: []").expect("Failed to parse config");
-        assert_eq!(config.log_format, "text");
-    }
-
-    fn config_from(yaml: &str) -> Result<Config> {
-        let config: Config = serde_yaml::from_str(yaml)?;
-        config.validate()?;
-        Ok(config)
-    }
-
-    #[test]
-    fn test_validate_rejects_unknown_enums() {
-        // A typo here used to fall through to the other branch in silence.
-        assert!(config_from("sources: []\nlog_format: jsonn").is_err());
-        assert!(config_from("sources: []\nconfig_watch_method: inotifty").is_err());
-        assert!(config_from("sources: []\nconfig_poll_interval: 0").is_err());
-        // An empty order ranks every severity the same, disabling sorting.
-        assert!(config_from("sources: []\ndisplay:\n  severity_order: []").is_err());
-        // The valid spellings still load.
-        assert!(config_from("sources: []\nlog_format: json\nconfig_watch_method: inotify").is_ok());
-    }
-
-    #[test]
-    fn test_log_format_json() {
-        let config: Config = serde_yaml::from_str("log_format: json\nsources: []").expect("Failed to parse config");
-        assert_eq!(config.log_format, "json");
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Source {
     pub name: String,
@@ -241,21 +113,21 @@ impl Source {
         if self.url.is_empty() {
             anyhow::bail!("URL cannot be empty");
         }
-        
+
         // Validate timeout is reasonable
         if self.timeout == 0 {
             anyhow::bail!("timeout cannot be 0");
         }
-        
+
         // Validate retry policy
         if self.retry_policy.initial_delay_ms == 0 {
             anyhow::bail!("initial_delay_ms cannot be 0");
         }
-        
+
         if self.retry_policy.max_delay_ms < self.retry_policy.initial_delay_ms {
             anyhow::bail!("max_delay_ms must be >= initial_delay_ms");
         }
-        
+
         Ok(())
     }
 }
@@ -351,11 +223,18 @@ pub struct DisplayConfig {
     /// declare their own. No template means the alert is not clickable.
     #[serde(default)]
     pub alert_link_template: Option<String>,
-    /// Show the alert name (the `alertname` label). When false the summary
-    /// annotation takes its place, and alerts without a summary keep their name
-    /// rather than showing nothing.
+    /// Show the alert name (the `alertname` label). When false the first of
+    /// `title_annotations` the alert carries takes its place, and alerts with
+    /// none of them keep their name rather than showing nothing.
     #[serde(default = "default_true")]
     pub show_alert_name: bool,
+    /// Annotations tried in order for the title when `show_alert_name` is false.
+    /// A single string is accepted as a list of one.
+    #[serde(
+        default = "default_title_annotations",
+        deserialize_with = "string_or_list"
+    )]
+    pub title_annotations: Vec<String>,
     /// Show the label chips next to each alert.
     #[serde(default = "default_true")]
     pub show_labels: bool,
@@ -394,6 +273,7 @@ impl Default for DisplayConfig {
             tv_mode_default: false,
             alert_link_template: None,
             show_alert_name: true,
+            title_annotations: default_title_annotations(),
             show_labels: true,
             critical_icon: default_critical_icon(),
             status_icons: default_status_icons(),
@@ -426,6 +306,26 @@ fn default_true() -> bool {
     true
 }
 
+fn default_title_annotations() -> Vec<String> {
+    vec!["summary".to_string()]
+}
+
+fn string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v,
+    })
+}
+
 fn default_prefix_separator() -> String {
     " / ".to_string()
 }
@@ -451,14 +351,120 @@ fn default_timezone() -> String {
     "local".to_string()
 }
 
+/// Keys the documentation used to recommend that never existed, and the three
+/// that genuinely moved. A finite, hand-written table rather than fuzzy
+/// matching: fuzzy matching needs a per-level list of field names, which is one
+/// more thing to drift. The index in a path is normalised to `[]` before lookup.
+const MIGRATION_HINTS: &[(&str, &str)] = &[
+    ("sources[].cache_ttl", "caching is global: use the top-level `cache_ttl_seconds`"),
+    ("sources[].tls_insecure", "TLS verification is global: use the top-level `tls_insecure`"),
+    ("display.refresh_interval", "use the top-level `refresh_interval`"),
+    ("display.sort", "ordering follows `display.severity_order`"),
+    ("display.group_sort", "groups are ordered by their most severe alert; see `display.severity_order`"),
+    ("display.filters", "not a config option — filter from the search box, the severity and source chips, or a `?q=` URL parameter"),
+    ("display.compact_mode", "never existed; TV mode (`display.tv_mode_default`) gives the dense layout"),
+    ("display.hide_header", "never existed; use `display.custom_css`"),
+    ("display.hide_footer", "never existed; use `display.custom_css`"),
+    ("display.severity_colors", "never existed; use `display.custom_css`"),
+    ("sources[].api_key", "use `bearer_token`, or `basic_auth` for Alertmanager and Grafana"),
+    ("sources[].username", "credentials go under `basic_auth: { username, password }`"),
+    ("sources[].password", "credentials go under `basic_auth: { username, password }`"),
+];
+
+/// `serde_ignored` reports a sequence element as a dotted segment —
+/// `sources.0.cache_ttl`. Both helpers below work from that shape; it was
+/// verified against the crate rather than assumed.
+///
+/// For display: `sources.0.cache_ttl` -> `sources[0].cache_ttl`, which is how
+/// one points at a YAML list in prose.
+fn pretty_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for segment in path.split('.') {
+        if segment.chars().all(|c| c.is_ascii_digit()) && !segment.is_empty() && !out.is_empty() {
+            out.push('[');
+            out.push_str(segment);
+            out.push(']');
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(segment);
+        }
+    }
+    out
+}
+
+/// For lookup: `sources.0.cache_ttl` -> `sources[].cache_ttl`, so one hint
+/// covers every element of a sequence.
+fn normalise_indices(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for segment in path.split('.') {
+        if segment.chars().all(|c| c.is_ascii_digit()) && !segment.is_empty() && !out.is_empty() {
+            out.push_str("[]");
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(segment);
+        }
+    }
+    out
+}
+
+fn hint_for(path: &str) -> Option<&'static str> {
+    let normalised = normalise_indices(path);
+    MIGRATION_HINTS
+        .iter()
+        .find(|(key, _)| *key == normalised)
+        .map(|(_, hint)| *hint)
+}
+
 impl Config {
+    /// The single parse entry point. Unknown keys are captured rather than
+    /// dropped: a key AlertView does not understand is almost always a key the
+    /// user believed in, and silently ignoring it is how a dashboard ends up
+    /// ignoring half of someone's settings without ever saying so.
+    ///
+    /// `serde_ignored` wraps the deserialiser instead of putting
+    /// `deny_unknown_fields` on each struct: no attribute to forget on the next
+    /// struct someone adds, and the paths come out complete — `sources[2].cache_ttl`
+    /// rather than a bare `cache_ttl` with no idea which source it came from.
+    pub fn from_yaml(origin: &str, yaml: &str) -> Result<Self> {
+        let mut unknown: Vec<String> = Vec::new();
+        let de = serde_yaml::Deserializer::from_str(yaml);
+        let config: Config = serde_ignored::deserialize(de, |path| {
+            unknown.push(path.to_string());
+        })?;
+
+        if !unknown.is_empty() {
+            let mut message = format!(
+                "{origin}: {} key(s) AlertView does not understand:",
+                unknown.len()
+            );
+            for path in &unknown {
+                let shown = pretty_path(path);
+                match hint_for(path) {
+                    Some(hint) => message.push_str(&format!("\n  • {shown} — {hint}")),
+                    None => message.push_str(&format!("\n  • {shown}")),
+                }
+            }
+            message.push_str(
+                "\n\nEvery option is listed in config.example and in \
+                 docs/configuration/config-file.md. Remove the key or correct it \
+                 — it would have been ignored, which is worse than this error.",
+            );
+            anyhow::bail!(message);
+        }
+
+        config.validate()?;
+        Ok(config)
+    }
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Cannot read {:?}: {}", path, e))?;
-        let config: Config = serde_yaml::from_str(&content)?;
-        config.validate()?;
-        Ok(config)
+        Self::from_yaml(&path.display().to_string(), &content)
     }
 
     pub async fn load_async(path: impl AsRef<Path>) -> Result<Self> {
@@ -466,9 +472,7 @@ impl Config {
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("Cannot read {:?}: {}", path, e))?;
-        let config: Config = serde_yaml::from_str(&content)?;
-        config.validate()?;
-        Ok(config)
+        Self::from_yaml(&path.display().to_string(), &content)
     }
 
     /// Validate the configuration
@@ -477,7 +481,7 @@ impl Config {
         if self.port == 0 {
             anyhow::bail!("Port cannot be 0");
         }
-        
+
         // Validate refresh interval
         if self.refresh_interval == 0 {
             anyhow::bail!("refresh_interval cannot be 0");
@@ -486,7 +490,10 @@ impl Config {
         // These used to be free-form strings: a typo silently fell through to
         // the other branch (text logs, inotify) instead of saying so.
         if !matches!(self.log_format.as_str(), "text" | "json") {
-            anyhow::bail!("log_format must be \"text\" or \"json\", got {:?}", self.log_format);
+            anyhow::bail!(
+                "log_format must be \"text\" or \"json\", got {:?}",
+                self.log_format
+            );
         }
         if !matches!(self.config_watch_method.as_str(), "inotify" | "polling") {
             anyhow::bail!(
@@ -507,21 +514,250 @@ impl Config {
         if self.sources.is_empty() {
             tracing::warn!("No sources configured: the dashboard will stay empty");
         }
-        
+
         // Validate each source
         let mut seen = std::collections::HashSet::new();
         for (i, source) in self.sources.iter().enumerate() {
-            source.validate().with_context(|| format!("Invalid configuration for source at index {}", i))?;
+            source
+                .validate()
+                .with_context(|| format!("Invalid configuration for source at index {}", i))?;
             // Names key the alert cache, the announced-fingerprint state and the
             // source filter chips: two sources sharing one would shadow each other.
             if !seen.insert(source.name.to_lowercase()) {
-                anyhow::bail!("Duplicate source name {:?} (names must be unique)", source.name);
+                anyhow::bail!(
+                    "Duplicate source name {:?} (names must be unique)",
+                    source.name
+                );
             }
         }
-        
+
         Ok(())
     }
 }
 
 // Type to store config with reload capability
 pub type SharedConfig = Arc<RwLock<Config>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_config() {
+        let config = Config::load("config.example").expect("Failed to load config.example");
+        assert_eq!(config.port, 8080);
+        assert_eq!(config.refresh_interval, 30);
+        assert!(!config.tls_insecure);
+        assert!(!config.sources.is_empty());
+    }
+
+    #[test]
+    fn test_source_defaults() {
+        let source: Source = serde_yaml::from_str(
+            r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+        "#,
+        )
+        .expect("Failed to parse source");
+
+        assert_eq!(source.name, "test");
+        assert_eq!(source.source_type, SourceType::Alertmanager);
+        assert_eq!(source.url, "http://localhost:9093");
+        assert_eq!(source.timeout, 15); // default
+                                        // RetryPolicy defaults
+        assert_eq!(source.retry_policy.max_retries, 3); // default
+        assert_eq!(source.retry_policy.initial_delay_ms, 1000); // default
+        assert_eq!(source.retry_policy.max_delay_ms, 30000); // default
+    }
+
+    #[test]
+    fn test_source_custom_values() {
+        let source: Source = serde_yaml::from_str(
+            r#"
+            name: test
+            type: grafana
+            url: http://localhost:3000
+            timeout: 30
+            retry_policy:
+              max_retries: 5
+              initial_delay_ms: 2000
+              max_delay_ms: 60000
+        "#,
+        )
+        .expect("Failed to parse source");
+
+        assert_eq!(source.timeout, 30);
+        assert_eq!(source.retry_policy.max_retries, 5);
+        assert_eq!(source.retry_policy.initial_delay_ms, 2000);
+        assert_eq!(source.retry_policy.max_delay_ms, 60000);
+    }
+
+    #[test]
+    fn test_display_config_defaults() {
+        let display: DisplayConfig =
+            serde_yaml::from_str("labels: [namespace, job]").expect("Failed to parse display");
+        assert_eq!(display.labels, ["namespace", "job"]);
+        assert_eq!(display.theme, None);
+        assert_eq!(display.timezone, "local");
+        assert!(!display.play_sounds);
+        assert_eq!(display.title_annotations, ["summary"]);
+    }
+
+    #[test]
+    fn test_title_annotations() {
+        let display: DisplayConfig =
+            serde_yaml::from_str("title_annotations: [description, summary]")
+                .expect("Failed to parse display");
+        assert_eq!(display.title_annotations, ["description", "summary"]);
+
+        let display: DisplayConfig = serde_yaml::from_str("title_annotations: description")
+            .expect("Failed to parse display");
+        assert_eq!(display.title_annotations, ["description"]);
+    }
+
+    #[test]
+    fn test_display_config_custom() {
+        let display: DisplayConfig = serde_yaml::from_str(
+            r#"
+            labels: [namespace, pod]
+            theme: dark
+            timezone: Europe/Paris
+            play_sounds: true
+        "#,
+        )
+        .expect("Failed to parse display");
+
+        assert_eq!(display.labels, ["namespace", "pod"]);
+        assert_eq!(display.theme, Some("dark".to_string()));
+        assert_eq!(display.timezone, "Europe/Paris");
+        assert!(display.play_sounds);
+    }
+
+    #[test]
+    fn test_link_template_parsing() {
+        let source: Source = serde_yaml::from_str(
+            r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+            link_template: "https://example.com/alerts?query={{.Labels.alertname}}"
+        "#,
+        )
+        .expect("Failed to parse source with link_template");
+
+        assert_eq!(
+            source.link_template,
+            Some("https://example.com/alerts?query={{.Labels.alertname}}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_severity_label_default() {
+        let source: Source = serde_yaml::from_str(
+            r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+        "#,
+        )
+        .expect("Failed to parse source");
+
+        assert_eq!(source.severity_label, "severity");
+    }
+
+    #[test]
+    fn test_severity_label_custom() {
+        let source: Source = serde_yaml::from_str(
+            r#"
+            name: test
+            type: alertmanager
+            url: http://localhost:9093
+            severity_label: Severity
+        "#,
+        )
+        .expect("Failed to parse source with severity_label");
+
+        assert_eq!(source.severity_label, "Severity");
+    }
+
+    #[test]
+    fn test_log_format_default() {
+        let config = config_from("sources: []").expect("Failed to parse config");
+        assert_eq!(config.log_format, "text");
+    }
+
+    // Goes through the real entry point, so the tests exercise the same strict
+    // path a user's file does.
+    fn config_from(yaml: &str) -> Result<Config> {
+        Config::from_yaml("test", yaml)
+    }
+
+    #[test]
+    fn test_unknown_keys_are_refused_with_their_path() {
+        // Every one of these was recommended by the project's own docs. They
+        // used to be swallowed in silence: the dashboard ignored half of
+        // someone's settings and never said so.
+        let err = config_from(
+            "sources:\n  - name: a\n    type: alertmanager\n    url: http://x\n    cache_ttl: 30\n\
+             display:\n  compact_mode: true\n",
+        )
+        .expect_err("an unknown key must stop the server");
+        let msg = err.to_string();
+
+        // The path locates the key, index included — a bare `cache_ttl` would
+        // not say which source it came from.
+        assert!(msg.contains("sources[0].cache_ttl"), "{msg}");
+        assert!(msg.contains("display.compact_mode"), "{msg}");
+        // And the message says what to write instead.
+        assert!(msg.contains("cache_ttl_seconds"), "{msg}");
+        assert!(msg.contains("tv_mode_default"), "{msg}");
+    }
+
+    #[test]
+    fn test_normalise_indices() {
+        // serde_ignored hands us dotted indices; both shapes come from that.
+        assert_eq!(
+            normalise_indices("sources.12.cache_ttl"),
+            "sources[].cache_ttl"
+        );
+        assert_eq!(pretty_path("sources.12.cache_ttl"), "sources[12].cache_ttl");
+        assert_eq!(
+            normalise_indices("display.compact_mode"),
+            "display.compact_mode"
+        );
+        assert_eq!(pretty_path("display.compact_mode"), "display.compact_mode");
+    }
+
+    #[test]
+    fn test_shipped_files_pass_strict_loading() {
+        // config.example is the reference users copy: it must survive its own
+        // strictness. The k8s ConfigMap ships in the repo too.
+        Config::load("config.example").expect("config.example must load");
+        let cm = std::fs::read_to_string("02-configmap.yaml").expect("configmap");
+        let doc: serde_yaml::Value = serde_yaml::from_str(&cm).expect("valid yaml");
+        let embedded = doc["data"]["config.yaml"]
+            .as_str()
+            .expect("config.yaml key");
+        Config::from_yaml("02-configmap.yaml", embedded).expect("the shipped ConfigMap must load");
+    }
+
+    #[test]
+    fn test_validate_rejects_unknown_enums() {
+        // A typo here used to fall through to the other branch in silence.
+        assert!(config_from("sources: []\nlog_format: jsonn").is_err());
+        assert!(config_from("sources: []\nconfig_watch_method: inotifty").is_err());
+        assert!(config_from("sources: []\nconfig_poll_interval: 0").is_err());
+        // An empty order ranks every severity the same, disabling sorting.
+        assert!(config_from("sources: []\ndisplay:\n  severity_order: []").is_err());
+        // The valid spellings still load.
+        assert!(config_from("sources: []\nlog_format: json\nconfig_watch_method: inotify").is_ok());
+    }
+
+    #[test]
+    fn test_log_format_json() {
+        let config = config_from("log_format: json\nsources: []").expect("Failed to parse config");
+        assert_eq!(config.log_format, "json");
+    }
+}

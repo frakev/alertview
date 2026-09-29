@@ -581,10 +581,10 @@ log_format: text
 
 ```bash
 # Run tests with test configuration
-ALERTVIEW_CONFIG_PATH=config.test.yaml cargo test
+ALERTVIEW_CONFIG=config.test.yaml cargo test
 
 # Or set multiple variables
-ALERTVIEW_CONFIG_PATH=config.test.yaml \
+ALERTVIEW_CONFIG=config.test.yaml \
 ALERTVIEW_PORT=18080 \
 RUST_LOG=debug \
 cargo test

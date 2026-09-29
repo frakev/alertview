@@ -322,14 +322,14 @@ sources:
   - name: "Grafana Alerts"
     type: grafana
     url: "http://grafana:3000"
-    bearer_token: "${GRAFANA_TOKEN}"
+    bearer_token: "glsa_REPLACE_ME"
     timeout: 20
 
   # Zabbix for infrastructure monitoring
   - name: "Zabbix"
     type: zabbix
     url: "https://zabbix.example.com/zabbix"
-    bearer_token: "${ZABBIX_TOKEN}"
+    bearer_token: "REPLACE_ME"
     timeout: 45
 ```
 

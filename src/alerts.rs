@@ -38,6 +38,45 @@ impl std::fmt::Display for HttpStatusError {
 
 impl std::error::Error for HttpStatusError {}
 
+/// Ceiling on a single upstream response. The per-source `timeout` bounds how
+/// long a fetch may take, not how many bytes it may deliver: a source that
+/// streams without end — misconfigured, or hostile — would otherwise grow the
+/// process until it is killed. Generous enough for a very large Alertmanager;
+/// a real deployment is three orders of magnitude below it.
+const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Reads a JSON body, refusing to buffer more than `MAX_RESPONSE_BYTES`.
+/// Checks `Content-Length` first when the server sends one, so an oversized
+/// response is refused before a single byte of it is read.
+async fn json_within_limit<T>(resp: reqwest::Response, url: &str) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    if let Some(len) = resp.content_length() {
+        if len > MAX_RESPONSE_BYTES as u64 {
+            anyhow::bail!(
+                "{} announced {} bytes, over the {} byte ceiling",
+                url,
+                len,
+                MAX_RESPONSE_BYTES
+            );
+        }
+    }
+
+    // `chunk()` rather than `bytes_stream()`: the same thing without pulling in
+    // reqwest's `stream` feature.
+    let mut resp = resp;
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            anyhow::bail!("{} exceeded the {} byte ceiling", url, MAX_RESPONSE_BYTES);
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    Ok(serde_json::from_slice(&body)?)
+}
+
 /// A JSON-RPC error returned by Zabbix itself (HTTP 200 with an `error`
 /// member). Typed, so the version fallbacks below can tell "this Zabbix does
 /// not know that parameter" from "this Zabbix said no": only the first is
@@ -51,7 +90,11 @@ pub struct ZabbixApiError {
 
 impl std::fmt::Display for ZabbixApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Zabbix API error {}: {} \u{2014} {}", self.code, self.message, self.data)
+        write!(
+            f,
+            "Zabbix API error {}: {} \u{2014} {}",
+            self.code, self.message, self.data
+        )
     }
 }
 
@@ -65,7 +108,7 @@ fn is_invalid_params(err: &anyhow::Error) -> bool {
         .is_some_and(|e| e.code == -32602)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SourceStatus {
     pub name: String,
     pub status: String,
@@ -74,6 +117,13 @@ pub struct SourceStatus {
     pub error: Option<String>,
 }
 
+/// The shape of `/api/alerts`.
+///
+/// Serialize only — `#[serde(default)]` was written on twelve of these fields
+/// and does nothing here: defaults apply when *reading*, and nothing reads this
+/// struct. `skip_serializing_if` below is the attribute that does have an
+/// effect, and it is why `error`, `theme`, `custom_css` and `timezone` are
+/// absent from the payload rather than null.
 #[derive(Debug, Serialize)]
 pub struct AlertsResponse {
     pub alerts: Vec<Alert>,
@@ -86,29 +136,18 @@ pub struct AlertsResponse {
     pub theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_css: Option<String>,
-    #[serde(default)]
     pub play_sounds: bool,
-    #[serde(default)]
     pub groups: Vec<AlertGroup>,
-    #[serde(default)]
     pub group_by: Vec<String>,
-    #[serde(default)]
     pub severity_order: Vec<String>,
-    #[serde(default)]
     pub prefix_labels: Vec<String>,
-    #[serde(default)]
     pub prefix_separator: String,
-    #[serde(default)]
     pub tv_mode_default: bool,
-    #[serde(default)]
     pub link_new_tab: bool,
-    #[serde(default)]
     pub show_alert_name: bool,
-    #[serde(default)]
+    pub title_annotations: Vec<String>,
     pub show_labels: bool,
-    #[serde(default)]
     pub critical_icon: String,
-    #[serde(default)]
     pub status_icons: HashMap<String, String>,
 }
 
@@ -216,7 +255,10 @@ struct ZabbixProblem {
     clock: String,    // Unix timestamp
     r_clock: String,  // "0" if unresolved
     suppressed: String,
-    #[serde(default = "default_acknowledged", deserialize_with = "deserialize_acknowledged")]
+    #[serde(
+        default = "default_acknowledged",
+        deserialize_with = "deserialize_acknowledged"
+    )]
     acknowledged: String, // "0" or "1" or true/false - whether problem is acknowledged
     #[serde(default)]
     acknowledgements: Vec<ZabbixAcknowledgement>, // ACK details from Zabbix
@@ -235,7 +277,7 @@ where
         String(String),
         Bool(bool),
     }
-    
+
     match AcknowledgedValue::deserialize(deserializer)? {
         AcknowledgedValue::String(s) => Ok(s),
         AcknowledgedValue::Bool(b) => Ok(if b { "1".to_string() } else { "0".to_string() }),
@@ -284,7 +326,11 @@ impl ZabbixUser {
     fn display_name(&self) -> String {
         let full = format!("{} {}", self.name.trim(), self.surname.trim());
         let full = full.trim();
-        if full.is_empty() { self.username.clone() } else { full.to_string() }
+        if full.is_empty() {
+            self.username.clone()
+        } else {
+            full.to_string()
+        }
     }
 }
 
@@ -370,12 +416,26 @@ struct ZabbixGroupInfo {
 
 fn zabbix_severity(s: &str) -> &'static str {
     match s {
-        "5" => "critical", // Disaster
-        "4" => "high",     // High
+        "5" => "critical",      // Disaster
+        "4" => "high",          // High
         "3" | "2" => "warning", // Average / Warning
-        "1" => "info",     // Information
-        _ => "none",       // Not classified
+        "1" => "info",          // Information
+        _ => "none",            // Not classified
     }
+}
+
+/// Every timestamp is stored in one canonical shape, UTC RFC 3339.
+///
+/// Alerts are sorted by comparing these as strings, and the sources do not
+/// agree on a spelling: Alertmanager sends `…Z`, `to_rfc3339()` produces
+/// `…+00:00`, and fractional seconds come and go. `2026-09-11T10:00:00.5Z`
+/// sorted *before* `2026-09-11T10:00:00Z` because `.` is below `Z`, and an
+/// alert sent with a `+02:00` offset sorted hours away from where it belonged.
+/// Normalising on the way in makes the comparison mean what it says.
+pub fn normalise_timestamp(raw: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(raw.trim())
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
+        .unwrap_or_else(|_| raw.to_string())
 }
 
 fn unix_ts_to_iso(ts: &str) -> String {
@@ -396,16 +456,25 @@ async fn zabbix_rpc<T>(
 where
     T: for<'de> Deserialize<'de>,
 {
-    let body = ZabbixRpcRequest { jsonrpc: "2.0", method, params, id: 1 };
+    let body = ZabbixRpcRequest {
+        jsonrpc: "2.0",
+        method,
+        params,
+        id: 1,
+    };
     let mut req = client.post(url).json(&body);
     if let Some(token) = &source.bearer_token {
         req = req.bearer_auth(token);
     }
     let resp = req.send().await?;
     if !resp.status().is_success() {
-        return Err(HttpStatusError { status: resp.status(), url: url.to_string() }.into());
+        return Err(HttpStatusError {
+            status: resp.status(),
+            url: url.to_string(),
+        }
+        .into());
     }
-    let rpc: ZabbixRpcResponse<T> = resp.json().await?;
+    let rpc: ZabbixRpcResponse<T> = json_within_limit(resp, url).await?;
     if let Some(err) = rpc.error {
         return Err(ZabbixApiError {
             code: err.code,
@@ -414,7 +483,8 @@ where
         }
         .into());
     }
-    rpc.result.ok_or_else(|| anyhow::anyhow!("Zabbix API returned empty result"))
+    rpc.result
+        .ok_or_else(|| anyhow::anyhow!("Zabbix API returned empty result"))
 }
 
 /// problem.get, degrading through the acknowledgement parameter names.
@@ -516,7 +586,11 @@ async fn fetch_zabbix_user_names(
             .filter(|(_, name)| !name.is_empty())
             .collect(),
         Err(e) => {
-            tracing::debug!("Could not resolve Zabbix user names for {}: {}", source.name, e);
+            tracing::debug!(
+                "Could not resolve Zabbix user names for {}: {}",
+                source.name,
+                e
+            );
             HashMap::new()
         }
     }
@@ -541,7 +615,11 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     // Log acknowledged problems for debugging
     let ack_count = problems.iter().filter(|p| p.acknowledged == "1").count();
     if ack_count > 0 {
-        tracing::debug!("Found {} acknowledged problems out of {}", ack_count, problems.len());
+        tracing::debug!(
+            "Found {} acknowledged problems out of {}",
+            ack_count,
+            problems.len()
+        );
     }
 
     // Step 2: enrich with hosts + hostgroups via their trigger
@@ -551,8 +629,10 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
     dialect.groups_param = groups_param;
     remember_dialect(&source.name, dialect);
 
-    let trigger_map: HashMap<String, ZabbixTrigger> =
-        triggers.into_iter().map(|t| (t.triggerid.clone(), t)).collect();
+    let trigger_map: HashMap<String, ZabbixTrigger> = triggers
+        .into_iter()
+        .map(|t| (t.triggerid.clone(), t))
+        .collect();
 
     // Step 3: put a name on the acknowledgements that only carry a userid.
     let userids: Vec<&str> = problems
@@ -576,7 +656,10 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
         .collect();
     let dropped = before - problems.len();
     if dropped > 0 {
-        tracing::debug!("Filtered {} Zabbix problem(s) from disabled triggers", dropped);
+        tracing::debug!(
+            "Filtered {} Zabbix problem(s) from disabled triggers",
+            dropped
+        );
     }
 
     let alerts = problems
@@ -589,7 +672,8 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 "silenced"
             } else {
                 "firing"
-            }.to_string();
+            }
+            .to_string();
 
             let mut labels: HashMap<String, String> = HashMap::new();
 
@@ -605,8 +689,7 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                 if let Some(host) = trigger.hosts.first() {
                     labels.insert("host".to_string(), host.name.clone());
                 }
-                let groups: Vec<String> =
-                    trigger.groups.iter().map(|g| g.name.clone()).collect();
+                let groups: Vec<String> = trigger.groups.iter().map(|g| g.name.clone()).collect();
                 if !groups.is_empty() {
                     labels.insert("hostgroup".to_string(), groups.join(", "));
                 }
@@ -616,25 +699,36 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
             for tag in &p.tags {
                 labels.insert(tag.tag.clone(), tag.value.clone());
             }
-            
+
             // Add Zabbix acknowledged status as a label
             labels.insert("acknowledged".to_string(), p.acknowledged.clone());
 
             let mut annotations: HashMap<String, String> = HashMap::new();
             annotations.insert("summary".to_string(), p.name.clone());
-            
+
             // If acknowledged in Zabbix, add the ack message and user info to annotations
             if p.acknowledged == "1" {
-                tracing::debug!("Zabbix problem {} is acknowledged, acks count: {}", p.name, p.acknowledgements.len());
+                tracing::debug!(
+                    "Zabbix problem {} is acknowledged, acks count: {}",
+                    p.name,
+                    p.acknowledgements.len()
+                );
                 if !p.acknowledgements.is_empty() {
                     // Use the most recent acknowledgement
                     if let Some(latest_ack) = p.acknowledgements.last() {
                         let author = if latest_ack.user.is_empty() {
-                            user_names.get(&latest_ack.userid).cloned().unwrap_or_default()
+                            user_names
+                                .get(&latest_ack.userid)
+                                .cloned()
+                                .unwrap_or_default()
                         } else {
                             latest_ack.user.clone()
                         };
-                        tracing::debug!("Using ACK from user {:?}: {:?}", author, latest_ack.message);
+                        tracing::debug!(
+                            "Using ACK from user {:?}: {:?}",
+                            author,
+                            latest_ack.message
+                        );
                         match latest_ack.message.as_deref().map(str::trim) {
                             Some(msg) if !msg.is_empty() => {
                                 annotations.insert("acknowledgement".to_string(), msg.to_string());
@@ -651,12 +745,18 @@ async fn fetch_zabbix_alerts(client: &reqwest::Client, source: &Source) -> Resul
                             labels.insert("acknowledged_by".to_string(), author);
                         }
                         if !latest_ack.timestamp.is_empty() {
-                            labels.insert("acknowledged_at".to_string(), latest_ack.timestamp.clone());
+                            labels.insert(
+                                "acknowledged_at".to_string(),
+                                latest_ack.timestamp.clone(),
+                            );
                         }
                     }
                 } else {
                     tracing::debug!("Problem is acknowledged but has no acknowledgements array");
-                    annotations.insert("acknowledgement".to_string(), "Acknowledged in Zabbix".to_string());
+                    annotations.insert(
+                        "acknowledgement".to_string(),
+                        "Acknowledged in Zabbix".to_string(),
+                    );
                 }
             }
 
@@ -742,12 +842,16 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
     let resp = req.send().await?;
     if !resp.status().is_success() {
-        return Err(HttpStatusError { status: resp.status(), url }.into());
+        return Err(HttpStatusError {
+            status: resp.status(),
+            url,
+        }
+        .into());
     }
 
     // Parsed one by one: a single malformed alert used to fail the whole
     // array, and the source went from "N alerts" to "error" with nothing shown.
-    let raw: Vec<serde_json::Value> = resp.json().await?;
+    let raw: Vec<serde_json::Value> = json_within_limit(resp, &url).await?;
     let received = raw.len();
     let am_alerts: Vec<AmAlert> = raw
         .into_iter()
@@ -767,7 +871,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             source.name
         );
     }
-    
+
     // Fetch silences to get comment information for silenced alerts. Skipped
     // when nothing is silenced, which is the common case — no point in a second
     // round-trip per source per poll just to look up comments nobody needs.
@@ -810,7 +914,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
             let ends_at = if a.ends_at.starts_with("0001") {
                 None
             } else {
-                Some(a.ends_at)
+                Some(normalise_timestamp(&a.ends_at))
             };
 
             // Determine source type string
@@ -823,7 +927,10 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
             // Add silence comment to annotations if alert is silenced
             let mut annotations = a.annotations.clone();
-            if status == "silenced" && a.status.silenced_by.is_empty() && !a.status.inhibited_by.is_empty() {
+            if status == "silenced"
+                && a.status.silenced_by.is_empty()
+                && !a.status.inhibited_by.is_empty()
+            {
                 annotations.insert(
                     "silence_comment".to_string(),
                     "Inhibited by another alert".to_string(),
@@ -832,8 +939,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 // Try to find a matching silence comment
                 for silence_id in &a.status.silenced_by {
                     if let Some(silence) = silence_map.get(silence_id) {
-                        annotations
-                            .insert("silence_comment".to_string(), silence.comment.clone());
+                        annotations.insert("silence_comment".to_string(), silence.comment.clone());
                         if !silence.created_by.is_empty() {
                             annotations.insert(
                                 "silence_created_by".to_string(),
@@ -845,15 +951,21 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 }
                 // If no specific comment found but silenced, add a generic message
                 if !annotations.contains_key("silence_comment") {
-                    annotations.insert("silence_comment".to_string(), "Silenced in Alertmanager".to_string());
+                    annotations.insert(
+                        "silence_comment".to_string(),
+                        "Silenced in Alertmanager".to_string(),
+                    );
                 }
             }
 
             // Per-alert links come first, the static dashboard_url last.
-            let fallbacks: Vec<String> = [a.generator_url, source.dashboard_url.clone().unwrap_or_default()]
-                .into_iter()
-                .filter(|u| !u.is_empty())
-                .collect();
+            let fallbacks: Vec<String> = [
+                a.generator_url,
+                source.dashboard_url.clone().unwrap_or_default(),
+            ]
+            .into_iter()
+            .filter(|u| !u.is_empty())
+            .collect();
 
             let mut alert = Alert {
                 fingerprint: format!("{}:{}", source.name, a.fingerprint),
@@ -864,7 +976,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 name,
                 labels: a.labels,
                 annotations,
-                starts_at: a.starts_at,
+                starts_at: normalise_timestamp(&a.starts_at),
                 ends_at,
                 link_url: None,
                 alert_link_url: None,
@@ -888,7 +1000,7 @@ async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<
 
     let (api_base, _) = am_api_base(source);
     let url = format!("{}/silences", api_base);
-    
+
     let mut req = client.get(&url);
     if let Some(auth) = &source.basic_auth {
         req = req.basic_auth(&auth.username, Some(&auth.password));
@@ -896,7 +1008,7 @@ async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<
     if let Some(token) = &source.bearer_token {
         req = req.bearer_auth(token);
     }
-    
+
     let resp = req.send().await?;
     if !resp.status().is_success() {
         // Silences endpoint may not be available or may require different auth
@@ -904,8 +1016,8 @@ async fn fetch_am_silences(client: &reqwest::Client, source: &Source) -> Result<
         tracing::warn!("Failed to fetch silences from {}: {}", url, resp.status());
         return Ok(vec![]);
     }
-    
-    let silences: Vec<AmSilence> = resp.json().await?;
+
+    let silences: Vec<AmSilence> = json_within_limit(resp, &url).await?;
     Ok(silences)
 }
 
@@ -954,7 +1066,10 @@ fn zabbix_problem_link(source: &Source, triggerid: &str) -> String {
         None => source.url.as_str(),
     };
     let base = base.trim_end_matches('/').trim_end_matches("/zabbix.php");
-    format!("{}/zabbix.php?action=problem.view&triggerids[]={}", base, triggerid)
+    format!(
+        "{}/zabbix.php?action=problem.view&triggerids[]={}",
+        base, triggerid
+    )
 }
 
 /// Only http(s) links are ever handed to the frontend: an alert is a clickable
@@ -1011,35 +1126,56 @@ fn encode_value(value: &str) -> String {
     percent_encoding::utf8_percent_encode(value, UNRESERVED).to_string()
 }
 
+/// The placeholders a link template may use that are not `{{.Labels.x}}` or
+/// `{{.Annotations.x}}`. Declared once so the documentation test can check what
+/// the docs promise against what the code actually substitutes — the previous
+/// docs advertised `{{.TriggerID}}`, `{{.DashboardUID}}` and friends, none of
+/// which exist, and an unresolved placeholder drops the whole link.
+pub const SCALAR_PLACEHOLDERS: &[&str] = &[
+    "{{.Id}}",
+    "{{.Fingerprint}}",
+    "{{.Source}}",
+    "{{.SourceType}}",
+    "{{.Status}}",
+    "{{.Severity}}",
+    "{{.Name}}",
+    "{{.StartsAt}}",
+    "{{.EndsAt}}",
+];
+
 pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     if template.is_empty() {
         return None;
     }
-    
+
     let mut result = template.to_string();
-    
+
     // Remplacer les variables de labels
     for (key, value) in &alert.labels {
         let placeholder = format!("{{{{.Labels.{}}}}}", key);
         result = result.replace(&placeholder, &encode_value(value));
     }
-    
+
     // Remplacer les variables d'annotations
     for (key, value) in &alert.annotations {
         let placeholder = format!("{{{{.Annotations.{}}}}}", key);
         result = result.replace(&placeholder, &encode_value(value));
     }
-    
+
     // Remplacer les variables standards
-    result = result.replace("{{.Id}}", &encode_value(&alert.fingerprint));
-    result = result.replace("{{.Fingerprint}}", &encode_value(&alert.fingerprint));
-    result = result.replace("{{.Source}}", &encode_value(&alert.source));
-    result = result.replace("{{.SourceType}}", &encode_value(&alert.source_type));
-    result = result.replace("{{.Status}}", &encode_value(&alert.status));
-    result = result.replace("{{.Severity}}", &encode_value(&alert.severity));
-    result = result.replace("{{.Name}}", &encode_value(&alert.name));
-    result = result.replace("{{.StartsAt}}", &encode_value(&alert.starts_at));
-    
+    for (placeholder, value) in [
+        ("{{.Id}}", &alert.fingerprint),
+        ("{{.Fingerprint}}", &alert.fingerprint),
+        ("{{.Source}}", &alert.source),
+        ("{{.SourceType}}", &alert.source_type),
+        ("{{.Status}}", &alert.status),
+        ("{{.Severity}}", &alert.severity),
+        ("{{.Name}}", &alert.name),
+        ("{{.StartsAt}}", &alert.starts_at),
+    ] {
+        result = result.replace(placeholder, &encode_value(value));
+    }
+
     if let Some(ends_at) = &alert.ends_at {
         result = result.replace("{{.EndsAt}}", &encode_value(ends_at));
     }
@@ -1048,7 +1184,10 @@ pub fn apply_link_template(template: &str, alert: &Alert) -> Option<String> {
     // asks for. Emitting the URL with `{{.Labels.foo}}` still in it is worse
     // than falling back to whatever comes next.
     if result.contains("{{.") {
-        tracing::debug!("Link template has unresolved placeholders, ignoring: {}", result);
+        tracing::debug!(
+            "Link template has unresolved placeholders, ignoring: {}",
+            result
+        );
         return None;
     }
 
@@ -1141,13 +1280,15 @@ mod tests {
     fn test_lookup_label_exact_match() {
         let labels: HashMap<String, String> =
             [("severity".to_string(), "critical".to_string())].into();
-        assert_eq!(lookup_label(&labels, "severity"), Some(&"critical".to_string()));
+        assert_eq!(
+            lookup_label(&labels, "severity"),
+            Some(&"critical".to_string())
+        );
     }
 
     #[test]
     fn test_lookup_label_case_insensitive() {
-        let labels: HashMap<String, String> =
-            [("Severity".to_string(), "high".to_string())].into();
+        let labels: HashMap<String, String> = [("Severity".to_string(), "high".to_string())].into();
         // Configured key "severity" still matches a "Severity" label.
         assert_eq!(lookup_label(&labels, "severity"), Some(&"high".to_string()));
     }
@@ -1156,7 +1297,10 @@ mod tests {
     fn test_lookup_label_custom_key() {
         let labels: HashMap<String, String> =
             [("priority".to_string(), "warning".to_string())].into();
-        assert_eq!(lookup_label(&labels, "priority"), Some(&"warning".to_string()));
+        assert_eq!(
+            lookup_label(&labels, "priority"),
+            Some(&"warning".to_string())
+        );
         assert_eq!(lookup_label(&labels, "severity"), None);
     }
 
@@ -1175,7 +1319,10 @@ mod tests {
         let order = crate::config::DisplayConfig::default().severity_order;
         // Aliases and casing rank with their canonical level.
         assert_eq!(severity_rank(&order, "ERR"), severity_rank(&order, "error"));
-        assert_eq!(severity_rank(&order, "warn"), severity_rank(&order, "warning"));
+        assert_eq!(
+            severity_rank(&order, "warn"),
+            severity_rank(&order, "warning")
+        );
         // A severity nobody configured sorts after every listed level.
         assert_eq!(severity_rank(&order, "pager"), order.len());
     }
@@ -1199,9 +1346,8 @@ mod tests {
 
     async fn spawn_stub(alerts: &'static str, silences: &'static str) -> String {
         use axum::{routing::get, Router};
-        let json = |body: &'static str| async move {
-            ([("content-type", "application/json")], body)
-        };
+        let json =
+            |body: &'static str| async move { ([("content-type", "application/json")], body) };
         let app = Router::new()
             .route("/api/v2/alerts", get(move || json(alerts)))
             .route("/api/v2/silences", get(move || json(silences)));
@@ -1269,8 +1415,11 @@ mod tests {
                     let mut trigger = json!({
                         "triggerid": "42", "status": "0", "hosts": [{"name": "srv-01"}]
                     });
-                    trigger[if groups_param == "selectHostGroups" { "hostgroups" } else { "groups" }] =
-                        groups;
+                    trigger[if groups_param == "selectHostGroups" {
+                        "hostgroups"
+                    } else {
+                        "groups"
+                    }] = groups;
                     json!([trigger])
                 }
                 "user.get" => json!([
@@ -1296,16 +1445,27 @@ mod tests {
         let mut source = source_with_url(SourceType::Zabbix, &url);
         source.name = "zbx70".to_string();
 
-        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source).await.unwrap();
+        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source)
+            .await
+            .unwrap();
         assert_eq!(alerts.len(), 1);
         let alert = &alerts[0];
         assert_eq!(alert.severity, "critical");
-        assert_eq!(alert.labels.get("hostgroup").map(String::as_str), Some("Linux servers"));
+        assert_eq!(
+            alert.labels.get("hostgroup").map(String::as_str),
+            Some("Linux servers")
+        );
         assert_eq!(alert.labels.get("host").map(String::as_str), Some("srv-01"));
         assert_eq!(alert.labels.get("team").map(String::as_str), Some("sre"));
         // The acknowledgement carries a userid only: the name comes from user.get.
-        assert_eq!(alert.annotations.get("acknowledgement").map(String::as_str), Some("on it"));
-        assert_eq!(alert.labels.get("acknowledged_by").map(String::as_str), Some("Alice F"));
+        assert_eq!(
+            alert.annotations.get("acknowledgement").map(String::as_str),
+            Some("on it")
+        );
+        assert_eq!(
+            alert.labels.get("acknowledged_by").map(String::as_str),
+            Some("Alice F")
+        );
         assert_eq!(dialect_for("zbx70").groups_param, "selectHostGroups");
     }
 
@@ -1317,13 +1477,21 @@ mod tests {
         let mut source = source_with_url(SourceType::Zabbix, &url);
         source.name = "zbx60".to_string();
 
-        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source).await.unwrap();
+        let alerts = fetch_zabbix_alerts(&reqwest::Client::new(), &source)
+            .await
+            .unwrap();
         assert_eq!(alerts.len(), 1);
         assert_eq!(
             alerts[0].labels.get("hostgroup").map(String::as_str),
             Some("Linux servers")
         );
-        assert_eq!(alerts[0].annotations.get("acknowledgement").map(String::as_str), Some("on it"));
+        assert_eq!(
+            alerts[0]
+                .annotations
+                .get("acknowledgement")
+                .map(String::as_str),
+            Some("on it")
+        );
 
         // What worked is remembered, so the probing costs one round-trip once.
         let dialect = dialect_for("zbx60");
@@ -1344,7 +1512,9 @@ mod tests {
         ]"#;
         let url = spawn_stub(MIXED, "[]").await;
         let source = source_with_url(SourceType::Alertmanager, &url);
-        let alerts = fetch_source_alerts(&reqwest::Client::new(), &source).await.unwrap();
+        let alerts = fetch_source_alerts(&reqwest::Client::new(), &source)
+            .await
+            .unwrap();
 
         // The entry without a fingerprint is dropped; the bare one survives on
         // defaults alone.
@@ -1387,7 +1557,10 @@ mod tests {
         );
         // Who silenced it comes from the silence's createdBy.
         assert_eq!(
-            alert.annotations.get("silence_created_by").map(String::as_str),
+            alert
+                .annotations
+                .get("silence_created_by")
+                .map(String::as_str),
             Some("alice")
         );
         // A javascript: generator URL must never reach the frontend.
@@ -1472,11 +1645,16 @@ mod tests {
 
     #[test]
     fn test_am_api_base_preserves_query() {
-        let source =
-            source_with_url(SourceType::Alertmanager, "http://127.0.0.1:9093/api/v2/alerts?active=true");
+        let source = source_with_url(
+            SourceType::Alertmanager,
+            "http://127.0.0.1:9093/api/v2/alerts?active=true",
+        );
         assert_eq!(
             am_api_base(&source),
-            ("http://127.0.0.1:9093/api/v2".to_string(), "?active=true".to_string())
+            (
+                "http://127.0.0.1:9093/api/v2".to_string(),
+                "?active=true".to_string()
+            )
         );
     }
 
@@ -1484,12 +1662,12 @@ mod tests {
         let labels: HashMap<String, String> = [
             ("alertname".to_string(), "HighCPU".to_string()),
             ("namespace".to_string(), "production".to_string()),
-        ].into();
-        
-        let annotations: HashMap<String, String> = [
-            ("summary".to_string(), "CPU is high".to_string()),
-        ].into();
-        
+        ]
+        .into();
+
+        let annotations: HashMap<String, String> =
+            [("summary".to_string(), "CPU is high".to_string())].into();
+
         Alert {
             fingerprint: "test:123".to_string(),
             source: "test".to_string(),
@@ -1509,12 +1687,12 @@ mod tests {
     #[test]
     fn test_apply_link_template_basic() {
         let alert = create_test_alert();
-        
+
         // Test basic template
         let template = "https://example.com/alerts?query={{.Labels.alertname}}";
         let result = apply_link_template(template, &alert).unwrap();
         assert_eq!(result, "https://example.com/alerts?query=HighCPU");
-        
+
         // Test with namespace
         let template = "https://example.com/ns/{{.Labels.namespace}}/alerts/{{.Labels.alertname}}";
         let result = apply_link_template(template, &alert).unwrap();
@@ -1527,8 +1705,9 @@ mod tests {
         let annotations: HashMap<String, String> = [
             ("dashboardUid".to_string(), "abc123".to_string()),
             ("panelId".to_string(), "42".to_string()),
-        ].into();
-        
+        ]
+        .into();
+
         let alert = Alert {
             fingerprint: "test:123".to_string(),
             source: "test".to_string(),
@@ -1543,7 +1722,7 @@ mod tests {
             link_url: None,
             alert_link_url: None,
         };
-        
+
         let template = "https://grafana.com/d/{{.Annotations.dashboardUid}}?viewPanel={{.Annotations.panelId}}";
         let result = apply_link_template(template, &alert).unwrap();
         assert_eq!(result, "https://grafana.com/d/abc123?viewPanel=42");
@@ -1565,16 +1744,22 @@ mod tests {
             link_url: None,
             alert_link_url: None,
         };
-        
-        let template = "https://x.test/{{.Source}}/{{.Name}}?severity={{.Severity}}&status={{.Status}}";
+
+        let template =
+            "https://x.test/{{.Source}}/{{.Name}}?severity={{.Severity}}&status={{.Status}}";
         let result = apply_link_template(template, &alert).unwrap();
-        assert_eq!(result, "https://x.test/Alertmanager/MyAlert?severity=critical&status=firing");
+        assert_eq!(
+            result,
+            "https://x.test/Alertmanager/MyAlert?severity=critical&status=firing"
+        );
     }
 
     #[test]
     fn test_apply_link_template_encodes_values() {
         let mut alert = create_test_alert();
-        alert.labels.insert("host".to_string(), "srv 01/prod&x".to_string());
+        alert
+            .labels
+            .insert("host".to_string(), "srv 01/prod&x".to_string());
         let result = apply_link_template("https://x.test/?h={{.Labels.host}}", &alert).unwrap();
         assert_eq!(result, "https://x.test/?h=srv%2001%2Fprod%26x");
     }
@@ -1604,9 +1789,42 @@ mod tests {
     }
 
     #[test]
+    fn test_normalise_timestamp_makes_sorting_mean_something() {
+        // The same instant, three ways — every source spells it differently.
+        let z = normalise_timestamp("2026-09-11T10:00:00Z");
+        let off = normalise_timestamp("2026-09-11T12:00:00+02:00");
+        let frac = normalise_timestamp("2026-09-11T10:00:00.000Z");
+        assert_eq!(z, off, "an offset must land on the same instant as Z");
+        assert_eq!(z, frac, "fractional seconds must not change the instant");
+
+        // And ordering now follows time rather than ASCII. Before this, the
+        // later of these sorted first, because '.' is below 'Z'.
+        let early = normalise_timestamp("2026-09-11T10:00:00Z");
+        let late = normalise_timestamp("2026-09-11T10:00:00.5Z");
+        assert!(early <= late, "{early} should not sort after {late}");
+
+        // Zabbix goes through unix_ts_to_iso; its output has to land on the
+        // same canonical form as an Alertmanager `…Z` string for the same
+        // instant, or the two sources interleave wrongly.
+        assert_eq!(
+            normalise_timestamp(&unix_ts_to_iso("1789034400")),
+            normalise_timestamp("2026-09-10T10:00:00Z")
+        );
+
+        // Anything unparseable is passed through rather than lost.
+        assert_eq!(normalise_timestamp("not a date"), "not a date");
+    }
+
+    #[test]
     fn test_sanitize_link() {
-        assert_eq!(sanitize_link(" https://x.test/a "), Some("https://x.test/a".to_string()));
-        assert_eq!(sanitize_link("HTTP://x.test"), Some("HTTP://x.test".to_string()));
+        assert_eq!(
+            sanitize_link(" https://x.test/a "),
+            Some("https://x.test/a".to_string())
+        );
+        assert_eq!(
+            sanitize_link("HTTP://x.test"),
+            Some("HTTP://x.test".to_string())
+        );
         assert!(sanitize_link("javascript:alert(1)").is_none());
         assert!(sanitize_link("").is_none());
     }
@@ -1620,14 +1838,18 @@ mod tests {
             "https://zbx.test/zabbix/zabbix.php?action=problem.view&triggerids[]=42"
         );
         // A dashboard_url with query params is stripped back to its base.
-        source.dashboard_url = Some("https://zbx.test/zabbix/zabbix.php?action=problem.view".to_string());
+        source.dashboard_url =
+            Some("https://zbx.test/zabbix/zabbix.php?action=problem.view".to_string());
         assert_eq!(
             zabbix_problem_link(&source, "42"),
             "https://zbx.test/zabbix/zabbix.php?action=problem.view&triggerids[]=42"
         );
         // Already targets triggers: left alone.
         source.dashboard_url = Some("https://zbx.test/custom?triggerids[]=7".to_string());
-        assert_eq!(zabbix_problem_link(&source, "42"), "https://zbx.test/custom?triggerids[]=7");
+        assert_eq!(
+            zabbix_problem_link(&source, "42"),
+            "https://zbx.test/custom?triggerids[]=7"
+        );
     }
 
     #[test]
@@ -1679,11 +1901,11 @@ mod tests {
 
         let groups = group_alerts(&alerts, &["namespace".to_string()], &sev_order());
         assert_eq!(groups.len(), 2);
-        
+
         // Find prod and dev groups
         let prod_group = groups.iter().find(|g| g.key == "namespace=prod").unwrap();
         let dev_group = groups.iter().find(|g| g.key == "namespace=dev").unwrap();
-        
+
         assert_eq!(prod_group.count, 2);
         assert_eq!(dev_group.count, 1);
     }
@@ -1727,7 +1949,11 @@ mod tests {
             },
         ];
 
-        let groups = group_alerts(&alerts, &["namespace".to_string(), "job".to_string()], &sev_order());
+        let groups = group_alerts(
+            &alerts,
+            &["namespace".to_string(), "job".to_string()],
+            &sev_order(),
+        );
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].key, "namespace=prod,job=api");
         assert_eq!(groups[1].key, "namespace=prod,job=web");
@@ -1735,22 +1961,20 @@ mod tests {
 
     #[test]
     fn test_group_alerts_empty_group_by() {
-        let alerts = vec![
-            Alert {
-                fingerprint: "1".to_string(),
-                source: "test".to_string(),
-                source_type: "alertmanager".to_string(),
-                status: "firing".to_string(),
-                severity: "critical".to_string(),
-                name: "Alert1".to_string(),
-                labels: HashMap::from([("namespace".to_string(), "prod".to_string())]),
-                annotations: HashMap::new(),
-                starts_at: "2024-01-01T00:00:00Z".to_string(),
-                ends_at: None,
-                link_url: None,
-                alert_link_url: None,
-            },
-        ];
+        let alerts = vec![Alert {
+            fingerprint: "1".to_string(),
+            source: "test".to_string(),
+            source_type: "alertmanager".to_string(),
+            status: "firing".to_string(),
+            severity: "critical".to_string(),
+            name: "Alert1".to_string(),
+            labels: HashMap::from([("namespace".to_string(), "prod".to_string())]),
+            annotations: HashMap::new(),
+            starts_at: "2024-01-01T00:00:00Z".to_string(),
+            ends_at: None,
+            link_url: None,
+            alert_link_url: None,
+        }];
 
         let groups = group_alerts(&alerts, &[], &sev_order());
         assert_eq!(groups.len(), 0);
@@ -1759,7 +1983,7 @@ mod tests {
     #[test]
     fn test_zabbix_acknowledgement_parsing() {
         use serde_json::json;
-        
+
         // Test avec acknowledged comme string
         let json_data = json!({
             "eventid": "12345",
@@ -1780,15 +2004,18 @@ mod tests {
             ],
             "tags": []
         });
-        
+
         let problem: ZabbixProblem = serde_json::from_value(json_data).unwrap();
-        
+
         assert_eq!(problem.name, "Linux: Interface virbr0: Link down");
         assert_eq!(problem.acknowledged, "1");
         assert_eq!(problem.acknowledgements.len(), 1);
         assert_eq!(problem.acknowledgements[0].user, "Admin");
-        assert_eq!(problem.acknowledgements[0].message, Some("Working on it - scheduled maintenance".to_string()));
-        
+        assert_eq!(
+            problem.acknowledgements[0].message,
+            Some("Working on it - scheduled maintenance".to_string())
+        );
+
         // Test avec acknowledged comme booléen
         let json_bool = json!({
             "eventid": "12346",
@@ -1809,9 +2036,12 @@ mod tests {
             ],
             "tags": []
         });
-        
+
         let problem2: ZabbixProblem = serde_json::from_value(json_bool).unwrap();
         assert_eq!(problem2.acknowledged, "1");
-        assert_eq!(problem2.acknowledgements[0].message, Some("Boolean ack test".to_string()));
+        assert_eq!(
+            problem2.acknowledgements[0].message,
+            Some("Boolean ack test".to_string())
+        );
     }
 }

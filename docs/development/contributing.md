@@ -109,7 +109,7 @@ git checkout -b fix/my-bug-fix
 
 ### Make Your Changes
 
-1. **Follow coding standards**: See [Structure](structure.md) and [Building](building.md)
+1. **Follow coding standards**: See [Building](building.md)
 2. **Write tests**: Add tests for new functionality
 3. **Update documentation**: Update docs for any changes
 4. **Keep commits atomic**: Each commit should be a single logical change
@@ -558,7 +558,7 @@ Help maintain documentation by:
 ### Contributor Recognition
 
 All contributors are recognized in:
-- The [CONTRIBUTORS.md](CONTRIBUTORS.md) file
+- The release notes in [CHANGELOG.md](../../CHANGELOG.md)
 - GitHub's contributor graph
 - Release notes (for significant contributions)
 

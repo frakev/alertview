@@ -4,19 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AlertView</title>
-  <script>
-    // Resolve the theme before the first paint, otherwise a light-theme user
-    // gets a flash of the dark palette hardcoded on <html> above.
-    (function () {
-      try {
-        var pref = localStorage.getItem('av-theme') || 'auto';
-        var dark = pref === 'auto'
-          ? matchMedia('(prefers-color-scheme: dark)').matches
-          : pref === 'dark';
-        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-      } catch (e) {}
-    })();
-  </script>
+  <!-- Blocking on purpose: the theme must be resolved before the first paint. -->
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
 
   <!-- PWA: installable on Android (Chrome) / iOS (Safari) -->
@@ -36,6 +25,14 @@
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
   <div class="orb orb-3"></div>
+</div>
+
+<!-- A reload the server refused: it keeps serving the previous configuration,
+     and until now the only trace was a log line nobody reads on a wall display. -->
+<div class="config-banner" id="config-banner" role="status" aria-live="polite" hidden>
+  <span aria-hidden="true">⚠</span>
+  <span>Configuration rejected — still running the previous one. <b id="config-reason"></b></span>
+  <button class="config-dismiss" id="config-dismiss" title="Dismiss">✕</button>
 </div>
 
 <!-- Shown when a poll fails: without it a dead backend is indistinguishable
@@ -166,15 +163,5 @@
 </footer>
 
 <script src="/app.js"></script>
-<script>
-  // Register the service worker so AlertView is installable as a PWA.
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('Service worker registration failed:', err);
-      });
-    });
-  }
-</script>
 </body>
 </html>

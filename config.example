@@ -5,6 +5,9 @@
 #  setup; commented lines show an option with its default value, so you can
 #  uncomment and edit any of them.
 #
+#  Every key here is checked: an option AlertView does not recognise stops it
+#  from starting, with a message naming the key. It is never ignored silently.
+#
 #  Full documentation: docs/configuration/
 #  This file is watched: changes apply without restarting. Changing `port`,
 #  `tls_insecure` or `log_format` does need a restart — they are read once at
@@ -23,9 +26,11 @@ refresh_interval: 30   # seconds between two auto-refreshes in the browser
 # Insecure: prefer adding your CA to the trust store.
 tls_insecure: false
 
-# Cache the alerts fetched from each source for this many seconds. 0 disables
-# it, which is fine for a handful of dashboards. Raise it if many browsers hit
-# the same instance and you want to spare the sources. (env: ALERTVIEW_CACHE_TTL)
+# How often AlertView polls its sources, in seconds. 0 means "use
+# refresh_interval". Browsers are always served from the last poll and never
+# trigger one, so this is the only thing that decides the load on your sources —
+# one dashboard or fifty make the same number of calls.
+# (env: ALERTVIEW_CACHE_TTL)
 cache_ttl_seconds: 0
 
 # "text" for human-readable logs, "json" for structured ones
@@ -143,10 +148,12 @@ display:
   # prefix_labels: ["hostname"]
   # prefix_separator: " / "
 
-  # false shows the `summary` annotation in place of the alert name. An alert
-  # without a summary keeps its name, and the name itself is not lost: it moves
-  # behind the "+N" button as an alertname= chip.
+  # false shows an annotation in place of the alert name: the first of
+  # title_annotations the alert carries. An alert with none of them keeps its
+  # name, and the name itself is not lost: it moves behind the "+N" button as
+  # an alertname= chip.
   # show_alert_name: true
+  # title_annotations: ["summary"]   # or "description", or ["description", "summary"]
 
   # false puts every chip behind that same "+N" button — one click brings them
   # back. `labels` above stays declared.

@@ -22,15 +22,30 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --check
 
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Tests
         run: cargo test --locked
+
+  audit:
+    name: dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two advisories reached a release because nothing was watching the lock
+      # file; they were found by hand. This is that check, automated.
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   frontend:
     name: static assets
@@ -48,3 +63,9 @@ jobs:
         run: |
           node --check static/app.js
           node --check static/sw.js
+          node --check static/theme.js
+
+      # Runs the real render functions from app.js. The escaping bug fixed in
+      # 0.10.0 was invisible to a syntax check.
+      - name: Render tests
+        run: node tests/frontend/render.test.js

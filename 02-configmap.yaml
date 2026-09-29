@@ -1,3 +1,11 @@
+# Example only. As soon as the bearer_token lines below hold real values, this
+# must become a Secret: a ConfigMap is readable by anything that can list
+# ConfigMaps in the namespace, and it usually ends up in git.
+#
+#   kubectl create secret generic alertview-config \
+#     --from-file=config.yaml=./config.yaml -n alertview
+#
+# then point the volume at it — see docs/deployment/kubernetes.md#secrets-management
 apiVersion: v1
 kind: ConfigMap
 metadata:

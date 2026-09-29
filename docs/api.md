@@ -72,6 +72,7 @@ Accept: application/json
   "prefix_labels": ["hostname"],
   "prefix_separator": " / ",
   "show_alert_name": true,
+  "title_annotations": ["summary"],
   "show_labels": true,
   "critical_icon": "flame",
   "status_icons": {"silenced": "bell-off", "pending": "hourglass"},
@@ -94,7 +95,7 @@ Accept: application/json
 
 The remaining fields mirror the `display` configuration section and exist so the
 frontend renders what the config asks for: `severity_order`, `prefix_labels`,
-`prefix_separator`, `show_alert_name`, `show_labels`, `critical_icon`,
+`prefix_separator`, `show_alert_name`, `title_annotations`, `show_labels`, `critical_icon`,
 `tv_mode_default`, `link_new_tab`, `status_icons` and `custom_css`. See
 [Display Options](configuration/display-options.md).
 
@@ -136,7 +137,7 @@ Groups are ordered by their most severe alert.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Source name |
-| `status` | string | Source status: ok, error |
+| `status` | string | Source status: ok, error, or pending (not answered yet since startup) |
 | `alert_count` | integer | Number of alerts from this source |
 | `error` | string | Error message if status is error, null otherwise. Credentials embedded in a source URL (`http://user:pass@host`) are replaced by `***@` before the message leaves the server |
 

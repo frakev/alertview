@@ -184,6 +184,26 @@ function cycleTheme() {
 window.matchMedia?.('(prefers-color-scheme: dark)')
   .addEventListener('change', () => { if (App.themePref === 'auto') applyTheme('auto', { persist: false }); });
 
+/* The page's Content-Security-Policy allows the custom stylesheet's host as it
+   was when the page was served, and a policy cannot change without a reload. A
+   hot reload of the config pointing at another host would be refused by the
+   browser, silently, until someone reloaded the page by hand — on a wall
+   display, never. Only a change of host needs it: the same host, or removing
+   the stylesheet, applies in place. */
+function cssOrigin(url) {
+  if (!url || THEME_PREFS.includes(url)) return null;
+  try {
+    const origin = new URL(url, location.href).origin;
+    return origin === location.origin ? null : origin;
+  } catch { return null; }
+}
+
+function stylesheetNeedsReload(cssUrl) {
+  const origin = cssOrigin(cssUrl);
+  if (App.cssOrigin === undefined) { App.cssOrigin = origin; return false; }
+  return origin !== null && origin !== App.cssOrigin;
+}
+
 // Layer an extra stylesheet on top of the theme, if the config provides one.
 function applyCustomTheme(cssUrl) {
   const existing = document.getElementById('custom-theme-css');
@@ -198,24 +218,53 @@ function applyCustomTheme(cssUrl) {
   }
 }
 
+document.getElementById('config-dismiss')?.addEventListener('click', () => showConfigError(null));
 document.getElementById('theme-btn').addEventListener('click', cycleTheme);
 document.getElementById('tv-theme-btn').addEventListener('click', cycleTheme);
 
-/* -- knownFps persistence -- */
+/* -- knownFps persistence --
+   Kept per source, the way the server does it: a source that is pending or
+   failing keeps what it had, and one seen for the first time is primed
+   silently. With a single set, a response missing a source — at startup, or
+   during an outage — made its whole backlog "new" once it came back. */
 function loadKnownFps() {
   try {
     const raw = lsGet('av-known-fps');
     if (!raw) return null;
-    const { fps, ts } = JSON.parse(raw);
-    if (Date.now() - ts > 86400000) return null;
-    return new Set(fps);
+    const { bySource, ts } = JSON.parse(raw);
+    if (!bySource || Date.now() - ts > 86400000) return null;
+    return new Map(Object.entries(bySource).map(([name, fps]) => [name, new Set(fps)]));
   } catch { return null; }
 }
 
-function saveKnownFps(fps) {
+function saveKnownFps(known) {
   try {
-    lsSet('av-known-fps', JSON.stringify({ fps: [...fps], ts: Date.now() }));
+    const bySource = Object.fromEntries([...known].map(([name, fps]) => [name, [...fps]]));
+    lsSet('av-known-fps', JSON.stringify({ bySource, ts: Date.now() }));
   } catch {}
+}
+
+/* The alerts not seen before, and what is known after this response. Only a
+   source that answered ("ok") and was already known can announce anything. */
+function diffKnown(known, data) {
+  const bySource = new Map();
+  for (const a of data.alerts) {
+    if (!bySource.has(a.source)) bySource.set(a.source, []);
+    bySource.get(a.source).push(a);
+  }
+  const next = new Map();
+  const fresh = [];
+  for (const s of data.sources ?? []) {
+    if (s.status !== 'ok') {
+      if (known?.has(s.name)) next.set(s.name, known.get(s.name));
+      continue;
+    }
+    const alerts = bySource.get(s.name) ?? [];
+    const seen = known?.get(s.name);
+    if (seen) fresh.push(...alerts.filter(a => !seen.has(a.fingerprint)));
+    next.set(s.name, new Set(alerts.map(a => a.fingerprint)));
+  }
+  return { next, fresh };
 }
 
 /* -- Notifications -- */
@@ -237,7 +286,6 @@ NotifBtn.addEventListener('click', async () => {
 updateNotifBtn();
 
 /* -- Server-Sent Events (SSE) for real-time notifications -- */
-let sseConnected = false;
 let sseRetryCount = 0;
 const maxSseRetries = 5;
 
@@ -250,13 +298,11 @@ function connectSSE() {
   const eventSource = new EventSource('/events');
   
   eventSource.onopen = () => {
-    sseConnected = true;
     sseRetryCount = 0;
     console.log('SSE connection opened');
   };
 
   eventSource.onerror = (err) => {
-    sseConnected = false;
     console.log('SSE connection error:', err);
     eventSource.close();
     
@@ -280,11 +326,17 @@ function connectSSE() {
   // Reload config when it changes (e.g., display_labels)
   eventSource.addEventListener('config_reloaded', () => {
     console.log('Config reloaded via SSE, refreshing alerts...');
+    showConfigError(null);
     scheduleRefresh();
   });
 
-  // Store reference for cleanup
-  window._eventSource = eventSource;
+  /* The server refused an edit and kept the previous configuration. Nothing on
+     screen used to say so, which on a wall display means the change looks
+     applied and is not. */
+  eventSource.addEventListener('config_error', e => {
+    console.warn('AlertView: configuration rejected —', e.data);
+    showConfigError(e.data);
+  });
 }
 
 // Connect to SSE when page loads
@@ -357,6 +409,7 @@ const App = {
   themeFromUrl:   false,
   tvFromUrl:      false,
   knownFps:       loadKnownFps(),
+  cssOrigin:      undefined,   // custom stylesheet host the page's CSP allows
   freshFps:       new Set(),
   searchQ:        '',
   sevFilter:      lsGet('av-sev-filter') || 'all',
@@ -376,18 +429,31 @@ const App = {
 /* -- Search -- */
 const SearchInput = document.getElementById('search');
 const SearchClear = document.getElementById('search-clear');
+
+/* Re-render after the typing settles. Every keystroke used to rebuild the whole
+   list synchronously, which is fine for a dozen alerts and not for a wall
+   display carrying hundreds. */
+let searchTimer = null;
+function onSearchChanged(immediate = false) {
+  SearchClear.style.display = App.searchQ ? 'block' : 'none';
+  clearTimeout(searchTimer);
+  const apply = () => { renderAlerts(); pushUrl(); };
+  if (immediate) apply();
+  else searchTimer = setTimeout(apply, 120);
+}
+
+/* The one place the search is emptied — the body of this was written out three
+   times, and the copies had already started to differ. */
+function clearSearch() {
+  SearchInput.value = App.searchQ = '';
+  onSearchChanged(true);
+}
+
 SearchInput.addEventListener('input', e => {
   App.searchQ = e.target.value;
-  SearchClear.style.display = App.searchQ ? 'block' : 'none';
-  renderAlerts();
-  pushUrl();
+  onSearchChanged();
 });
-SearchClear.addEventListener('click', () => {
-  SearchInput.value = App.searchQ = '';
-  SearchClear.style.display = 'none';
-  renderAlerts();
-  pushUrl();
-});
+SearchClear.addEventListener('click', clearSearch);
 
 /* -- Silence toggle -- */
 function updateSilenceBtn() {
@@ -459,23 +525,22 @@ async function fetchAlerts() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
 
-    const curFps = new Set(data.alerts.map(a => a.fingerprint));
-    App.freshFps = new Set();
-    if (App.knownFps !== null) {
-      const newAlerts = data.alerts.filter(a => !App.knownFps.has(a.fingerprint));
-      if (newAlerts.length) { 
-        sendNotif(newAlerts); 
-        playSoundForAlerts(newAlerts);
-        newAlerts.forEach(a => App.freshFps.add(a.fingerprint)); 
-      }
+    // `theme` holding a URL is the legacy way of declaring a custom stylesheet.
+    const cssUrl = data.custom_css || data.theme;
+    if (stylesheetNeedsReload(cssUrl)) { location.reload(); return; }
+
+    const { next, fresh: newAlerts } = diffKnown(App.knownFps, data);
+    App.freshFps = new Set(newAlerts.map(a => a.fingerprint));
+    if (newAlerts.length) {
+      sendNotif(newAlerts);
+      playSoundForAlerts(newAlerts);
     }
-    App.knownFps = curFps;
-    saveKnownFps(curFps);
+    App.knownFps = next;
+    saveKnownFps(next);
     
     // Update config from API response
     if (data.timezone) AppConfig.timezone = data.timezone;
-    // `theme` holding a URL is the legacy way of declaring a custom stylesheet.
-    applyCustomTheme(data.custom_css || data.theme);
+    applyCustomTheme(cssUrl);
     if (data.theme && THEME_PREFS.includes(data.theme) && !App.themeFromUser && !App.themeFromUrl) {
       applyTheme(data.theme, { persist: false });
     }
@@ -521,6 +586,15 @@ function startCountdown(seconds) {
     App.countdown = Math.max(0, App.countdown - 1);
     paintCountdown();
   }, 1000);
+}
+
+/* Shown until the next successful reload, or until dismissed. The reason comes
+   from the server, which has already redacted any credentials in it. */
+function showConfigError(reason) {
+  const banner = document.getElementById('config-banner');
+  if (!banner) return;
+  banner.hidden = !reason;
+  if (reason) document.getElementById('config-reason').textContent = String(reason).split('\n')[0];
 }
 
 /* A failed poll used to be a console message and nothing else: "last refresh"
@@ -671,13 +745,30 @@ function updateTitle(shown, total) {
 
 function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); }
 
-function renderStats() {
+/* How many alerts of each severity, most severe first. */
+function severityCounts() {
   const counts = {};
-  (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
-  const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
-  document.getElementById('stats-bar').innerHTML = order
-    .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" data-sev="${esc(s)}"` +
-      ` role="button" tabindex="0" aria-pressed="${App.sevFilter === s}">${counts[s]}&thinsp;${esc(s)}</span>`)
+  (App.data?.alerts ?? []).forEach(a => {
+    const s = a.severity || 'none';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .sort((a, b) => severityOrder(a) - severityOrder(b))
+    .map(s => [s, counts[s]]);
+}
+
+/* One severity chip. The header and the TV panel build the same row and had
+   drifted into two copies; `style` is the only thing that ever differed. */
+function sevChipHtml(sev, label, style = '') {
+  const active = App.sevFilter === sev;
+  const cls = sev === 'all' ? 'stat-chip' : `stat-chip ${sevClass(sev)}`;
+  return `<span class="${cls}${active ? ' active' : ''}"${style} data-sev="${esc(sev)}"` +
+    ` role="button" tabindex="0" aria-pressed="${active}">${label}</span>`;
+}
+
+function renderStats() {
+  document.getElementById('stats-bar').innerHTML = severityCounts()
+    .map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`))
     .join('');
 }
 
@@ -687,7 +778,9 @@ function renderSources() {
     <span class="src-item">
       <span class="src-dot ${s.status}"></span>
       ${esc(s.name)}
-      ${s.status === 'ok' ? '· ' + s.alert_count + ' alert' + (s.alert_count !== 1 ? 's' : '') : `<span class="src-err-label" title="${esc(s.error)}">⚠ error</span>`}
+      ${s.status === 'ok' ? '· ' + s.alert_count + ' alert' + (s.alert_count !== 1 ? 's' : '')
+        : s.status === 'pending' ? '<span class="src-pending-label">· waiting…</span>'
+        : `<span class="src-err-label" title="${esc(s.error)}">⚠ error</span>`}
     </span>`).join('');
 }
 
@@ -741,6 +834,31 @@ function reconcileChildren(container, items, getKey, getHtml) {
   }
 }
 
+/* An empty list is only "all clear" when every source has answered. A source
+   still pending (just after startup) or failing may be hiding alerts, and a
+   green tick on a wall display would say otherwise. */
+function emptyStateHtml() {
+  const filtering = App.searchQ || App.sevFilter !== 'all' || App.srcFilter.size > 0;
+  const sources = App.data?.sources ?? [];
+  const pending = sources.filter(s => s.status === 'pending').map(s => s.name);
+  const failing = sources.filter(s => s.status === 'error').map(s => s.name);
+  let icon = '✅', text = 'No active alerts';
+  if (filtering) {
+    icon = '🔍';
+    if (App.searchQ) text = 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;';
+  } else if (pending.length) {
+    icon = '⏳';
+    text = 'Waiting for ' + esc(pending.join(', '));
+  } else if (failing.length) {
+    icon = '⚠';
+    text = 'No alerts from the sources that answered — unreachable: ' + esc(failing.join(', '));
+  }
+  return `<div class="empty-state">
+      <div class="empty-state-icon">${icon}</div>
+      <div>${text}</div>
+    </div>`;
+}
+
 function renderAlerts() {
   const filtered = filteredAlerts();
   const total    = App.data?.alerts.length ?? 0;
@@ -755,10 +873,7 @@ function renderAlerts() {
   updateTitle(filtered, total);
 
   if (!filtered.length) {
-    listEl.innerHTML = `<div class="empty-state">
-      <div class="empty-state-icon">${App.searchQ || App.sevFilter !== 'all' || App.srcFilter.size > 0 ? '🔍' : '✅'}</div>
-      <div>${App.searchQ ? 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;' : 'No active alerts'}</div>
-    </div>`;
+    listEl.innerHTML = emptyStateHtml();
     return;
   }
 
@@ -893,8 +1008,20 @@ function getSourceLabel(sourceType) {
   return labels[sourceType] || "Open in source";
 }
 
+/* `rel` regardless of the target: in kiosk mode the link opens in the same tab,
+   and without it the dashboard URL — filters included — travelled to whatever
+   the alert pointed at. */
 function linkTarget() {
-  return App.data?.link_new_tab === false ? '' : ' target="_blank" rel="noopener noreferrer"';
+  const target = App.data?.link_new_tab === false ? '' : ' target="_blank"';
+  return `${target} rel="noopener noreferrer"`;
+}
+
+/* The server only ever hands out http(s) links — `sanitize_link` in alerts.rs
+   drops anything else. This is the same check on the way out, so the page does
+   not depend on that promise holding for ever. */
+function safeHref(url) {
+  const s = String(url ?? '').trim();
+  return /^https?:\/\//i.test(s) ? s : '';
 }
 
 /* The alert link hangs off the severity marker rather than the whole card: one
@@ -902,11 +1029,14 @@ function linkTarget() {
    that navigates wherever you happen to click. */
 function severityMarkLink(a, mark) {
   if (!a.alert_link_url) return mark;
-  return `<a class="mark-link" href="${esc(a.alert_link_url)}"${linkTarget()}` +
+  const href = safeHref(a.alert_link_url);
+  if (!href) return mark;
+  return `<a class="mark-link" href="${esc(href)}"${linkTarget()}` +
     ` title="${esc(a.name)} — open the runbook">${mark}</a>`;
 }
 
 function genLinkHtml(url, sourceType, sourceName) {
+  url = safeHref(url);
   if (!url) return '';
   const label = sourceType ? getSourceLabel(sourceType) : "Open in Prometheus/Grafana";
   const title = sourceName ? `${sourceName} — ${label}` : label;
@@ -943,9 +1073,6 @@ function chipLabels(a) {
     .filter(l => !prefix.includes(l));
 }
 
-/* The main text of an alert: its name, or the summary when the config hides
-   the name. An alert with no summary keeps its name rather than showing
-   nothing. Returns the text and whether the summary was consumed by it. */
 /* What an alert shows inline, what sits behind the toggle, and whether the
    toggle is open. Everything the config hides — the label chips with
    show_labels: false, the alert name with show_alert_name: false — goes behind
@@ -957,7 +1084,7 @@ function labelLayout(a, inlineCount) {
   const inline = App.data?.show_labels === false ? 0 : inlineCount;
   const hidden = labels.slice(inline).map(l => ({ key: l, value: a.labels[l] }));
 
-  // The alert name is not a chip; when the summary takes its place it would be
+  // The alert name is not a chip; when an annotation takes its place it would be
   // nowhere to be seen, so it leads the hidden list.
   if (App.data?.show_alert_name === false && a.name) {
     hidden.unshift({ key: 'alertname', value: a.name });
@@ -986,12 +1113,18 @@ function labelsToggleHtml(hidden, open) {
     `${open ? '−' : '+' + hidden.length}</button>`;
 }
 
+/* The main text of an alert: its name, or — when the config hides the name —
+   the first of display.title_annotations the alert carries. An alert with none
+   of them keeps its name rather than showing nothing. Returns the text and the
+   annotation it consumed, if any, so it is not repeated below. */
 function alertTitle(a) {
-  const summary = a.annotations?.summary || '';
-  if (App.data?.show_alert_name === false && summary) {
-    return { text: summary, usedSummary: true };
+  if (App.data?.show_alert_name === false) {
+    for (const key of App.data.title_annotations ?? ['summary']) {
+      const text = a.annotations?.[key];
+      if (text) return { text, annotation: key };
+    }
   }
-  return { text: a.name, usedSummary: false };
+  return { text: a.name, annotation: null };
 }
 
 /* The emoji artwork itself, shipped with the app instead of borrowed from the
@@ -1079,8 +1212,8 @@ function cardHtml(a) {
     + hiddenLabelsHtml(lay.hidden, lay.open);
 
   const title    = alertTitle(a);
-  const summary  = title.usedSummary ? '' : (a.annotations?.summary || '');
-  const desc     = a.annotations?.description || '';
+  const summary  = title.annotation === 'summary' ? '' : (a.annotations?.summary || '');
+  const desc     = title.annotation === 'description' ? '' : (a.annotations?.description || '');
   const showDesc = desc && desc !== title.text && desc !== summary;
 
   return `
@@ -1091,12 +1224,12 @@ function cardHtml(a) {
           ${prefixHtml(a)}
           <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
           ${statusMark(a)}${commentToggleHtml(a)}
-          <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
+          <span class="alert-name${title.annotation ? ' is-summary' : ''}">${esc(title.text)}</span>
         </div>
         <div class="card-meta">
           <span class="src-chip">${esc(a.source)}</span>
           <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
-          ${genLinkHtml(a.link_url, a.source_type)}
+          ${genLinkHtml(a.link_url, a.source_type, a.source)}
         </div>
       </div>
       ${summary  ? `<div class="card-summary">${esc(summary)}</div>` : ''}
@@ -1109,13 +1242,13 @@ function cardHtml(a) {
 function cardHtmlTV(a) {
   const sev     = a.severity || 'none';
   const title   = alertTitle(a);
-  const summary = title.usedSummary ? '' : (a.annotations?.summary || '');
+  const summary = title.annotation === 'summary' ? '' : (a.annotations?.summary || '');
   
   // A row only has space for 2 labels inline, the rest go behind the +N toggle.
   // Presence is filtered *before* slicing so a row never hides every label it
   // has; labels already shown in the prefix are excluded by chipLabels().
   const lay = labelLayout(a, 2);
-  const labelsHtml = lay.visible.map(i => labelChip(i, ' tv-lbl')).join('');
+  const labelsHtml = lay.visible.map(i => labelChip(i)).join('');
 
   // Every slot is always emitted, even empty: the row is a subgrid of the list,
   // so a missing element would shift the columns of that row only. This is what
@@ -1126,12 +1259,12 @@ function cardHtmlTV(a) {
       ${prefixHtml(a) || '<span class="alert-prefix"></span>'}
       <span class="sev-badge ${sevClass(sev)}">${esc(sev)}</span>
       <span class="row-status">${statusMark(a)}${commentToggleHtml(a)}</span>
-      <span class="alert-name${title.usedSummary ? ' is-summary' : ''}">${esc(title.text)}</span>
+      <span class="alert-name${title.annotation ? ' is-summary' : ''}">${esc(title.text)}</span>
       <span class="row-summary">${esc(summary)}</span>
       <span class="row-labels">${labelsHtml}${labelsToggleHtml(lay.hidden, lay.open)}</span>
       <span class="time-ago" title="${esc(absTime(a.starts_at))}">for&nbsp;${relTime(a.starts_at)}</span>
       <span class="row-link">${genLinkHtml(a.link_url, a.source_type, a.source)}</span>
-      ${hiddenLabelsHtml(lay.hidden, lay.open, ' tv-lbl')}
+      ${hiddenLabelsHtml(lay.hidden, lay.open)}
       ${commentHtml(a)}
     </div>`;
 }
@@ -1139,6 +1272,9 @@ function cardHtmlTV(a) {
 /* -- TV Mode -- */
 const TV = {
   active:     false,
+  /// Whether this browser has ever used the TV button. Declared here rather
+  /// than sprouted in init(), so the shape of the object is the whole shape.
+  chosen:     false,
   panelOpen:  false,
   moreOpen:   false,
   clockTimer: null,
@@ -1240,15 +1376,10 @@ const TV = {
   },
 
   renderChips() {
-    const counts = {};
-    (App.data?.alerts ?? []).forEach(a => { const s = a.severity || 'none'; counts[s] = (counts[s] || 0) + 1; });
-    const order = Object.keys(counts).sort((a, b) => severityOrder(a) - severityOrder(b));
-    const all = `<span class="stat-chip${App.sevFilter === 'all' ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="all"` +
-      ` role="button" tabindex="0" aria-pressed="${App.sevFilter === 'all'}">all</span>`;
-    document.getElementById('tv-sev-chips').innerHTML = all + order
-      .map(s => `<span class="stat-chip ${sevClass(s)}${App.sevFilter === s ? ' active' : ''}" style="font-size:10px;padding:1px 7px" data-sev="${esc(s)}"` +
-        ` role="button" tabindex="0" aria-pressed="${App.sevFilter === s}">${counts[s]}&thinsp;${esc(s)}</span>`)
-      .join('');
+    const small = ' style="font-size:10px;padding:1px 7px"';
+    document.getElementById('tv-sev-chips').innerHTML =
+      sevChipHtml('all', 'all', small) +
+      severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`, small)).join('');
   },
 
   renderDots() {
@@ -1281,7 +1412,7 @@ function initFromUrl() {
   if (p.has('theme')) { App.themeFromUrl = true; applyTheme(p.get('theme'), { persist: false }); }
   if (p.has('sev'))   App.sevFilter = p.get('sev');
   if (p.has('src'))   App.srcFilter = new Set(p.get('src').split(',').filter(Boolean));
-  if (p.has('q'))     {
+  if (p.has('q')) {
     App.searchQ = p.get('q');
     SearchInput.value = App.searchQ;
     SearchClear.style.display = App.searchQ ? 'block' : 'none';
@@ -1326,25 +1457,22 @@ function activate(containerId, selector, handler) {
   activate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
   activate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
-delegate('alert-list', '[data-comment-toggle]', (el, e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  const fp = el.closest('.alert-card')?.dataset.fp;
-  if (!fp) return;
-  if (App.openComments.has(fp)) App.openComments.delete(fp);
-  else App.openComments.add(fp);
-  renderAlerts();
-});
-delegate('alert-list', '[data-labels-toggle]', (el, e) => {
-  // The card-wide link overlay sits under this button; stop the click there.
-  e.preventDefault();
-  e.stopPropagation();
-  const fp = el.closest('.alert-card')?.dataset.fp;
-  if (!fp) return;
-  if (App.openLabels.has(fp)) App.openLabels.delete(fp);
-  else App.openLabels.add(fp);
-  renderAlerts();
-});
+/* Both row toggles do the same thing to a different set, keyed by fingerprint
+   so the open state survives the refresh. */
+function toggleOnCard(set) {
+  return (el, e) => {
+    // The severity marker next to these is a link; stop the click reaching it.
+    e.preventDefault();
+    e.stopPropagation();
+    const fp = el.closest('.alert-card')?.dataset.fp;
+    if (!fp) return;
+    if (set.has(fp)) set.delete(fp);
+    else set.add(fp);
+    renderAlerts();
+  };
+}
+delegate('alert-list', '[data-comment-toggle]', toggleOnCard(App.openComments));
+delegate('alert-list', '[data-labels-toggle]', toggleOnCard(App.openLabels));
 activate('alert-list', '.group-header', el => {
   const groupEl = el.closest('.alert-group');
   if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
@@ -1366,14 +1494,8 @@ document.addEventListener('keydown', e => {
 // Escape leaves the search box, clearing it when it is empty of intent.
 SearchInput.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (App.searchQ) {
-    SearchInput.value = App.searchQ = '';
-    SearchClear.style.display = 'none';
-    renderAlerts();
-    pushUrl();
-  } else {
-    SearchInput.blur();
-  }
+  if (App.searchQ) clearSearch();
+  else SearchInput.blur();
 });
 
 /* -- Boot -- */
@@ -1383,3 +1505,13 @@ applyTheme(App.themePref, { persist: false });
 initFromUrl();
 updateSilenceBtn();
 fetchAlerts();
+
+/* Register the service worker so AlertView is installable as a PWA. Lives here
+   rather than in an inline <script> so the page needs no `unsafe-inline`. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}

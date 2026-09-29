@@ -8,15 +8,18 @@ This section covers all aspects of AlertView configuration.
 - [Environment Variables](./environment-variables.md) - All supported environment variables
 - [Source Types](./source-types.md) - Detailed guide for each source type
 - [Display Options](./display-options.md) - Customize the UI
-- [Advanced Configuration](./advanced.md) - Caching, retries, timeouts, etc.
 
 ## Configuration Hierarchy
 
-AlertView uses a hierarchical configuration system with the following priority (highest to lowest):
+Priority, highest to lowest:
 
-1. **Environment Variables** - Override any config file setting
-2. **Config File** - Main YAML configuration
-3. **Defaults** - Built-in default values
+1. **Config File** - a key written here always wins
+2. **Environment Variables** - defaults for the keys the file leaves out
+3. **Built-in Defaults**
+
+The file wins, not the environment: see
+[Environment Variables](./environment-variables.md) for the complete list and
+the reason.
 
 ## Configuration Files
 
