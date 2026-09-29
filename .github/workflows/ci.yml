@@ -41,11 +41,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+
       # Two advisories reached a release because nothing was watching the lock
       # file; they were found by hand. This is that check, automated.
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # cargo-audit directly rather than rustsec/audit-check: the action reports
+      # through a check run, which needs `checks: write` — a token this workflow
+      # does not grant, and that pull requests from forks never get. A failing
+      # step says the same thing, with no permission at all.
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
 
   frontend:
     name: static assets
