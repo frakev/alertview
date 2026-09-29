@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-09-29
+
 ### Changed
 - **A TV row shows one sentence, not two.** With `show_alert_name: false`, the annotation used as the title — the description, with `title_annotations: description` — was followed on the same line by the summary in grey. Once an annotation is the title, the row no longer adds the summary beside it; its column stays, empty, so rows still line up. Cards are unchanged: they have the room, and keep the summary below the title.
 
@@ -447,7 +449,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/frakev/alertview/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/frakev/alertview/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/frakev/alertview/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/frakev/alertview/compare/v0.11.1...v0.12.0
