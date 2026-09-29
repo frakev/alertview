@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-29
+
 ### Security
 - **`rustls` 0.23.45** (from 0.23.40), for [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285): TLS 1.3 handshake messages were accepted across encryption level boundaries. AlertView uses it for every connection to a source. The advisory is dated 2026-09-14 and was caught by the audit added to CI in 0.13.0, on its first run.
 

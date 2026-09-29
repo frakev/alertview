@@ -26,7 +26,7 @@ spec:
           # Pin the version rather than track :latest. With :latest and
           # IfNotPresent a restart silently keeps whatever the node already had,
           # so a rollout never actually rolled anything out.
-          image: ghcr.io/frakev/alertview:0.13.0
+          image: ghcr.io/frakev/alertview:0.13.1
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
