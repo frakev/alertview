@@ -6,7 +6,8 @@ const assert = require('assert');
 const { load } = require('./extract.js');
 
 const CONSTS = ['ESC', 'DEFAULT_SEV_ORDER', 'SEV_ALIASES', 'MISSING_LABEL',
-                'sevOrderCache', 'BUILTIN_ICONS', 'SOUND_PRESETS', 'tzChecked', 'THEME_PREFS'];
+                'sevOrderCache', 'BUILTIN_ICONS', 'SOUND_PRESETS', 'tzChecked', 'THEME_PREFS',
+                'STATUS_KINDS'];
 const FNS = ['esc', 'sevClass', 'canonSev', 'sevOrderList', 'severityOrder', 'severityIcon',
              'presetFor', 'relTime', 'absTime', 'tzOptions', 'linkTarget', 'getSourceLabel',
              'genLinkHtml', 'severityMarkLink', 'safeHref', 'iconHtml', 'prefixLabels', 'prefixHtml',
@@ -14,10 +15,13 @@ const FNS = ['esc', 'sevClass', 'canonSev', 'sevOrderList', 'severityOrder', 'se
              'alertTitle', 'criticalIcon', 'severityMark', 'statusMark', 'alertComment',
              'commentAuthor', 'commentToggleHtml', 'commentHtml', 'cardHtml', 'cardHtmlTV',
              'alertsInGroup', 'parseQuery', 'alertField', 'matchFilter', 'filtersMatch',
-             'diffKnown', 'emptyStateHtml', 'cssOrigin', 'stylesheetNeedsReload'];
+             'diffKnown', 'emptyStateHtml', 'cssOrigin', 'stylesheetNeedsReload',
+             'wantsSearchFocus', 'statusAllowed', 'filteredAlerts',
+             'applyChipSelection', 'parseFilterSet', 'formatFilterSet'];
 
 const App = { data: null, openLabels: new Set(), openComments: new Set(),
-              searchQ: '', sevFilter: 'all', srcFilter: new Set() };
+              searchQ: '', sevFilter: new Set(), srcFilter: new Set(),
+              statusFilter: new Set(['firing']) };
 const location = { href: 'https://alertview.test/', origin: 'https://alertview.test' };
 const AppConfig = { timezone: 'local', playSounds: true };
 const TV = { active: false };
@@ -213,6 +217,110 @@ ok(H.stylesheetNeedsReload(undefined) === false, 'removing it applies in place')
 ok(H.stylesheetNeedsReload('/local.css') === false, "a same-origin stylesheet is covered by 'self'");
 ok(H.stylesheetNeedsReload('https://b.test/t.css') === true, 'another host needs the new policy');
 ok(H.cssOrigin('dark') === null, 'a theme name is not a stylesheet');
+
+// ── The search shortcut, TV mode included ───────────────────────────────
+const key = (k, mod = {}, tag = 'BODY') => ({ key: k, target: { tagName: tag }, ...mod });
+ok(H.wantsSearchFocus(key('f', { ctrlKey: true })) === true, 'Ctrl+F asks for the search box');
+ok(H.wantsSearchFocus(key('F', { metaKey: true })) === true, 'Cmd+F too, and the shifted letter');
+ok(H.wantsSearchFocus(key('/')) === true, '"/" on its own asks for it');
+ok(H.wantsSearchFocus(key('f')) === false, 'a bare f is just a letter');
+ok(H.wantsSearchFocus(key('/', {}, 'INPUT')) === false, '"/" inside a field is a character, not a shortcut');
+ok(H.wantsSearchFocus(key('/', { ctrlKey: true })) === false, 'Ctrl+/ is something else');
+/* The regression this pins: the handler used to bail out on TV.active, so the
+   only mode with no reachable search box was the one that needed it most. */
+TV.active = true;
+ok(H.wantsSearchFocus(key('f', { ctrlKey: true })) === true, 'Ctrl+F still asks for it in TV mode');
+ok(H.wantsSearchFocus(key('/')) === true, '"/" still asks for it in TV mode');
+// Typing in the TV panel's own field must stay typing.
+ok(H.wantsSearchFocus(key('/', {}, 'INPUT')) === false, 'and not while typing in the TV field');
+TV.active = false;
+
+// ── Chip selection: a click toggles, with no modifier to hold ────────────
+/* The same rule for severities, statuses and sources — the source row already
+   worked this way, and the other two now share its one implementation. */
+const sel = (...init) => new Set(init);
+const picked = (s, v) => { H.applyChipSelection(s, v); return [...s].sort(); };
+
+assert.deepStrictEqual(picked(sel(), 'critical'), ['critical'],
+  'a click on an empty selection selects that one'); checks++;
+assert.deepStrictEqual(picked(sel('critical'), 'error'), ['critical', 'error'],
+  'a second click adds to the selection — no modifier needed'); checks++;
+assert.deepStrictEqual(picked(sel('critical', 'error'), 'error'), ['critical'],
+  'clicking a selected chip takes it out'); checks++;
+assert.deepStrictEqual(picked(sel('critical'), 'critical'), [],
+  'and taking the last one out is no filter at all'); checks++;
+assert.deepStrictEqual(picked(sel('critical', 'error', 'warning'), 'all'), [],
+  'the all chip clears everything'); checks++;
+assert.deepStrictEqual(picked(sel(), 'all'), [],
+  'clicking all when nothing is selected changes nothing'); checks++;
+
+// Round-trips through localStorage and the URL, legacy single values included.
+assert.deepStrictEqual([...H.parseFilterSet('critical,error')].sort(), ['critical', 'error']); checks++;
+assert.deepStrictEqual([...H.parseFilterSet('critical')], ['critical'],
+  'a value stored by an older version is a one-element set'); checks++;
+assert.deepStrictEqual([...H.parseFilterSet('all')], [], '"all" is the empty set'); checks++;
+assert.deepStrictEqual([...H.parseFilterSet(null)], [], 'and so is nothing at all'); checks++;
+ok(H.formatFilterSet(new Set()) === 'all', 'the empty set is written back as "all"');
+ok(H.formatFilterSet(new Set(['a', 'b'])) === 'a,b', 'and a selection as a list');
+
+// ── Silenced and inhibited are filtered apart, and combine ──────────────
+/* One show/hide toggle used to cover both, so "what is another alert masking
+   right now?" could not be asked at all. `firing` stands for "not suppressed",
+   so a pending alert rides with it rather than needing a chip of its own. */
+const savedData = App.data;
+App.data = { alerts: [
+  { name: 'Firing',    status: 'firing',    severity: 'critical', source: 'A', labels: {}, annotations: {} },
+  { name: 'Silenced',  status: 'silenced',  severity: 'warning',  source: 'A', labels: {}, annotations: {} },
+  { name: 'Inhibited', status: 'inhibited', severity: 'warning',  source: 'A', labels: {}, annotations: {} },
+  { name: 'Pending',   status: 'pending',   severity: 'info',     source: 'A', labels: {}, annotations: {} },
+], sources: [{ name: 'A', status: 'ok' }] };
+
+const shown = (...kinds) => {
+  App.statusFilter = new Set(kinds);
+  return H.filteredAlerts().map(a => a.name).sort();
+};
+assert.deepStrictEqual(shown('firing'), ['Firing', 'Pending'],
+  'firing: neither silenced nor inhibited, but pending still counts'); checks++;
+assert.deepStrictEqual(shown('silenced'), ['Silenced'],
+  'silenced alone: firing excluded'); checks++;
+assert.deepStrictEqual(shown('inhibited'), ['Inhibited'],
+  'inhibited alone'); checks++;
+assert.deepStrictEqual(shown('silenced', 'inhibited'), ['Inhibited', 'Silenced'],
+  'both suppressed kinds together, which one chip each could not express'); checks++;
+assert.deepStrictEqual(shown('firing', 'silenced'), ['Firing', 'Pending', 'Silenced'],
+  'firing plus silenced, leaving the inhibited ones out'); checks++;
+assert.deepStrictEqual(shown(), ['Firing', 'Inhibited', 'Pending', 'Silenced'],
+  'the empty selection is no filter at all'); checks++;
+
+// ── Several severities at once ──────────────────────────────────────────
+App.statusFilter = new Set();
+const bySev = (...sevs) => {
+  App.sevFilter = new Set(sevs);
+  return H.filteredAlerts().map(a => a.name).sort();
+};
+assert.deepStrictEqual(bySev('critical'), ['Firing'], 'one severity'); checks++;
+assert.deepStrictEqual(bySev('critical', 'info'), ['Firing', 'Pending'],
+  'two severities at once'); checks++;
+assert.deepStrictEqual(bySev(), ['Firing', 'Inhibited', 'Pending', 'Silenced'],
+  'no severity selected is every severity'); checks++;
+// An alert whose source sent no severity is counted under `none`, so the `none`
+// chip has to find it — it used to match nothing at all.
+App.data.alerts.push({ name: 'Bare', status: 'firing', severity: '', source: 'A', labels: {}, annotations: {} });
+assert.deepStrictEqual(bySev('none'), ['Bare'], 'the none chip finds an alert with no severity'); checks++;
+App.data.alerts.pop();
+App.sevFilter = new Set();
+
+/* An empty list under a suppressed-only selection is an answer — "nothing is
+   silenced" — not the green tick of an unfiltered all-clear. */
+App.statusFilter = new Set(['silenced']);
+App.data.alerts = [];
+ok(!H.emptyStateHtml().includes('✅'), 'only-silenced and empty: no all-clear tick');
+ok(H.emptyStateHtml().includes('No silenced alerts'), 'and it says what is empty');
+App.statusFilter = new Set(['silenced', 'inhibited']);
+ok(H.emptyStateHtml().includes('No silenced or inhibited alerts'),
+  'both kinds selected: both named, in chip order');
+App.statusFilter = new Set(['firing']);
+App.data = savedData;
 
 // ── Timezone ────────────────────────────────────────────────────────────
 AppConfig.timezone = 'Europe/Nowhere';

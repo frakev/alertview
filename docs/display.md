@@ -47,6 +47,7 @@ display:
   critical_icon: "flame"
   status_icons:
     silenced: "bell-off"
+    inhibited: "bell-off"
     pending: "hourglass"
 ```
 
@@ -54,15 +55,52 @@ display:
   sorting, the filter chips, the order of groups and the sound played. A
   severity missing from the list sorts last; add your own levels to place them.
   `crit`, `err`, `warn` and `information` are understood as aliases.
+
+The severity chips filter the list. Each click adds a severity or takes it out,
+so several can be on at once — `critical` + `error` and nothing else. The `all`
+chip clears them, and so does taking the last one out.
 - **`critical_icon`** replaces the coloured dot of critical alerts. `""` gives
   them back the dot.
-- **`status_icons`** marks silenced and pending alerts. Firing alerts have no
-  marker: it is the normal state. A silenced alert has a 💬 button that shows
-  the silence comment and its author.
+- **`status_icons`** marks silenced, inhibited and pending alerts. Firing alerts
+  have no marker: it is the normal state. A silenced alert has a 💬 button that
+  shows the silence comment and its author. `silenced` and `inhibited` share the
+  bell by default; give them different icons to tell them apart on sight.
 
 `flame`, `bell-off` and `hourglass` are built-in drawings that look the same on
 every machine. Any other text is shown as is; a typed emoji works only where the
 machine has an emoji font.
+
+## Silenced and inhibited alerts
+
+An alert can be quiet for two different reasons, and Alertmanager reports both as
+`suppressed`:
+
+- **silenced** — somebody decided it should be quiet, and said why.
+- **inhibited** — another, more serious alert is firing, so this one is masked as
+  a consequence. Nobody chose it.
+
+Zabbix has no inhibition; an acknowledged or suppressed problem is `silenced`.
+
+Four chips in the toolbar (and in the TV filter panel) choose what to show:
+
+| Chip | Shows |
+|---|---|
+| **Firing** | everything that is not suppressed — the default |
+| **Silenced** | the alerts somebody has silenced |
+| **Inhibited** | the alerts another alert is masking |
+| **All** | everything, whatever the chips |
+
+They combine, the way the source chips do: each click adds a chip or takes it out.
+`Silenced` + `Inhibited` shows everything suppressed and nothing else; `Firing` +
+`Silenced` leaves out only the inhibited ones. `All` clears the selection, and so
+does taking the last chip out.
+
+`Firing` covers every status that is not suppressed, `pending` included, so there
+is no chip for it.
+
+Selecting only suppressed kinds answers "what am I not being told about right
+now?" — an empty list then says so (*No silenced alerts*) instead of showing the
+green all-clear.
 
 ## Grouping
 
@@ -81,6 +119,10 @@ TV mode is a dense view for wall screens: one aligned row per alert, and a
 small status bar (source dots, clock, last refresh, version).
 
 - Press **`T`** to toggle it, **`Escape`** to leave it.
+- **`Ctrl+F`** or **`/`** opens the filter panel with the search field focused,
+  without leaving TV mode. `Escape` empties the field, then closes the panel.
+- While a search is active, it is shown in the status bar — a wall screen has to
+  say why it is displaying 12 alerts out of 54.
 - For a wall screen, open the dashboard with **`?tv=1`**: it always starts in TV
   mode.
 - `tv_mode_default: true` starts in TV mode only in browsers where nobody has
@@ -98,16 +140,21 @@ severity=critical, team!=dba
 ```
 
 `=` is an exact match, `~` contains, `!=` excludes, `|` separates values.
-`Ctrl+F` or `/` jumps to the search box.
+
+`Ctrl+F` or `/` jumps to the search box — in TV mode, to the one in the filter
+panel, which those keys open. Both take over from the browser's find-in-page,
+which only searches the rows already on screen; it stays available from the
+browser's own menu.
 
 Filters are kept in the URL, so a view can be bookmarked or put on a screen:
 
 | Parameter | Effect |
 |---|---|
 | `?q=team=sre` | search / label filter |
-| `?sev=critical` | severity filter |
+| `?sev=critical,error` | severity filter — one or several, comma-separated |
 | `?src=Zabbix` | source filter |
-| `?silenced=1` | show silenced alerts |
+| `?show=silenced,inhibited` | `firing` (default), `silenced`, `inhibited`, comma-separated, or `all` — see [above](#silenced-and-inhibited-alerts) |
+| `?silenced=1` | the old spelling of `?show=all`, still honoured |
 | `?tv=1` / `?tv=0` | force TV mode on or off |
 | `?theme=dark` | `auto`, `light` or `dark` |
 

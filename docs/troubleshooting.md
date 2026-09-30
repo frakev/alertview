@@ -59,8 +59,10 @@ The empty list says why:
 - **🔍** — your search or filters hide everything. Clear the search box and the
   chips, and check the URL (`?q=`, `?sev=`, `?src=`).
 
-Silenced alerts are hidden by default: click **Show silenced**, or add
-`?silenced=1` to the URL.
+Silenced and inhibited alerts are hidden by default. The toolbar chips choose
+what to show — **Silenced** and **Inhibited** show that kind *alone*, **All**
+shows everything — or add `?show=all` to the URL. See
+[Display](display.md#silenced-and-inhibited-alerts).
 
 ## The dashboard does not update
 

@@ -173,8 +173,11 @@ display:
   # Status markers. Alerts carry no status badge: "firing" is the norm and
   # saying so on every row is noise, so only the exceptions get an icon. A
   # status missing from the map, or mapped to "", shows nothing.
+  # "silenced" (somebody decided) and "inhibited" (another alert is masking it)
+  # share the bell by default; give them different icons to tell them apart.
   # status_icons:
   #   silenced: "bell-off"
+  #   inhibited: "bell-off"
   #   pending: "hourglass"
 
   # ─── Severity ────────────────────────────────────────────────────────────
@@ -258,7 +261,8 @@ display:
 #    ?q=team=sre          filter by label (also ?q=team=sre|dba for several
 #                         teams at once, ?q=hostname~web, ?q=team!=dba)
 #    ?tv=1                force TV mode          ?tv=0 force it off
-#    ?sev=critical        filter by severity     ?src=Zabbix filter by source
-#    ?silenced=1          show silenced alerts
+#    ?sev=critical,error  filter by severity     ?src=Zabbix filter by source
+#    ?show=silenced,inhibited   firing (default), silenced, inhibited or all
+#                         (?silenced=1 is the old spelling of ?show=all)
 #    ?theme=dark          force a theme          ?theme=auto follow the OS
 # ───────────────────────────────────────────────────────────────────────────

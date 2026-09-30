@@ -401,6 +401,20 @@ function sendNotif(newAlerts) {
   setTimeout(() => n.close(), 9000);
 }
 
+/* A stored or URL-borne filter selection: a comma-separated list of names, where
+   the empty set means "everything". `all` is spelled out rather than left empty
+   so a URL can say it explicitly, and so a value written by an older version —
+   which stored one name, or the literal "all" — still reads correctly. */
+function parseFilterSet(raw) {
+  if (!raw || raw === 'all') return new Set();
+  return new Set(raw.split(',').map(s => s.trim()).filter(Boolean));
+}
+
+/* The reverse, for localStorage and the URL. */
+function formatFilterSet(set) {
+  return set.size ? [...set].join(',') : 'all';
+}
+
 /* -- App state (filters persisted in localStorage) -- */
 const App = {
   data:           null,
@@ -412,9 +426,19 @@ const App = {
   cssOrigin:      undefined,   // custom stylesheet host the page's CSP allows
   freshFps:       new Set(),
   searchQ:        '',
-  sevFilter:      lsGet('av-sev-filter') || 'all',
+  /* Severities and statuses are sets, not single values: several chips can be on
+     at once, as the source chips always allowed. An empty set means "no filter",
+     which is what the `all` chip selects. A value stored by an older version is a
+     single name, and splitting it on commas turns it into a one-element set. */
+  sevFilter:      parseFilterSet(lsGet('av-sev-filter')),
   srcFilter:      (() => { try { const r = lsGet('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
-  showSilenced:   lsGet('av-show-silenced') === 'true',
+  statusFilter:   (() => {
+    const raw = lsGet('av-status-filter');
+    // Nothing stored: fall back to the boolean this replaced, where showing
+    // silenced alerts meant showing everything.
+    if (raw === null) return new Set(lsGet('av-show-silenced') === 'true' ? [] : ['firing']);
+    return parseFilterSet(raw);
+  })(),
   refreshTimer:   null,
   lastSuccess:    null,
   stale:          false,
@@ -427,15 +451,27 @@ const App = {
 };
 
 /* -- Search -- */
+/* Two fields, one query: the header box, and its twin in the TV panel. The
+   header is display:none in TV mode, so the twin is the only reachable one
+   there. Same arrangement as the silence and theme buttons. */
 const SearchInput = document.getElementById('search');
 const SearchClear = document.getElementById('search-clear');
+const SearchInputs = [SearchInput, document.getElementById('tv-search')].filter(Boolean);
+
+/* Mirrors App.searchQ into whichever field is not the one being typed in.
+   Assigning to .value unconditionally would move the caret to the end on every
+   keystroke, so only a field that actually differs is written. */
+function syncSearchInputs() {
+  SearchInputs.forEach(el => { if (el.value !== App.searchQ) el.value = App.searchQ; });
+  SearchClear.style.display = App.searchQ ? 'block' : 'none';
+}
 
 /* Re-render after the typing settles. Every keystroke used to rebuild the whole
    list synchronously, which is fine for a dozen alerts and not for a wall
    display carrying hundreds. */
 let searchTimer = null;
 function onSearchChanged(immediate = false) {
-  SearchClear.style.display = App.searchQ ? 'block' : 'none';
+  syncSearchInputs();
   clearTimeout(searchTimer);
   const apply = () => { renderAlerts(); pushUrl(); };
   if (immediate) apply();
@@ -445,38 +481,75 @@ function onSearchChanged(immediate = false) {
 /* The one place the search is emptied — the body of this was written out three
    times, and the copies had already started to differ. */
 function clearSearch() {
-  SearchInput.value = App.searchQ = '';
+  App.searchQ = '';
   onSearchChanged(true);
 }
 
-SearchInput.addEventListener('input', e => {
+SearchInputs.forEach(el => el.addEventListener('input', e => {
   App.searchQ = e.target.value;
   onSearchChanged();
-});
+}));
 SearchClear.addEventListener('click', clearSearch);
 
-/* -- Silence toggle -- */
-function updateSilenceBtn() {
-  [document.getElementById('silence-btn'), document.getElementById('tv-silence-btn')].forEach(btn => {
-    if (!btn) return;
-    btn.textContent = App.showSilenced ? 'Hide silenced' : 'Show silenced';
-    btn.classList.toggle('active', App.showSilenced);
+/* -- Suppressed-alert filter --
+   A silence is somebody's decision; an inhibition is a consequence of another
+   alert firing. This used to be one show/hide toggle covering both, so "what am
+   I masking right now?" could not be asked. `firing` stands for "not
+   suppressed", so a pending alert rides along with it. */
+const STATUS_KINDS = ['firing', 'silenced', 'inhibited'];
+const STATUS_CHIPS = [
+  ['firing',    'Firing',    'Alerts that are neither silenced nor inhibited'],
+  ['silenced',  'Silenced',  'Alerts someone has silenced'],
+  ['inhibited', 'Inhibited', 'Alerts another alert is masking'],
+  ['all',       'All',       'Every alert, suppressed or not'],
+];
+
+/* A stored value from another version, or a hand-edited one, must not leave the
+   page filtering on a status that cannot exist. Pruning everything away would
+   read as "no filter", which is not what a stored selection meant, so that case
+   goes back to the default rather than quietly showing the suppressed alerts. */
+{
+  const known = [...App.statusFilter].filter(m => STATUS_KINDS.includes(m));
+  if (known.length !== App.statusFilter.size) {
+    App.statusFilter = new Set(known.length ? known : ['firing']);
+  }
+}
+
+/* One chip in or out of a selection. Every chip row works this way — severities,
+   statuses and sources alike: a click adds that one or takes it out, so several
+   can be on at once with no modifier to hold down. An empty set means "no
+   filter", which is also what the `all` chip selects. */
+function applyChipSelection(set, value) {
+  if (value === 'all') set.clear();
+  else if (set.has(value)) set.delete(value);
+  else set.add(value);
+}
+
+function renderStatusChips() {
+  const chips = STATUS_CHIPS.map(([mode, label, title]) => {
+    const active = mode === 'all' ? App.statusFilter.size === 0 : App.statusFilter.has(mode);
+    return `<span class="status-flt-chip${active ? ' active' : ''}" data-status="${mode}"` +
+      ` role="button" tabindex="0" aria-pressed="${active}" title="${esc(title)}">${label}</span>`;
+  }).join('');
+  ['status-filter-chips', 'tv-status-chips'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = chips;
   });
 }
-function toggleSilenced() {
-  App.showSilenced = !App.showSilenced;
-  lsSet('av-show-silenced', App.showSilenced);
-  updateSilenceBtn();
+
+function setStatusFilter(mode) {
+  if (mode !== 'all' && !STATUS_KINDS.includes(mode)) return;
+  applyChipSelection(App.statusFilter, mode);
+  lsSet('av-status-filter', formatFilterSet(App.statusFilter));
+  renderStatusChips();
   renderAlerts();
   pushUrl();
 }
-document.getElementById('silence-btn').addEventListener('click', toggleSilenced);
-document.getElementById('tv-silence-btn').addEventListener('click', toggleSilenced);
 
-/* -- Source filter -- */
+/* -- Source filter --
+   The row that set the pattern the other two now follow. */
 function toggleSrc(name) {
-  if (App.srcFilter.has(name)) App.srcFilter.delete(name);
-  else App.srcFilter.add(name);
+  applyChipSelection(App.srcFilter, name);
   lsSet('av-src-filter', JSON.stringify([...App.srcFilter]));
   renderSourceChips();
   renderAlerts();
@@ -695,11 +768,22 @@ function filtersMatch(a, filters) {
 }
 
 /* -- Filters -- */
+/* Whether one alert survives the suppressed-alert selection. An empty selection
+   is no filter at all. `firing` covers everything that is not suppressed, so a
+   pending alert rides with it rather than needing a chip of its own. */
+function statusAllowed(status) {
+  if (App.statusFilter.size === 0) return true;
+  const suppressed = status === 'silenced' || status === 'inhibited';
+  return suppressed ? App.statusFilter.has(status) : App.statusFilter.has('firing');
+}
+
 function filteredAlerts() {
   const { filters, text } = parseQuery(App.searchQ || '');
   return (App.data?.alerts ?? []).filter(a => {
-    if (!App.showSilenced && a.status === 'silenced') return false;
-    if (App.sevFilter !== 'all' && a.severity !== App.sevFilter) return false;
+    if (!statusAllowed(a.status)) return false;
+    // `|| 'none'` matches how the chips are counted: an alert whose source sent
+    // no severity is counted under `none`, so the `none` chip has to find it.
+    if (App.sevFilter.size > 0 && !App.sevFilter.has(a.severity || 'none')) return false;
     if (App.srcFilter.size > 0 && !App.srcFilter.has(a.source)) return false;
     if (filters.length && !filtersMatch(a, filters)) return false;
     if (text) {
@@ -712,8 +796,8 @@ function filteredAlerts() {
 }
 
 function toggleSev(s) {
-  App.sevFilter = App.sevFilter === s ? 'all' : s;
-  lsSet('av-sev-filter', App.sevFilter);
+  applyChipSelection(App.sevFilter, s);
+  lsSet('av-sev-filter', formatFilterSet(App.sevFilter));
   renderStats();
   renderAlerts();
   TV.renderChips();
@@ -743,7 +827,7 @@ function updateTitle(shown, total) {
   document.title = `${icon} ${count} ${alertWord} — AlertView`;
 }
 
-function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); updateSilenceBtn(); }
+function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); renderStatusChips(); }
 
 /* How many alerts of each severity, most severe first. */
 function severityCounts() {
@@ -760,16 +844,20 @@ function severityCounts() {
 /* One severity chip. The header and the TV panel build the same row and had
    drifted into two copies; `style` is the only thing that ever differed. */
 function sevChipHtml(sev, label, style = '') {
-  const active = App.sevFilter === sev;
+  const active = sev === 'all' ? App.sevFilter.size === 0 : App.sevFilter.has(sev);
   const cls = sev === 'all' ? 'stat-chip' : `stat-chip ${sevClass(sev)}`;
+  const title = sev === 'all' ? 'Every severity' : sev;
   return `<span class="${cls}${active ? ' active' : ''}"${style} data-sev="${esc(sev)}"` +
-    ` role="button" tabindex="0" aria-pressed="${active}">${label}</span>`;
+    ` role="button" tabindex="0" aria-pressed="${active}" title="${esc(title)}">${label}</span>`;
 }
 
+/* The `all` chip leads the row here as it does in the TV panel. The header used
+   to omit it, which was survivable while one click could only ever select one
+   severity; with several selected there has to be one thing that clears them. */
 function renderStats() {
-  document.getElementById('stats-bar').innerHTML = severityCounts()
-    .map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`))
-    .join('');
+  document.getElementById('stats-bar').innerHTML =
+    sevChipHtml('all', 'all') +
+    severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`)).join('');
 }
 
 function renderSources() {
@@ -838,7 +926,14 @@ function reconcileChildren(container, items, getKey, getHtml) {
    still pending (just after startup) or failing may be hiding alerts, and a
    green tick on a wall display would say otherwise. */
 function emptyStateHtml() {
-  const filtering = App.searchQ || App.sevFilter !== 'all' || App.srcFilter.size > 0;
+  /* A selection of suppressed kinds alone asks "what is being masked?", so an
+     empty list is an answer — "nothing is silenced" — not the all-clear of an
+     unfiltered view. Named in chip order so the sentence does not depend on
+     which chip was clicked first. */
+  const supp = STATUS_KINDS.filter(k => k !== 'firing' && App.statusFilter.has(k));
+  const onlySuppressed = supp.length > 0 && !App.statusFilter.has('firing');
+  const filtering = App.searchQ || App.sevFilter.size > 0 || App.srcFilter.size > 0
+    || onlySuppressed;
   const sources = App.data?.sources ?? [];
   const pending = sources.filter(s => s.status === 'pending').map(s => s.name);
   const failing = sources.filter(s => s.status === 'error').map(s => s.name);
@@ -846,6 +941,7 @@ function emptyStateHtml() {
   if (filtering) {
     icon = '🔍';
     if (App.searchQ) text = 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;';
+    else if (onlySuppressed) text = 'No ' + esc(supp.join(' or ')) + ' alerts';
   } else if (pending.length) {
     icon = '⏳';
     text = 'Waiting for ' + esc(pending.join(', '));
@@ -871,6 +967,8 @@ function renderAlerts() {
 
   // Same numbers in the tab, from the same two values.
   updateTitle(filtered, total);
+  // And the same story in the TV HUD, which is all a wall screen has.
+  TV.renderQuery();
 
   if (!filtered.length) {
     listEl.innerHTML = emptyStateHtml();
@@ -1389,6 +1487,19 @@ const TV = {
       .map(s => `<span class="src-dot ${s.status}" title="${esc(s.name)}${s.error ? ': ' + esc(s.error) : ''}"></span>`)
       .join('');
   },
+
+  /* The active search, in the half of the HUD that never hides. The panel closes
+     on a click anywhere else and the tab title is invisible full screen, so
+     without this a wall can show a fraction of the alerts and say nothing. */
+  renderQuery() {
+    const el = document.getElementById('tv-q');
+    if (!el) return;
+    el.hidden = !App.searchQ;
+    // Emptied as well as hidden: leaving the text behind is how a cleared search
+    // kept showing its old query.
+    el.innerHTML = App.searchQ ? '&#128269;&thinsp;' + esc(App.searchQ) : '';
+    el.title = App.searchQ ? 'Search active: ' + App.searchQ : '';
+  },
 };
 
 TV.init();
@@ -1397,10 +1508,14 @@ TV.init();
 function pushUrl() {
   const p = new URLSearchParams();
   if (App.themePref !== 'auto') p.set('theme', App.themePref);
-  if (App.sevFilter !== 'all') p.set('sev',      App.sevFilter);
+  if (App.sevFilter.size > 0)  p.set('sev', [...App.sevFilter].join(','));
   if (App.srcFilter.size > 0)  p.set('src', [...App.srcFilter].join(','));
   if (App.searchQ)             p.set('q',        App.searchQ);
-  if (App.showSilenced)        p.set('silenced', '1');
+  // The default is "firing alone", so that one needs no parameter; every other
+  // selection does, including the empty one that means "show everything".
+  if (!(App.statusFilter.size === 1 && App.statusFilter.has('firing'))) {
+    p.set('show', formatFilterSet(App.statusFilter));
+  }
   if (TV.active)               p.set('tv',       '1');
   const qs = p.toString();
   history.replaceState(null, '', qs ? '?' + qs : location.pathname);
@@ -1412,14 +1527,22 @@ function pushUrl() {
 function initFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.has('theme')) { App.themeFromUrl = true; applyTheme(p.get('theme'), { persist: false }); }
-  if (p.has('sev'))   App.sevFilter = p.get('sev');
+  if (p.has('sev'))   App.sevFilter = parseFilterSet(p.get('sev'));
   if (p.has('src'))   App.srcFilter = new Set(p.get('src').split(',').filter(Boolean));
   if (p.has('q')) {
     App.searchQ = p.get('q');
-    SearchInput.value = App.searchQ;
-    SearchClear.style.display = App.searchQ ? 'block' : 'none';
+    syncSearchInputs();
   }
-  if (p.has('silenced')) App.showSilenced = p.get('silenced') === '1';
+  // `?silenced=1` still works: it is on wall screens and in bookmarks already.
+  if (p.has('silenced')) {
+    App.statusFilter = new Set(p.get('silenced') === '1' ? [] : ['firing']);
+  }
+  if (p.has('show')) {
+    const wanted = [...parseFilterSet(p.get('show'))].filter(m => STATUS_KINDS.includes(m));
+    // An unknown name would otherwise empty the set and show everything, which
+    // is the opposite of what a narrowing parameter asks for.
+    if (wanted.length || p.get('show') === 'all') App.statusFilter = new Set(wanted);
+  }
   if (p.has('tv')) {
     App.tvFromUrl = true;
     const on = p.get('tv') === '1';
@@ -1459,6 +1582,8 @@ function activate(containerId, selector, handler) {
   activate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
   activate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
+['status-filter-chips', 'tv-status-chips'].forEach(id =>
+  activate(id, '[data-status]', el => setStatusFilter(el.dataset.status)));
 /* Both row toggles do the same thing to a different set, keyed by fingerprint
    so the open state survives the refresh. */
 function toggleOnCard(set) {
@@ -1480,32 +1605,46 @@ activate('alert-list', '.group-header', el => {
   if (groupEl) toggleGroup(groupEl.dataset.groupKey, groupEl);
 });
 
-/* Ctrl+F / Cmd+F and "/" focus the search box instead of the browser's
-   find-in-page, which only ever finds what is already on screen. Not in TV
-   mode: the header is hidden there, so the native search stays available. */
-document.addEventListener('keydown', e => {
+/* Ctrl+F / Cmd+F and "/" mean "let me search" — a named function because the
+   TV-mode case is the part worth pinning in a test. */
+function wantsSearchFocus(e) {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
-  const wants = (e.key === 'f' || e.key === 'F') ? (e.ctrlKey || e.metaKey)
-              : (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey);
-  if (!wants || TV.active) return;
+  if (e.key === 'f' || e.key === 'F') return !!(e.ctrlKey || e.metaKey);
+  return e.key === '/' && !typing && !e.ctrlKey && !e.metaKey;
+}
+
+/* Both take over from the browser's find-in-page, which only ever finds what is
+   already on screen — the wrong tool on a filtered list of hundreds. In TV mode
+   this reveals the filter panel and lands in its search field; the header box is
+   inside a hidden element there and cannot take focus. */
+document.addEventListener('keydown', e => {
+  if (!wantsSearchFocus(e)) return;
   e.preventDefault();
-  SearchInput.focus();
-  SearchInput.select();
+  let field = SearchInput;
+  if (TV.active) {
+    TV.openPanel();
+    field = document.getElementById('tv-search');
+  }
+  field.focus();
+  field.select();
 });
 
-// Escape leaves the search box, clearing it when it is empty of intent.
-SearchInput.addEventListener('keydown', e => {
+/* Escape leaves the search box, clearing it when it is empty of intent. In TV
+   mode it then closes the panel — blur() first, so the next Escape reaches the
+   document handler and carries on down the chain (panel → + → leave TV). */
+SearchInputs.forEach(el => el.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (App.searchQ) clearSearch();
-  else SearchInput.blur();
-});
+  if (App.searchQ) { clearSearch(); return; }
+  el.blur();
+  if (TV.active) TV.closePanel();
+}));
 
 /* -- Boot -- */
 // The <head> script already resolved the theme to avoid a flash; this syncs the
 // button icons and the theme-color meta with it.
 applyTheme(App.themePref, { persist: false });
 initFromUrl();
-updateSilenceBtn();
+renderStatusChips();
 fetchAlerts();
 
 /* Register the service worker so AlertView is installable as a PWA. Lives here

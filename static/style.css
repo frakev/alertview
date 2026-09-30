@@ -288,7 +288,9 @@ a { color: inherit; }
   display: none;
   flex-direction: column;
   gap: .6rem;
-  min-width: 230px;
+  /* Wider than the chips alone would need, so the search field beside its label
+     is still usable. */
+  min-width: 270px;
 }
 .tv-panel.open { display: flex; }
 
@@ -297,6 +299,14 @@ a { color: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: .75rem;
+}
+/* Reuses .search-input for colour, border and :focus. Only the geometry
+   differs: the header field reserves room for a magnifier and a clear button,
+   and this one has neither. */
+.tv-row-search .tv-search {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
 }
 .tv-label {
   font-size: 11px;
@@ -360,6 +370,26 @@ a { color: inherit; }
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+/* The active search, in the half of the HUD that never hides: a wall showing 12
+   of 54 alerts has to say why. Accent-coloured because it is a state to notice,
+   not a label to read. */
+.tv-q {
+  display: inline-block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 100px;
+  padding: 1px 7px;
+}
+/* Without this the rule above beats the browser's own [hidden] { display: none }
+   — same specificity, and an author rule wins — so the chip stayed on screen
+   with the last query in it. Same guard as .stale-banner and .config-banner. */
+.tv-q[hidden] { display: none; }
 
 .tv-dots {
   display: flex;
@@ -422,16 +452,30 @@ a { color: inherit; }
 
 .alert-count { color: var(--text-muted); font-size: 12px; }
 
-.src-filter-chips {
+/* The two filter groups of the toolbar. They wrap rather than squeeze, so a
+   narrow window stacks them instead of shrinking the chips out of reach. */
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.src-filter-chips,
+.status-filter-chips {
   display: flex;
   gap: .3rem;
   flex-wrap: nowrap;
   overflow-x: auto;
   align-items: center;
 }
-.src-filter-chips::-webkit-scrollbar { display: none; }
+.src-filter-chips::-webkit-scrollbar,
+.status-filter-chips::-webkit-scrollbar { display: none; }
 
-.src-flt-chip {
+.src-flt-chip,
+.status-flt-chip {
   display: inline-flex;
   align-items: center;
   gap: .3rem;
@@ -447,28 +491,8 @@ a { color: inherit; }
   user-select: none;
   transition: color .15s, background .15s, border-color .15s, box-shadow .15s;
 }
-.src-flt-chip:hover { color: var(--text); border-color: var(--accent); }
-.silence-toggle {
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  padding: 5px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color .15s, border-color .15s;
-}
-.silence-toggle:hover { color: var(--text); border-color: var(--accent); }
-.silence-toggle.active {
-  background: linear-gradient(135deg, rgba(188,140,255,.15), rgba(99,102,241,.12));
-  color: var(--c-silenced);
-  border-color: var(--c-silenced);
-  box-shadow: 0 0 12px rgba(188,140,255,.15);
-}
+.src-flt-chip:hover,
+.status-flt-chip:hover { color: var(--text); border-color: var(--accent); }
 
 /* -- Alert list -- */
 .alert-list {
@@ -771,7 +795,7 @@ a { color: inherit; }
   .card-top { flex-direction: column; gap: .3rem; }
   .hdr-right .refresh-info span:not(.spinner) { display: none; }
   /* Buttons and toggles are finger targets here. */
-  .labels-toggle, .comment-toggle, .icon-btn, .silence-toggle { min-height: 28px; }
+  .labels-toggle, .comment-toggle, .icon-btn, .status-flt-chip { min-height: 28px; }
 }
 
 /* -- TV mode: bright colors -- */
@@ -1104,7 +1128,8 @@ a { color: inherit; }
   box-shadow: 0 3px 14px rgba(99,102,241,.5);
 }
 
-.src-flt-chip.active {
+.src-flt-chip.active,
+.status-flt-chip.active {
   background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.12));
   color: var(--accent);
   border-color: rgba(129,140,248,.45);
@@ -1188,14 +1213,14 @@ a { color: inherit; }
    provide one for real controls. */
 .stat-chip:focus-visible,
 .src-flt-chip:focus-visible,
+.status-flt-chip:focus-visible,
 .group-header:focus-visible,
 .mark-link:focus-visible,
 .gen-link:focus-visible,
 .labels-toggle:focus-visible,
 .comment-toggle:focus-visible,
 .icon-btn:focus-visible,
-.tv-hud-btn:focus-visible,
-.silence-toggle:focus-visible {
+.tv-hud-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

@@ -98,8 +98,17 @@
 
 <!-- TV overlay (visible only in TV mode) -->
 <div class="tv-overlay" id="tv-overlay">
-  <!-- Filter panel (severity / source / silence) -->
+  <!-- Filter panel (search / severity / source / status) -->
   <div class="tv-panel" id="tv-panel">
+    <!-- The twin of the header search box, which is unreachable in TV mode:
+         .header is display:none there, so focusing it does nothing. Ctrl+F
+         and "/" open this panel and land here. -->
+    <div class="tv-row tv-row-search">
+      <span class="tv-label">Search</span>
+      <input type="search" id="tv-search" class="search-input tv-search"
+             aria-label="Search alerts, or filter by label"
+             placeholder="team=sre, web" autocomplete="off" spellcheck="false">
+    </div>
     <div class="tv-row">
       <span class="tv-label">Severity</span>
       <div class="tv-chips" id="tv-sev-chips"></div>
@@ -109,8 +118,8 @@
       <div class="tv-chips" id="tv-src-chips"></div>
     </div>
     <div class="tv-row">
-      <span class="tv-label">Silenced</span>
-      <button class="silence-toggle" id="tv-silence-btn"></button>
+      <span class="tv-label">Show</span>
+      <div class="tv-chips" id="tv-status-chips"></div>
     </div>
   </div>
   <!-- Floating HUD bar -->
@@ -121,6 +130,9 @@
     <span class="tv-clock" id="tv-clock">00:00</span>
     <span class="tv-refresh" title="Last refresh">↻&thinsp;<span id="tv-last">–</span></span>
     <span class="tv-version" title="AlertView v__APP_VERSION__">v__APP_VERSION__</span>
+    <!-- A search narrows the wall silently once the panel is closed, and the
+         "32 / 54 alerts" in the tab title is not visible full screen. -->
+    <span class="tv-q" id="tv-q" hidden></span>
     <button class="tv-hud-btn tv-more-btn" id="tv-more-btn" title="More controls">+</button>
     <!-- Revealed by the + button -->
     <span class="tv-bar-more" id="tv-bar-more">
@@ -144,8 +156,8 @@
 <main class="main">
   <div class="toolbar">
     <span class="alert-count" id="alert-count"></span>
-    <div style="display:flex;gap:.5rem;align-items:center">
-      <button class="silence-toggle" id="silence-btn"></button>
+    <div class="toolbar-filters">
+      <div class="status-filter-chips" id="status-filter-chips"></div>
       <div class="src-filter-chips" id="src-filter-chips"></div>
     </div>
   </div>

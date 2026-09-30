@@ -54,7 +54,7 @@ curl -s http://localhost:8080/api/alerts | jq '.sources'
 |---|---|
 | `fingerprint` | unique identifier |
 | `source`, `source_type` | source name, and `alertmanager`, `grafana` or `zabbix` |
-| `status` | `firing`, `silenced` or `pending` |
+| `status` | `firing`, `silenced`, `inhibited` or `pending`. `silenced` is somebody's decision; `inhibited` is another alert masking this one |
 | `severity` | normalised severity (`critical`, `error`, `high`, `warning`, `info`, `none`, or a custom level) |
 | `name` | the alert name (`alertname`) |
 | `labels`, `annotations` | as received from the source |

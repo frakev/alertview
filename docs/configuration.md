@@ -110,7 +110,9 @@ the file out of git, and on Kubernetes put it in a Secret (see
 
 - Reads `{url}/api/v2/alerts`. Basic auth or bearer token.
 - Severity comes from the `severity` label (or `severity_label`).
-- A silenced alert shows who silenced it and the silence's comment.
+- A silenced alert shows who silenced it and the silence's comment. An alert
+  masked by another one is `inhibited` rather than `silenced`, and the two are
+  filtered apart — see [Display](display.md#silenced-and-inhibited-alerts).
 
 ### Grafana
 

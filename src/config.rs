@@ -296,10 +296,16 @@ fn default_critical_icon() -> String {
 }
 
 fn default_status_icons() -> std::collections::HashMap<String, String> {
-    [("silenced", "bell-off"), ("pending", "hourglass")]
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
+    // `inhibited` shares the bell so the marker looks exactly as it did before
+    // the two statuses were split apart. Override it to tell them apart on sight.
+    [
+        ("silenced", "bell-off"),
+        ("inhibited", "bell-off"),
+        ("pending", "hourglass"),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
 }
 
 fn default_true() -> bool {

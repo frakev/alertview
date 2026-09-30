@@ -347,7 +347,7 @@ async fn security_headers(
 /// shape of the escaping bug fixed in 0.10.0. That is why the two scripts that
 /// used to be inline now live in files.
 ///
-/// `style-src` still allows `unsafe-inline`: six generated `style=` attributes
+/// `style-src` still allows `unsafe-inline`: four generated `style=` attributes
 /// remain, and inline CSS cannot execute — a far weaker position than inline
 /// script. The custom stylesheet's origin is added when there is one, otherwise
 /// it would simply be refused — to `font-src` and `img-src` too, for the fonts
@@ -1409,6 +1409,109 @@ mod tests {
         assert_eq!(css_origin("javascript:alert(1)"), None);
         assert_eq!(css_origin("data:text/css,body{}"), None);
         assert_eq!(css_origin("dark"), None);
+    }
+
+    /// An author rule that sets `display` on an element the page hides with the
+    /// `hidden` attribute beats the browser's own `[hidden] { display: none }`
+    /// — equal specificity, and author styles win — so `el.hidden = true` sets
+    /// the attribute and changes nothing on screen. Both banners carry an
+    /// explicit guard; the TV search chip shipped without one and stayed up with
+    /// a stale query in it.
+    #[test]
+    fn test_every_element_hidden_by_attribute_has_a_display_guard() {
+        /// Attribute values are dropped first: `class="hidden-labels"` and
+        /// `overflow: hidden` are not the `hidden` attribute.
+        fn attributes_only(tag: &str) -> String {
+            let mut out = String::new();
+            let mut quote = None;
+            for c in tag.chars() {
+                match quote {
+                    Some(q) if c == q => quote = None,
+                    Some(_) => {}
+                    None if c == '"' || c == '\'' => quote = Some(c),
+                    None => out.push(c),
+                }
+            }
+            out
+        }
+
+        fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+            let at = tag.find(&format!("{name}=\""))? + name.len() + 2;
+            let rest = &tag[at..];
+            Some(&rest[..rest.find('"')?])
+        }
+
+        /// Whether any author rule for `.class` sets `display`, ignoring the
+        /// `[hidden]` guard itself.
+        fn sets_display(class: &str) -> bool {
+            let needle = format!(".{class}");
+            let mut from = 0;
+            while let Some(i) = STYLE_CSS[from..].find(&needle) {
+                let at = from + i;
+                from = at + needle.len();
+                // A prefix of a longer class name is a different class.
+                if STYLE_CSS[from..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
+                    continue;
+                }
+                let Some(open) = STYLE_CSS[at..].find('{') else {
+                    continue;
+                };
+                let selector = &STYLE_CSS[at..at + open];
+                // Past the end of this rule, or the guard itself.
+                if selector.contains('}') || selector.contains("[hidden]") {
+                    continue;
+                }
+                let block = &STYLE_CSS[at + open..];
+                let end = block.find('}').unwrap_or(block.len());
+                if block[..end].contains("display:") {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let mut unguarded = Vec::new();
+        let mut checked = 0;
+        for chunk in INDEX_HTML.split('<').skip(1) {
+            let tag = chunk.split('>').next().unwrap_or_default();
+            if !attributes_only(tag)
+                .split_whitespace()
+                .any(|t| t == "hidden")
+            {
+                continue;
+            }
+            let id = attribute(tag, "id").unwrap_or_default();
+            for class in attribute(tag, "class")
+                .unwrap_or_default()
+                .split_whitespace()
+            {
+                if !sets_display(class) {
+                    continue;
+                }
+                checked += 1;
+                // Guarded by its class or, just as well, by its id.
+                let guarded = STYLE_CSS.contains(&format!(".{class}[hidden]"))
+                    || (!id.is_empty() && STYLE_CSS.contains(&format!("#{id}[hidden]")));
+                if !guarded {
+                    unguarded.push(format!(".{class} (#{id})"));
+                }
+            }
+        }
+
+        assert!(
+            checked >= 3,
+            "the scan found {checked} hidden elements with a display rule — \
+             the parser has stopped matching the markup"
+        );
+        assert!(
+            unguarded.is_empty(),
+            "sets display but has no `[hidden] {{ display: none }}` rule, so it \
+             can never be hidden: {unguarded:?}"
+        );
     }
 
     #[test]

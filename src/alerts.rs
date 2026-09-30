@@ -904,9 +904,19 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
                 .cloned()
                 .unwrap_or_else(|| "Unknown".to_string());
 
+            // Alertmanager calls both cases "suppressed", and AlertView used to
+            // flatten both to "silenced". They are not the same thing: a silence
+            // is somebody's decision, an inhibition is a consequence of another
+            // alert firing. Telling them apart is what lets either be filtered.
             let status = match a.status.state.as_str() {
                 "active" => "firing",
-                "suppressed" => "silenced",
+                "suppressed" => {
+                    if a.status.silenced_by.is_empty() && !a.status.inhibited_by.is_empty() {
+                        "inhibited"
+                    } else {
+                        "silenced"
+                    }
+                }
                 _ => "pending",
             }
             .to_string();
@@ -927,10 +937,7 @@ pub async fn fetch_source_alerts(client: &reqwest::Client, source: &Source) -> R
 
             // Add silence comment to annotations if alert is silenced
             let mut annotations = a.annotations.clone();
-            if status == "silenced"
-                && a.status.silenced_by.is_empty()
-                && !a.status.inhibited_by.is_empty()
-            {
+            if status == "inhibited" {
                 annotations.insert(
                     "silence_comment".to_string(),
                     "Inhibited by another alert".to_string(),
@@ -1565,6 +1572,61 @@ mod tests {
         );
         // A javascript: generator URL must never reach the frontend.
         assert_eq!(alert.link_url, None);
+    }
+
+    /// Alertmanager reports a silence and an inhibition with the same
+    /// `"suppressed"` state. They used to arrive as one status, which made
+    /// "show me only what another alert is masking" impossible to express.
+    #[tokio::test]
+    async fn test_a_silence_and_an_inhibition_are_different_statuses() {
+        const BOTH: &str = r#"[{
+            "fingerprint": "sil",
+            "status": {"state": "suppressed", "silencedBy": ["sil-1"]},
+            "labels": {"alertname": "Silenced", "severity": "warning"},
+            "annotations": {}, "startsAt": "2026-09-04T10:00:00Z",
+            "endsAt": "0001-01-01T00:00:00Z"
+        }, {
+            "fingerprint": "inh",
+            "status": {"state": "suppressed", "inhibitedBy": ["abc"]},
+            "labels": {"alertname": "Inhibited", "severity": "warning"},
+            "annotations": {}, "startsAt": "2026-09-04T10:00:00Z",
+            "endsAt": "0001-01-01T00:00:00Z"
+        }, {
+            "fingerprint": "both",
+            "status": {"state": "suppressed", "silencedBy": ["sil-1"], "inhibitedBy": ["abc"]},
+            "labels": {"alertname": "Both", "severity": "warning"},
+            "annotations": {}, "startsAt": "2026-09-04T10:00:00Z",
+            "endsAt": "0001-01-01T00:00:00Z"
+        }]"#;
+
+        let url = spawn_stub(BOTH, ONE_SILENCE).await;
+        let source = source_with_url(SourceType::Alertmanager, &url);
+        let alerts = fetch_source_alerts(&reqwest::Client::new(), &source)
+            .await
+            .unwrap();
+
+        let status = |name: &str| {
+            alerts
+                .iter()
+                .find(|a| a.name == name)
+                .map(|a| a.status.as_str())
+                .unwrap_or("missing")
+        };
+        assert_eq!(status("Silenced"), "silenced");
+        assert_eq!(status("Inhibited"), "inhibited");
+        // Silenced as well as inhibited: somebody decided this one should be
+        // quiet, and that is the more specific fact about it.
+        assert_eq!(status("Both"), "silenced");
+
+        // The inhibited one explains itself; it has no silence to quote.
+        let inhibited = alerts.iter().find(|a| a.name == "Inhibited").unwrap();
+        assert_eq!(
+            inhibited
+                .annotations
+                .get("silence_comment")
+                .map(String::as_str),
+            Some("Inhibited by another alert")
+        );
     }
 
     #[tokio::test]
