@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-30
+
+### Fixed
+- **The TV filter panel closed on every chip click**, which made selecting several chips there impossible — one click, one reopen. Each chip row redraws itself by replacing its container's `innerHTML`, detaching the very node that was clicked; the outside-click handler then found that node outside the panel, because it was no longer in the document at all. It now runs in the capture phase, before the click reaches the row. Present since the TV panel gained chips, not new in 0.14.0.
+- **An explicit `display.status_icons` left inhibited alerts with no marker at all**, making an alert masked by another one look exactly like one that is genuinely firing. serde replaces the whole map, so a map written before `inhibited` existed could not mention it; `inhibited` now inherits whatever `silenced` says, and `inhibited: ""` asks for no marker. The 0.14.0 note claimed the bell was shared by default — that was only true for configurations that never set `status_icons`.
+- **An empty list claimed "No silenced alerts" while a source was unreachable.** Folding the status selection into the filtering check let it outrank the "waiting for" and "unreachable" messages — asserting nothing is silenced when the source that would know never answered. A source that has not answered now comes first, whatever the filters say, searches included.
+- **The TV status bar reported only the search**, so a severity, source or status selection still narrowed a wall screen in silence — the panel holding the chips is closed most of the time and the tab title is invisible full screen. It now shows the count and what is filtering whenever anything is hidden.
+- **A severity selected but absent from the current alerts had no chip**, so a renamed level or a mistyped `?sev=` left an empty dashboard with no cause on screen and nothing to click off. Such a severity is now listed at zero.
+- **A source or severity named `all` was unselectable** — the literal value was the clear-everything sentinel, so clicking its chip wiped the selection instead of joining it. Clearing is now asked for explicitly.
+
+### Changed
+- `[hidden] { display: none !important; }` is declared once for the whole stylesheet, replacing a per-element guard on each hidden element and the test that scanned for them. That test matched by substring, so it could not see a later or more specific rule still winning, and it ignored id selectors entirely — it would have passed while the bug it was written for was live. The 0.14.0 note describes it as stronger than it was.
+- The severity and status chip rows share one row renderer with the source chips, and `?sev=`/`?src=` both go through the same parser. `STATUS_KINDS` is derived from the chip table rather than written out beside it. The 0.14.0 note said all three rows already shared one implementation; only the selection logic did.
+- `wantsSearchFocus` no longer carries tests that assert the same inputs twice under both TV modes — it never reads `TV.active`, so they pinned nothing. Where the shortcut lands is now a named function with a test that fails if the TV branch is removed.
+- Severity chips no longer repeat their own label in a `title`, and the suppression chips are purple again rather than sharing the source chips' indigo.
+
 ## [0.14.0] - 2026-09-30
 
 ### Added
@@ -475,7 +491,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/frakev/alertview/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/frakev/alertview/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/frakev/alertview/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/frakev/alertview/compare/v0.13.1...v0.13.2
