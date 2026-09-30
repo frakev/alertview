@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-09-30
+
+### Fixed
+- **Zabbix acknowledgement comments never arrived, on any version.** An acknowledged problem showed the generic *Acknowledged in Zabbix* with no author and no time, whatever anyone had actually typed. Two faults, one behind the other:
+  - `selectAcknowledgements` / `selectAcknowledges` were sent as `true`. They are Zabbix `query` parameters — the same shape as `selectTags`, which the same request already sent correctly as `"extend"`. A server that *has* the parameter answers `an array or a character string is expected`, and that is an invalid-params error like any other, indistinguishable from `unexpected parameter`: the version probe concluded the name was unknown, worked through every candidate, and ended up asking for no acknowledgements at all.
+  - Even once accepted, the reply was dropped. Zabbix names the returned field after the parameter — `acknowledges` for `selectAcknowledges`, `acknowledgements` for `selectAcknowledgements` — and only the second was deserialised. This is the same trap the trigger groups already handle with an alias for `hostgroups`.
+
+  Checked against a real Zabbix as well as the stubs: the acknowledgement text, its author (resolved through `user.get`, which only ever returns a userid) and its timestamp now all arrive. An acknowledgement recorded without a message still shows the generic line, which is correct.
+- The Zabbix test stubs were as lenient as the bug needed them to be: they accepted any value for the select parameters, answered under one field name regardless of which was asked for, and volunteered acknowledgements that had never been requested. Each of those hid one half of the above. They now refuse a non-`query` value the way the real server does, name the field after the parameter, and send acknowledgements only when asked — with the boolean restored, both dialect tests fail.
+
 ## [0.14.1] - 2026-09-30
 
 ### Fixed
@@ -491,7 +501,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/frakev/alertview/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/frakev/alertview/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/frakev/alertview/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/frakev/alertview/compare/v0.13.2...v0.13.3
