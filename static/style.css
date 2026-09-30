@@ -51,6 +51,13 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* The `hidden` attribute has to win. The browser's own `[hidden] { display: none }`
+   loses to any author rule that sets `display` — equal specificity, and author
+   styles come first — so every element the page hides needed its own guard, and
+   the one that shipped without one stayed on screen with stale content in it.
+   `!important` here removes the whole class of bug instead of one instance. */
+[hidden] { display: none !important; }
+
 html { background: var(--bg); }
 
 body {
@@ -386,10 +393,7 @@ a { color: inherit; }
   border-radius: 100px;
   padding: 1px 7px;
 }
-/* Without this the rule above beats the browser's own [hidden] { display: none }
-   — same specificity, and an author rule wins — so the chip stayed on screen
-   with the last query in it. Same guard as .stale-banner and .config-banner. */
-.tv-q[hidden] { display: none; }
+
 
 .tv-dots {
   display: flex;
@@ -795,7 +799,8 @@ a { color: inherit; }
   .card-top { flex-direction: column; gap: .3rem; }
   .hdr-right .refresh-info span:not(.spinner) { display: none; }
   /* Buttons and toggles are finger targets here. */
-  .labels-toggle, .comment-toggle, .icon-btn, .status-flt-chip { min-height: 28px; }
+  .labels-toggle, .comment-toggle, .icon-btn,
+  .status-flt-chip, .src-flt-chip { min-height: 28px; }
 }
 
 /* -- TV mode: bright colors -- */
@@ -1128,6 +1133,17 @@ a { color: inherit; }
   box-shadow: 0 3px 14px rgba(99,102,241,.5);
 }
 
+/* The suppression chips keep the purple the silence control used to have: they
+   are a different class of filter from "which source" or "which severity", and
+   sharing the indigo made them read as the same thing. */
+.status-flt-chip[data-status="silenced"].active,
+.status-flt-chip[data-status="inhibited"].active {
+  background: color-mix(in srgb, var(--c-silenced) 15%, transparent);
+  color: var(--c-silenced);
+  border-color: var(--c-silenced);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c-silenced) 15%, transparent);
+}
+
 .src-flt-chip.active,
 .status-flt-chip.active {
   background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.12));
@@ -1200,7 +1216,6 @@ a { color: inherit; }
   box-shadow: var(--shadow);
 }
 
-.stale-banner[hidden] { display: none; }
 .stale-banner b { font-variant-numeric: tabular-nums; }
 
 [data-stale="true"] .alert-list { opacity: .55; }
@@ -1250,7 +1265,6 @@ a { color: inherit; }
   box-shadow: var(--shadow);
 }
 
-.config-banner[hidden] { display: none; }
 .config-banner b { font-weight: 400; opacity: .85; }
 
 .config-dismiss {

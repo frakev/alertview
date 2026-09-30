@@ -308,6 +308,23 @@ fn default_status_icons() -> std::collections::HashMap<String, String> {
     .collect()
 }
 
+impl DisplayConfig {
+    /// `status_icons` is replaced wholesale by a configuration that sets it, not
+    /// merged key by key — so a map written before `inhibited` existed left those
+    /// alerts with no marker at all, indistinguishable on the row from an alert
+    /// that is genuinely firing. Such a map cannot have meant anything about
+    /// `inhibited`, so it inherits whatever `silenced` says. Set
+    /// `inhibited: ""` to ask for no marker.
+    fn inherit_inhibited_icon(&mut self) {
+        if self.status_icons.contains_key("inhibited") {
+            return;
+        }
+        if let Some(bell) = self.status_icons.get("silenced").cloned() {
+            self.status_icons.insert("inhibited".to_string(), bell);
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -455,7 +472,7 @@ impl Config {
     pub fn from_yaml(origin: &str, yaml: &str) -> Result<Self> {
         let mut unknown: Vec<String> = Vec::new();
         let de = serde_yaml::Deserializer::from_str(yaml);
-        let config: Config = serde_ignored::deserialize(de, |path| {
+        let mut config: Config = serde_ignored::deserialize(de, |path| {
             unknown.push(path.to_string());
         })?;
 
@@ -480,6 +497,7 @@ impl Config {
         }
 
         config.validate()?;
+        config.display.inherit_inhibited_icon();
         Ok(config)
     }
 
@@ -770,6 +788,49 @@ mod tests {
             "display.compact_mode"
         );
         assert_eq!(pretty_path("display.compact_mode"), "display.compact_mode");
+    }
+
+    /// `status_icons` is replaced wholesale by a configuration that sets it, so a
+    /// map written before `inhibited` existed left inhibited alerts with no marker
+    /// at all — a masked alert looking exactly like one that is genuinely firing.
+    #[test]
+    fn test_inhibited_inherits_the_silenced_icon() {
+        let load = |display: &str| -> DisplayConfig {
+            let yaml = format!(
+                "sources:\n  - name: a\n    type: alertmanager\n    url: http://x\n{display}"
+            );
+            Config::from_yaml("test", &yaml).expect("config").display
+        };
+
+        // The block config.example documented before `inhibited` existed.
+        let d = load("display:\n  status_icons:\n    silenced: bell-off\n    pending: hourglass\n");
+        assert_eq!(
+            d.status_icons.get("inhibited").map(String::as_str),
+            Some("bell-off")
+        );
+
+        // An explicit choice is left alone, including an explicit "no marker".
+        let d = load("display:\n  status_icons:\n    silenced: bell-off\n    inhibited: \"🔗\"\n");
+        assert_eq!(
+            d.status_icons.get("inhibited").map(String::as_str),
+            Some("🔗")
+        );
+        let d = load("display:\n  status_icons:\n    silenced: bell-off\n    inhibited: \"\"\n");
+        assert_eq!(
+            d.status_icons.get("inhibited").map(String::as_str),
+            Some("")
+        );
+
+        // Nothing to inherit from, nothing invented.
+        let d = load("display:\n  status_icons:\n    pending: hourglass\n");
+        assert_eq!(d.status_icons.get("inhibited"), None);
+
+        // No status_icons at all still gets the built-in defaults.
+        let d = load("");
+        assert_eq!(
+            d.status_icons.get("inhibited").map(String::as_str),
+            Some("bell-off")
+        );
     }
 
     #[test]

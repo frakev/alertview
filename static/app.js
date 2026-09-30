@@ -431,6 +431,9 @@ const App = {
      which is what the `all` chip selects. A value stored by an older version is a
      single name, and splitting it on commas turns it into a one-element set. */
   sevFilter:      parseFilterSet(lsGet('av-sev-filter')),
+  /* JSON, not the comma list the other two use: a source name is free text from
+     the configuration and may itself contain a comma, where a severity or status
+     name is an identifier. */
   srcFilter:      (() => { try { const r = lsGet('av-src-filter'); return new Set(r ? JSON.parse(r) : []); } catch { return new Set(); } })(),
   statusFilter:   (() => {
     const raw = lsGet('av-status-filter');
@@ -496,13 +499,16 @@ SearchClear.addEventListener('click', clearSearch);
    alert firing. This used to be one show/hide toggle covering both, so "what am
    I masking right now?" could not be asked. `firing` stands for "not
    suppressed", so a pending alert rides along with it. */
-const STATUS_KINDS = ['firing', 'silenced', 'inhibited'];
 const STATUS_CHIPS = [
   ['firing',    'Firing',    'Alerts that are neither silenced nor inhibited'],
   ['silenced',  'Silenced',  'Alerts someone has silenced'],
   ['inhibited', 'Inhibited', 'Alerts another alert is masking'],
   ['all',       'All',       'Every alert, suppressed or not'],
 ];
+/* Derived rather than written out beside the table: the two used to be two
+   lists, and forgetting the second one would have drawn a chip that every
+   click then silently refused. */
+const STATUS_KINDS = STATUS_CHIPS.map(([m]) => m).filter(m => m !== 'all');
 
 /* A stored value from another version, or a hand-edited one, must not leave the
    page filtering on a status that cannot exist. Pruning everything away would
@@ -518,28 +524,36 @@ const STATUS_CHIPS = [
 /* One chip in or out of a selection. Every chip row works this way — severities,
    statuses and sources alike: a click adds that one or takes it out, so several
    can be on at once with no modifier to hold down. An empty set means "no
-   filter", which is also what the `all` chip selects. */
-function applyChipSelection(set, value) {
-  if (value === 'all') set.clear();
+   filter", which is what the `all` chip selects, and it says so through `clear`
+   rather than through a reserved value: a source really named `all` would
+   otherwise have wiped the selection instead of joining it. */
+function applyChipSelection(set, value, clear) {
+  if (clear) set.clear();
   else if (set.has(value)) set.delete(value);
   else set.add(value);
 }
 
-function renderStatusChips() {
-  const chips = STATUS_CHIPS.map(([mode, label, title]) => {
-    const active = mode === 'all' ? App.statusFilter.size === 0 : App.statusFilter.has(mode);
-    return `<span class="status-flt-chip${active ? ' active' : ''}" data-status="${mode}"` +
-      ` role="button" tabindex="0" aria-pressed="${active}" title="${esc(title)}">${label}</span>`;
-  }).join('');
-  ['status-filter-chips', 'tv-status-chips'].forEach(id => {
+/* Every chip row is drawn into both its header and its TV container. */
+function renderChipRow(ids, html) {
+  ids.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.innerHTML = chips;
+    if (el) el.innerHTML = html;
   });
 }
 
-function setStatusFilter(mode) {
-  if (mode !== 'all' && !STATUS_KINDS.includes(mode)) return;
-  applyChipSelection(App.statusFilter, mode);
+function renderStatusChips() {
+  renderChipRow(['status-filter-chips', 'tv-status-chips'], STATUS_CHIPS.map(([mode, label, title]) => {
+    const all = mode === 'all';
+    const active = all ? App.statusFilter.size === 0 : App.statusFilter.has(mode);
+    return `<span class="status-flt-chip${active ? ' active' : ''}" data-status="${mode}"` +
+      `${all ? ' data-clear="1"' : ''}` +
+      ` role="button" tabindex="0" aria-pressed="${active}" title="${esc(title)}">${label}</span>`;
+  }).join(''));
+}
+
+function setStatusFilter(mode, clear) {
+  if (!clear && !STATUS_KINDS.includes(mode)) return;
+  applyChipSelection(App.statusFilter, mode, clear);
   lsSet('av-status-filter', formatFilterSet(App.statusFilter));
   renderStatusChips();
   renderAlerts();
@@ -565,10 +579,7 @@ function renderSourceChips() {
       ` role="button" tabindex="0" aria-pressed="${active}">` +
       `<span class="src-dot ${esc(s.status)}"></span>${esc(s.name)}${count}</span>`;
   }).join('');
-  ['src-filter-chips', 'tv-src-chips'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = chips;
-  });
+  renderChipRow(['src-filter-chips', 'tv-src-chips'], chips);
 }
 
 /* -- Refresh -- */
@@ -795,8 +806,8 @@ function filteredAlerts() {
   });
 }
 
-function toggleSev(s) {
-  applyChipSelection(App.sevFilter, s);
+function toggleSev(s, clear) {
+  applyChipSelection(App.sevFilter, s, clear);
   lsSet('av-sev-filter', formatFilterSet(App.sevFilter));
   renderStats();
   renderAlerts();
@@ -829,13 +840,18 @@ function updateTitle(shown, total) {
 
 function render() { renderStats(); renderSources(); renderSourceChips(); renderAlerts(); TV.renderChips(); TV.renderDots(); renderStatusChips(); }
 
-/* How many alerts of each severity, most severe first. */
+/* How many alerts of each severity, most severe first.
+   A selected severity that nothing currently carries is listed at zero rather
+   than dropped: the chips are the only visible trace of the filter, and a
+   selection with no chip left showing was an empty dashboard with no cause on
+   screen — after a level was renamed, or from a mistyped `?sev=`. */
 function severityCounts() {
   const counts = {};
   (App.data?.alerts ?? []).forEach(a => {
     const s = a.severity || 'none';
     counts[s] = (counts[s] || 0) + 1;
   });
+  App.sevFilter.forEach(s => { counts[s] ??= 0; });
   return Object.keys(counts)
     .sort((a, b) => severityOrder(a) - severityOrder(b))
     .map(s => [s, counts[s]]);
@@ -843,21 +859,22 @@ function severityCounts() {
 
 /* One severity chip. The header and the TV panel build the same row and had
    drifted into two copies; `style` is the only thing that ever differed. */
-function sevChipHtml(sev, label, style = '') {
-  const active = sev === 'all' ? App.sevFilter.size === 0 : App.sevFilter.has(sev);
-  const cls = sev === 'all' ? 'stat-chip' : `stat-chip ${sevClass(sev)}`;
-  const title = sev === 'all' ? 'Every severity' : sev;
-  return `<span class="${cls}${active ? ' active' : ''}"${style} data-sev="${esc(sev)}"` +
-    ` role="button" tabindex="0" aria-pressed="${active}" title="${esc(title)}">${label}</span>`;
+function sevChipHtml(sev, label, style = '', all = false) {
+  const active = all ? App.sevFilter.size === 0 : App.sevFilter.has(sev);
+  const cls = all ? 'stat-chip' : `stat-chip ${sevClass(sev)}`;
+  // Only the clearing chip needs explaining; the others already say their name.
+  const extra = all ? ' data-clear="1" title="Every severity"' : '';
+  return `<span class="${cls}${active ? ' active' : ''}"${style} data-sev="${esc(sev)}"${extra}` +
+    ` role="button" tabindex="0" aria-pressed="${active}">${label}</span>`;
 }
 
 /* The `all` chip leads the row here as it does in the TV panel. The header used
    to omit it, which was survivable while one click could only ever select one
    severity; with several selected there has to be one thing that clears them. */
 function renderStats() {
-  document.getElementById('stats-bar').innerHTML =
-    sevChipHtml('all', 'all') +
-    severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`)).join('');
+  renderChipRow(['stats-bar'],
+    sevChipHtml('all', 'all', '', true) +
+    severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`)).join(''));
 }
 
 function renderSources() {
@@ -938,16 +955,20 @@ function emptyStateHtml() {
   const pending = sources.filter(s => s.status === 'pending').map(s => s.name);
   const failing = sources.filter(s => s.status === 'error').map(s => s.name);
   let icon = '✅', text = 'No active alerts';
-  if (filtering) {
-    icon = '🔍';
-    if (App.searchQ) text = 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;';
-    else if (onlySuppressed) text = 'No ' + esc(supp.join(' or ')) + ' alerts';
-  } else if (pending.length) {
+  /* A source that has not answered comes first, whatever the filters say. An
+     empty list under a filter is a statement — "nothing is silenced", "no
+     results" — and it must not be made while a source is missing: that is the
+     dangerous case this function exists for. */
+  if (pending.length) {
     icon = '⏳';
     text = 'Waiting for ' + esc(pending.join(', '));
   } else if (failing.length) {
     icon = '⚠';
     text = 'No alerts from the sources that answered — unreachable: ' + esc(failing.join(', '));
+  } else if (filtering) {
+    icon = '🔍';
+    if (App.searchQ) text = 'No results for &laquo;&nbsp;' + esc(App.searchQ) + '&nbsp;&raquo;';
+    else if (onlySuppressed) text = 'No ' + esc(supp.join(' or ')) + ' alerts';
   }
   return `<div class="empty-state">
       <div class="empty-state-icon">${icon}</div>
@@ -968,7 +989,7 @@ function renderAlerts() {
   // Same numbers in the tab, from the same two values.
   updateTitle(filtered, total);
   // And the same story in the TV HUD, which is all a wall screen has.
-  TV.renderQuery();
+  TV.renderFilters(filtered.length, total);
 
   if (!filtered.length) {
     listEl.innerHTML = emptyStateHtml();
@@ -1391,12 +1412,20 @@ const TV = {
     document.getElementById('tv-exit-btn').addEventListener('click', () => this.toggle());
     document.getElementById('tv-more-btn').addEventListener('click', e => { e.stopPropagation(); this.toggleMore(); });
 
-    // Close panel when clicking elsewhere
+    /* Close the panel when clicking elsewhere — in the capture phase, before the
+       click reaches its target's own handler. Every chip row redraws itself by
+       replacing its container's innerHTML, which detaches the very node that was
+       clicked; by the time a bubbling handler ran, `contains(e.target)` was false
+       for a node no longer in the document and the panel shut on every chip
+       click, one click at a time. Capture also means `closest()` has to do the
+       work `e.stopPropagation()` used to: the gear holds an <svg>, so a click can
+       land on a child of the button rather than the button itself. */
     document.addEventListener('click', e => {
-      if (this.panelOpen && !document.getElementById('tv-panel').contains(e.target) && e.target.id !== 'tv-settings-btn') {
-        this.closePanel();
-      }
-    });
+      if (!this.panelOpen) return;
+      if (document.getElementById('tv-panel').contains(e.target)) return;
+      if (e.target.closest?.('#tv-settings-btn')) return;
+      this.closePanel();
+    }, true);
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
@@ -1477,9 +1506,9 @@ const TV = {
 
   renderChips() {
     const small = ' style="font-size:10px;padding:1px 7px"';
-    document.getElementById('tv-sev-chips').innerHTML =
-      sevChipHtml('all', 'all', small) +
-      severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`, small)).join('');
+    renderChipRow(['tv-sev-chips'],
+      sevChipHtml('all', 'all', small, true) +
+      severityCounts().map(([s, n]) => sevChipHtml(s, `${n}&thinsp;${esc(s)}`, small)).join(''));
   },
 
   renderDots() {
@@ -1488,17 +1517,27 @@ const TV = {
       .join('');
   },
 
-  /* The active search, in the half of the HUD that never hides. The panel closes
-     on a click anywhere else and the tab title is invisible full screen, so
-     without this a wall can show a fraction of the alerts and say nothing. */
-  renderQuery() {
+  /* What the filters are hiding, in the half of the HUD that never hides. The
+     panel closes on a click anywhere else and the tab title is invisible full
+     screen, so without this a wall can show a fraction of the alerts and say
+     nothing. Driven by the counts rather than by the search box alone: a
+     severity, source or status selection narrows the wall just as silently. */
+  renderFilters(shown, total) {
     const el = document.getElementById('tv-q');
     if (!el) return;
-    el.hidden = !App.searchQ;
+    const hiding = total > 0 && shown < total;
+    el.hidden = !hiding;
     // Emptied as well as hidden: leaving the text behind is how a cleared search
     // kept showing its old query.
-    el.innerHTML = App.searchQ ? '&#128269;&thinsp;' + esc(App.searchQ) : '';
-    el.title = App.searchQ ? 'Search active: ' + App.searchQ : '';
+    if (!hiding) { el.innerHTML = ''; el.title = ''; return; }
+    const detail = [
+      App.searchQ,
+      ...[...App.sevFilter],
+      ...[...App.srcFilter],
+      ...STATUS_KINDS.filter(k => k !== 'firing' && App.statusFilter.has(k)),
+    ].filter(Boolean).join(', ');
+    el.innerHTML = `&#128269;&thinsp;${shown}/${total}` + (detail ? '&thinsp;· ' + esc(detail) : '');
+    el.title = `Showing ${shown} of ${total} alerts` + (detail ? ` — ${detail}` : '');
   },
 };
 
@@ -1508,8 +1547,8 @@ TV.init();
 function pushUrl() {
   const p = new URLSearchParams();
   if (App.themePref !== 'auto') p.set('theme', App.themePref);
-  if (App.sevFilter.size > 0)  p.set('sev', [...App.sevFilter].join(','));
-  if (App.srcFilter.size > 0)  p.set('src', [...App.srcFilter].join(','));
+  if (App.sevFilter.size > 0)  p.set('sev', formatFilterSet(App.sevFilter));
+  if (App.srcFilter.size > 0)  p.set('src', formatFilterSet(App.srcFilter));
   if (App.searchQ)             p.set('q',        App.searchQ);
   // The default is "firing alone", so that one needs no parameter; every other
   // selection does, including the empty one that means "show everything".
@@ -1528,7 +1567,7 @@ function initFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.has('theme')) { App.themeFromUrl = true; applyTheme(p.get('theme'), { persist: false }); }
   if (p.has('sev'))   App.sevFilter = parseFilterSet(p.get('sev'));
-  if (p.has('src'))   App.srcFilter = new Set(p.get('src').split(',').filter(Boolean));
+  if (p.has('src'))   App.srcFilter = parseFilterSet(p.get('src'));
   if (p.has('q')) {
     App.searchQ = p.get('q');
     syncSearchInputs();
@@ -1578,12 +1617,13 @@ function activate(containerId, selector, handler) {
   });
 }
 
+const clears = el => el.hasAttribute('data-clear');
 ['stats-bar', 'tv-sev-chips'].forEach(id =>
-  activate(id, '[data-sev]', el => toggleSev(el.dataset.sev)));
+  activate(id, '[data-sev]', el => toggleSev(el.dataset.sev, clears(el))));
 ['src-filter-chips', 'tv-src-chips'].forEach(id =>
   activate(id, '[data-src]', el => toggleSrc(el.dataset.src)));
 ['status-filter-chips', 'tv-status-chips'].forEach(id =>
-  activate(id, '[data-status]', el => setStatusFilter(el.dataset.status)));
+  activate(id, '[data-status]', el => setStatusFilter(el.dataset.status, clears(el))));
 /* Both row toggles do the same thing to a different set, keyed by fingerprint
    so the open state survives the refresh. */
 function toggleOnCard(set) {
@@ -1613,18 +1653,25 @@ function wantsSearchFocus(e) {
   return e.key === '/' && !typing && !e.ctrlKey && !e.metaKey;
 }
 
+/* Where the shortcut lands, and whether the TV filter panel has to be opened to
+   get there. A named function because this is the part that actually regressed:
+   the header box is inside a hidden element in TV mode and cannot take focus, so
+   the shortcut has to reach the panel's twin instead. */
+function searchTarget() {
+  return TV.active
+    ? { id: 'tv-search', openPanel: true }
+    : { id: 'search', openPanel: false };
+}
+
 /* Both take over from the browser's find-in-page, which only ever finds what is
-   already on screen — the wrong tool on a filtered list of hundreds. In TV mode
-   this reveals the filter panel and lands in its search field; the header box is
-   inside a hidden element there and cannot take focus. */
+   already on screen — the wrong tool on a filtered list of hundreds. */
 document.addEventListener('keydown', e => {
   if (!wantsSearchFocus(e)) return;
   e.preventDefault();
-  let field = SearchInput;
-  if (TV.active) {
-    TV.openPanel();
-    field = document.getElementById('tv-search');
-  }
+  const want = searchTarget();
+  if (want.openPanel) TV.openPanel();
+  const field = document.getElementById(want.id);
+  if (!field) return;
   field.focus();
   field.select();
 });

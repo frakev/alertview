@@ -55,20 +55,25 @@ display:
   sorting, the filter chips, the order of groups and the sound played. A
   severity missing from the list sorts last; add your own levels to place them.
   `crit`, `err`, `warn` and `information` are understood as aliases.
-
-The severity chips filter the list. Each click adds a severity or takes it out,
-so several can be on at once — `critical` + `error` and nothing else. The `all`
-chip clears them, and so does taking the last one out.
 - **`critical_icon`** replaces the coloured dot of critical alerts. `""` gives
   them back the dot.
 - **`status_icons`** marks silenced, inhibited and pending alerts. Firing alerts
   have no marker: it is the normal state. A silenced alert has a 💬 button that
   shows the silence comment and its author. `silenced` and `inhibited` share the
-  bell by default; give them different icons to tell them apart on sight.
+  bell by default; give them different icons to tell them apart on sight. A map
+  that sets `silenced` but says nothing about `inhibited` — as any map written
+  before 0.14 does — gives `inhibited` the same icon rather than none; write
+  `inhibited: ""` to ask for no marker.
 
 `flame`, `bell-off` and `hourglass` are built-in drawings that look the same on
 every machine. Any other text is shown as is; a typed emoji works only where the
 machine has an emoji font.
+
+The severity chips filter the list. Each click adds a severity or takes it out,
+so several can be on at once — `critical` + `error` and nothing else. The `all`
+chip clears them, and so does taking the last one out. A selected severity that
+no alert currently carries stays on the row at zero, so a filter is never active
+without a chip to show it.
 
 ## Silenced and inhibited alerts
 
@@ -100,7 +105,9 @@ is no chip for it.
 
 Selecting only suppressed kinds answers "what am I not being told about right
 now?" — an empty list then says so (*No silenced alerts*) instead of showing the
-green all-clear.
+green all-clear. A source that has not answered is still reported first, whatever
+the chips say: "nothing is silenced" is not a claim to make while the source that
+would know is unreachable.
 
 ## Grouping
 
@@ -121,8 +128,9 @@ small status bar (source dots, clock, last refresh, version).
 - Press **`T`** to toggle it, **`Escape`** to leave it.
 - **`Ctrl+F`** or **`/`** opens the filter panel with the search field focused,
   without leaving TV mode. `Escape` empties the field, then closes the panel.
-- While a search is active, it is shown in the status bar — a wall screen has to
-  say why it is displaying 12 alerts out of 54.
+- Whenever the filters hide anything, the status bar shows the count and what is
+  filtering — a wall screen has to say why it is displaying 12 alerts out of 54,
+  and the panel holding the chips is closed most of the time.
 - For a wall screen, open the dashboard with **`?tv=1`**: it always starts in TV
   mode.
 - `tv_mode_default: true` starts in TV mode only in browsers where nobody has

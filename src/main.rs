@@ -1411,106 +1411,51 @@ mod tests {
         assert_eq!(css_origin("dark"), None);
     }
 
-    /// An author rule that sets `display` on an element the page hides with the
-    /// `hidden` attribute beats the browser's own `[hidden] { display: none }`
-    /// — equal specificity, and author styles win — so `el.hidden = true` sets
-    /// the attribute and changes nothing on screen. Both banners carry an
-    /// explicit guard; the TV search chip shipped without one and stayed up with
-    /// a stale query in it.
+    /// The `hidden` attribute must actually hide. The browser's own
+    /// `[hidden] { display: none }` loses to any author rule that sets `display`
+    /// — equal specificity, and author styles win — which is how the TV status
+    /// chip shipped invisible-in-name-only during development, staying on screen
+    /// with a stale query in it.
+    ///
+    /// This replaced a scanner that walked the markup looking for a per-element
+    /// guard. That scanner matched by substring, so it could not see that a later
+    /// or more specific rule still won, ignored id selectors entirely, and passed
+    /// the moment a `.foo[hidden]` string existed anywhere. One `!important` rule
+    /// removes the whole class of bug, and this checks that it is still there.
     #[test]
-    fn test_every_element_hidden_by_attribute_has_a_display_guard() {
-        /// Attribute values are dropped first: `class="hidden-labels"` and
-        /// `overflow: hidden` are not the `hidden` attribute.
-        fn attributes_only(tag: &str) -> String {
-            let mut out = String::new();
-            let mut quote = None;
-            for c in tag.chars() {
-                match quote {
-                    Some(q) if c == q => quote = None,
-                    Some(_) => {}
-                    None if c == '"' || c == '\'' => quote = Some(c),
-                    None => out.push(c),
-                }
-            }
-            out
-        }
-
-        fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-            let at = tag.find(&format!("{name}=\""))? + name.len() + 2;
-            let rest = &tag[at..];
-            Some(&rest[..rest.find('"')?])
-        }
-
-        /// Whether any author rule for `.class` sets `display`, ignoring the
-        /// `[hidden]` guard itself.
-        fn sets_display(class: &str) -> bool {
-            let needle = format!(".{class}");
-            let mut from = 0;
-            while let Some(i) = STYLE_CSS[from..].find(&needle) {
-                let at = from + i;
-                from = at + needle.len();
-                // A prefix of a longer class name is a different class.
-                if STYLE_CSS[from..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
-                {
-                    continue;
-                }
-                let Some(open) = STYLE_CSS[at..].find('{') else {
-                    continue;
-                };
-                let selector = &STYLE_CSS[at..at + open];
-                // Past the end of this rule, or the guard itself.
-                if selector.contains('}') || selector.contains("[hidden]") {
-                    continue;
-                }
-                let block = &STYLE_CSS[at + open..];
-                let end = block.find('}').unwrap_or(block.len());
-                if block[..end].contains("display:") {
-                    return true;
-                }
-            }
-            false
-        }
-
-        let mut unguarded = Vec::new();
-        let mut checked = 0;
-        for chunk in INDEX_HTML.split('<').skip(1) {
-            let tag = chunk.split('>').next().unwrap_or_default();
-            if !attributes_only(tag)
-                .split_whitespace()
-                .any(|t| t == "hidden")
-            {
-                continue;
-            }
-            let id = attribute(tag, "id").unwrap_or_default();
-            for class in attribute(tag, "class")
-                .unwrap_or_default()
-                .split_whitespace()
-            {
-                if !sets_display(class) {
-                    continue;
-                }
-                checked += 1;
-                // Guarded by its class or, just as well, by its id.
-                let guarded = STYLE_CSS.contains(&format!(".{class}[hidden]"))
-                    || (!id.is_empty() && STYLE_CSS.contains(&format!("#{id}[hidden]")));
-                if !guarded {
-                    unguarded.push(format!(".{class} (#{id})"));
-                }
-            }
-        }
-
+    fn test_the_hidden_attribute_cannot_be_overridden() {
+        let normalised: String = STYLE_CSS.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            checked >= 3,
-            "the scan found {checked} hidden elements with a display rule — \
-             the parser has stopped matching the markup"
+            normalised.contains("[hidden] { display: none !important; }"),
+            "style.css must keep the global `[hidden] {{ display: none !important; }}` rule: \
+             without !important any author rule setting `display` beats it, and an \
+             element the page marks hidden stays on screen"
         );
+
+        // Every element the page hides relies on it, so there has to be at least one.
+        let hidden_elements = INDEX_HTML
+            .split('<')
+            .filter(|chunk| {
+                let tag = chunk.split('>').next().unwrap_or_default();
+                // Attribute values dropped first: class="hidden-labels" is not it.
+                let mut out = String::new();
+                let mut quote = None;
+                for c in tag.chars() {
+                    match quote {
+                        Some(q) if c == q => quote = None,
+                        Some(_) => {}
+                        None if c == '"' || c == '\'' => quote = Some(c),
+                        None => out.push(c),
+                    }
+                }
+                out.split_whitespace().any(|t| t == "hidden")
+            })
+            .count();
         assert!(
-            unguarded.is_empty(),
-            "sets display but has no `[hidden] {{ display: none }}` rule, so it \
-             can never be hidden: {unguarded:?}"
+            hidden_elements >= 3,
+            "found {hidden_elements} elements using the `hidden` attribute — the \
+             markup scan has stopped matching, so this test is no longer checking \
+             anything about the page"
         );
     }
 

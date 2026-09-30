@@ -7,7 +7,7 @@ const { load } = require('./extract.js');
 
 const CONSTS = ['ESC', 'DEFAULT_SEV_ORDER', 'SEV_ALIASES', 'MISSING_LABEL',
                 'sevOrderCache', 'BUILTIN_ICONS', 'SOUND_PRESETS', 'tzChecked', 'THEME_PREFS',
-                'STATUS_KINDS'];
+                'STATUS_CHIPS', 'STATUS_KINDS'];
 const FNS = ['esc', 'sevClass', 'canonSev', 'sevOrderList', 'severityOrder', 'severityIcon',
              'presetFor', 'relTime', 'absTime', 'tzOptions', 'linkTarget', 'getSourceLabel',
              'genLinkHtml', 'severityMarkLink', 'safeHref', 'iconHtml', 'prefixLabels', 'prefixHtml',
@@ -16,8 +16,8 @@ const FNS = ['esc', 'sevClass', 'canonSev', 'sevOrderList', 'severityOrder', 'se
              'commentAuthor', 'commentToggleHtml', 'commentHtml', 'cardHtml', 'cardHtmlTV',
              'alertsInGroup', 'parseQuery', 'alertField', 'matchFilter', 'filtersMatch',
              'diffKnown', 'emptyStateHtml', 'cssOrigin', 'stylesheetNeedsReload',
-             'wantsSearchFocus', 'statusAllowed', 'filteredAlerts',
-             'applyChipSelection', 'parseFilterSet', 'formatFilterSet'];
+             'wantsSearchFocus', 'searchTarget', 'statusAllowed', 'filteredAlerts',
+             'applyChipSelection', 'parseFilterSet', 'formatFilterSet', 'severityCounts'];
 
 const App = { data: null, openLabels: new Set(), openComments: new Set(),
               searchQ: '', sevFilter: new Set(), srcFilter: new Set(),
@@ -226,20 +226,28 @@ ok(H.wantsSearchFocus(key('/')) === true, '"/" on its own asks for it');
 ok(H.wantsSearchFocus(key('f')) === false, 'a bare f is just a letter');
 ok(H.wantsSearchFocus(key('/', {}, 'INPUT')) === false, '"/" inside a field is a character, not a shortcut');
 ok(H.wantsSearchFocus(key('/', { ctrlKey: true })) === false, 'Ctrl+/ is something else');
-/* The regression this pins: the handler used to bail out on TV.active, so the
-   only mode with no reachable search box was the one that needed it most. */
+// Typing in a field stays typing, in either mode.
 TV.active = true;
-ok(H.wantsSearchFocus(key('f', { ctrlKey: true })) === true, 'Ctrl+F still asks for it in TV mode');
-ok(H.wantsSearchFocus(key('/')) === true, '"/" still asks for it in TV mode');
-// Typing in the TV panel's own field must stay typing.
-ok(H.wantsSearchFocus(key('/', {}, 'INPUT')) === false, 'and not while typing in the TV field');
+ok(H.wantsSearchFocus(key('/', {}, 'INPUT')) === false, 'not while typing in the TV field');
+TV.active = false;
+
+/* Where the shortcut lands is the part that regressed — wantsSearchFocus never
+   reads TV.active, so asserting it twice under both modes pinned nothing at all.
+   Deleting the TV branch has to fail a test, and this is that test. */
+TV.active = false;
+assert.deepStrictEqual(H.searchTarget(), { id: 'search', openPanel: false },
+  'out of TV mode the shortcut goes to the header box and opens no panel'); checks++;
+TV.active = true;
+assert.deepStrictEqual(H.searchTarget(), { id: 'tv-search', openPanel: true },
+  'in TV mode it goes to the panel twin, and the panel has to be opened first — '
+  + 'the header box is inside a display:none element and cannot take focus'); checks++;
 TV.active = false;
 
 // ── Chip selection: a click toggles, with no modifier to hold ────────────
 /* The same rule for severities, statuses and sources — the source row already
    worked this way, and the other two now share its one implementation. */
 const sel = (...init) => new Set(init);
-const picked = (s, v) => { H.applyChipSelection(s, v); return [...s].sort(); };
+const picked = (s, v, clear) => { H.applyChipSelection(s, v, clear); return [...s].sort(); };
 
 assert.deepStrictEqual(picked(sel(), 'critical'), ['critical'],
   'a click on an empty selection selects that one'); checks++;
@@ -249,10 +257,17 @@ assert.deepStrictEqual(picked(sel('critical', 'error'), 'error'), ['critical'],
   'clicking a selected chip takes it out'); checks++;
 assert.deepStrictEqual(picked(sel('critical'), 'critical'), [],
   'and taking the last one out is no filter at all'); checks++;
-assert.deepStrictEqual(picked(sel('critical', 'error', 'warning'), 'all'), [],
+assert.deepStrictEqual(picked(sel('critical', 'error', 'warning'), 'all', true), [],
   'the all chip clears everything'); checks++;
-assert.deepStrictEqual(picked(sel(), 'all'), [],
+assert.deepStrictEqual(picked(sel(), 'all', true), [],
   'clicking all when nothing is selected changes nothing'); checks++;
+/* Clearing is asked for explicitly, not by a reserved value: a source really
+   named `all` used to wipe the selection instead of joining it, and could never
+   render as active because the set never contained it. */
+assert.deepStrictEqual(picked(sel('Zabbix'), 'all', false), ['Zabbix', 'all'],
+  'a source or severity named "all" is an ordinary value'); checks++;
+assert.deepStrictEqual(picked(sel('all'), 'all', false), [],
+  'and can be taken out again like any other'); checks++;
 
 // Round-trips through localStorage and the URL, legacy single values included.
 assert.deepStrictEqual([...H.parseFilterSet('critical,error')].sort(), ['critical', 'error']); checks++;
@@ -308,7 +323,17 @@ assert.deepStrictEqual(bySev(), ['Firing', 'Inhibited', 'Pending', 'Silenced'],
 App.data.alerts.push({ name: 'Bare', status: 'firing', severity: '', source: 'A', labels: {}, annotations: {} });
 assert.deepStrictEqual(bySev('none'), ['Bare'], 'the none chip finds an alert with no severity'); checks++;
 App.data.alerts.pop();
+
+/* A selected severity that nothing carries still gets a chip, at zero. The
+   chips are the only visible trace of the filter, so without this a stale or
+   mistyped severity left an empty dashboard with no cause on screen and no
+   chip to click off. */
+App.sevFilter = new Set(['sev-renamed-away']);
+ok(H.severityCounts().some(([s, n]) => s === 'sev-renamed-away' && n === 0),
+  'a selected severity absent from the data is listed at zero');
 App.sevFilter = new Set();
+ok(!H.severityCounts().some(([s]) => s === 'sev-renamed-away'),
+  'and disappears once it is deselected');
 
 /* An empty list under a suppressed-only selection is an answer — "nothing is
    silenced" — not the green tick of an unfiltered all-clear. */
@@ -319,6 +344,22 @@ ok(H.emptyStateHtml().includes('No silenced alerts'), 'and it says what is empty
 App.statusFilter = new Set(['silenced', 'inhibited']);
 ok(H.emptyStateHtml().includes('No silenced or inhibited alerts'),
   'both kinds selected: both named, in chip order');
+
+/* But a source that has not answered comes first, whatever the filters say.
+   Folding the status selection into the `filtering` flag made "No silenced
+   alerts" outrank "unreachable: Zabbix" — asserting nothing is silenced while
+   the source that would know never replied. */
+App.statusFilter = new Set(['silenced']);
+App.data.sources = [{ name: 'AM', status: 'ok' }, { name: 'Zabbix', status: 'error' }];
+ok(H.emptyStateHtml().includes('unreachable: Zabbix'),
+  'a failing source is reported even under a status filter');
+App.data.sources = [{ name: 'AM', status: 'ok' }, { name: 'Zabbix', status: 'pending' }];
+ok(H.emptyStateHtml().includes('Waiting for Zabbix'),
+  'and so is one that has not answered yet');
+App.searchQ = 'nothing';
+ok(H.emptyStateHtml().includes('Waiting for Zabbix'),
+  'a search does not get to claim "no results" either while a source is missing');
+App.searchQ = '';
 App.statusFilter = new Set(['firing']);
 App.data = savedData;
 

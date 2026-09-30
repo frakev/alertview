@@ -12,13 +12,17 @@ const APP_JS = process.env.APP_JS
   || path.join(__dirname, '..', '..', 'static', 'app.js');
 const src = fs.readFileSync(APP_JS, 'utf8');
 
-// Brace counting only: no declaration in app.js carries an unbalanced brace in
-// a string, and an extraction that went wrong would fail to parse below.
+/* Delimiter counting only: no declaration in app.js carries an unbalanced one in
+   a string, and an extraction that went wrong would fail to parse below.
+   Brackets as well as braces, so a multi-line array constant can be lifted —
+   a const whose value is a table of rows is as much a declaration as an object. */
 function braceBlock(from) {
+  const first = (ch) => { const i = src.indexOf(ch, from); return i === -1 ? Infinity : i; };
+  const [open, close] = first('{') < first('[') ? ['{', '}'] : ['[', ']'];
   let depth = 0, started = false;
-  for (let i = src.indexOf('{', from); i < src.length; i++) {
-    if (src[i] === '{') { depth++; started = true; }
-    else if (src[i] === '}') {
+  for (let i = src.indexOf(open, from); i < src.length; i++) {
+    if (src[i] === open) { depth++; started = true; }
+    else if (src[i] === close) {
       depth--;
       if (started && depth === 0) return src.slice(from, i + 1);
     }
