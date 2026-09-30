@@ -260,8 +260,13 @@ struct ZabbixProblem {
         deserialize_with = "deserialize_acknowledged"
     )]
     acknowledged: String, // "0" or "1" or true/false - whether problem is acknowledged
-    #[serde(default)]
-    acknowledgements: Vec<ZabbixAcknowledgement>, // ACK details from Zabbix
+    /// `selectAcknowledgements` answers under "acknowledgements",
+    /// `selectAcknowledges` under "acknowledges" — the reply follows the
+    /// parameter name, exactly as the trigger groups do. Without the alias the
+    /// array arrived and was dropped on the floor, leaving every acknowledged
+    /// problem with the generic "Acknowledged in Zabbix" and no author.
+    #[serde(default, alias = "acknowledges")]
+    acknowledgements: Vec<ZabbixAcknowledgement>,
     #[serde(default)]
     tags: Vec<ZabbixTag>,
 }
@@ -510,7 +515,14 @@ async fn fetch_zabbix_problems(
     for candidate in candidates {
         let mut params = serde_json::json!({ "output": "extend", "selectTags": "extend" });
         if let Some(name) = candidate {
-            params[name] = serde_json::Value::Bool(true);
+            // "extend", not `true`: these are Zabbix `query` parameters, the same
+            // shape as selectTags above. Sent as a boolean, a server that has the
+            // parameter answers `an array or a character string is expected` — and
+            // that is an invalid-params error too, indistinguishable here from
+            // `unexpected parameter`, so the probe concluded the name was wrong and
+            // degraded to asking for no acknowledgements at all. Which is why the
+            // comments never arrived on any version.
+            params[name] = serde_json::Value::String("extend".to_string());
         }
         match zabbix_rpc::<Vec<ZabbixProblem>>(client, source, api_url, "problem.get", params).await
         {
@@ -1380,6 +1392,11 @@ mod tests {
     /// the dialect probing can be tested for real. `groups_param` is what its
     /// trigger.get accepts; anything else comes back as -32602, exactly the
     /// way a 7.0 answers `selectGroups` and a 6.0 answers `selectHostGroups`.
+    ///
+    /// It is as strict as the real thing about two further details, because
+    /// AlertView got both wrong and no test noticed: the select parameters are
+    /// `query` values, so a boolean is refused with its own invalid-params error,
+    /// and the acknowledgements come back under the parameter's own name.
     async fn spawn_zabbix_stub(groups_param: &'static str, ack_param: &'static str) -> String {
         use axum::{routing::post, Json, Router};
         use serde_json::{json, Value};
@@ -1396,21 +1413,43 @@ mod tests {
             let result = match method.as_str() {
                 "problem.get" => {
                     for name in ["selectAcknowledgements", "selectAcknowledges"] {
-                        if !params[name].is_null() && name != ack_param {
+                        if params[name].is_null() {
+                            continue;
+                        }
+                        if name != ack_param {
                             return Json(invalid(name));
                         }
+                        // The parameter exists, but it takes "extend" or a list of
+                        // fields. Sent a boolean, the real server says so — and it
+                        // is an invalid-params error too, which is what made the
+                        // probe conclude the name itself was unknown.
+                        if !params[name].is_string() && !params[name].is_array() {
+                            return Json(json!({"jsonrpc": "2.0", "id": 1, "error": {
+                                "code": -32602, "message": "Invalid params.",
+                                "data": format!(
+                                    "Invalid parameter \"/{name}\": an array or a \
+                                     character string is expected.")}}));
+                        }
                     }
-                    json!([{
+                    let mut problem = json!({
                         "eventid": "1", "objectid": "42", "name": "Disk full",
                         "severity": "5", "clock": "1788000000", "r_clock": "0",
                         "suppressed": "0", "acknowledged": "1",
-                        // A real Zabbix returns a userid, never a name.
-                        "acknowledgements": [
+                        "tags": [{"tag": "team", "value": "sre"}]
+                    });
+                    /* Acknowledgements only when they were asked for — a real
+                    Zabbix sends none otherwise, and a stub that volunteers them
+                    lets a request that failed to ask still look like it worked.
+                    The reply follows the parameter name: "acknowledges" on 6.0,
+                    "acknowledgements" on 7.0. A real Zabbix returns a userid
+                    here, never a name. */
+                    if !params[ack_param].is_null() {
+                        problem[ack_param.trim_start_matches("select").to_lowercase()] = json!([
                             {"acknowledgeid": "9", "userid": "7", "clock": "1788000100",
                              "message": "on it"}
-                        ],
-                        "tags": [{"tag": "team", "value": "sre"}]
-                    }])
+                        ]);
+                    }
+                    json!([problem])
                 }
                 "trigger.get" => {
                     for name in ["selectHostGroups", "selectGroups"] {
