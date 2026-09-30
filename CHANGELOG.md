@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-30
+
+### Added
+- **Silenced and inhibited alerts are told apart.** Alertmanager reports both as `suppressed`, and AlertView flattened them into one `silenced` status — the difference survived only as a sentence in an annotation, so it could not be filtered on. They are two different facts: a silence is somebody's decision, an inhibition is a consequence of another alert firing. Alerts now carry `inhibited` as a status of its own, and four chips in the toolbar and the TV filter panel choose what to show: **Firing** (everything not suppressed, the default), **Silenced**, **Inhibited** and **All**. Selecting only the suppressed kinds answers "what am I not being told about right now?", and an empty list then says *No silenced alerts* instead of showing the green all-clear. `display.status_icons` gained an `inhibited` key, sharing the bell by default so nothing looks different until you want it to. An alert both silenced and inhibited counts as silenced — somebody chose that one.
+- **Several severities, or several statuses, can be selected at once.** Both chip rows held a single value: picking `error` dropped `critical`. They now work exactly like the source chips — each click adds a chip or takes it out, with no modifier to hold down — and all three rows share one implementation instead of three. `?sev=` and `?show=` accept comma-separated lists, as `?src=` already did, and the header severity row gained the `all` chip the TV panel always had: with several selected, something has to clear them.
+- **The search works in TV mode.** `Ctrl+F` and `/` used to do nothing there: the handler bailed out on TV mode, and the header search box cannot take focus anyway since the header is hidden. They now open the filter panel — where the severity, source and status filters already live — with a search field focused. `Escape` empties it, then closes the panel, then leaves TV mode. The two search boxes share one query, so a search typed in TV mode is still there after pressing `T`.
+- **An active search is shown in the status bar**, in the half that never hides. The panel closes on a click anywhere else and the `32 / 54 alerts` of the tab title is invisible full screen, so a wall screen could show a fraction of its alerts without saying why.
+- A test that every element the page hides with the `hidden` attribute also has a `[hidden] { display: none }` rule. An author rule setting `display` beats the browser's own — equal specificity, and author styles win — so such an element can never actually be hidden. Both banners had the guard; the new status-bar chip shipped without one during development and stayed up with a stale query in it.
+
+### Changed
+- The show/hide-silenced button is replaced by the status chips. A browser that had silenced alerts showing carries over to **All**; `?silenced=1` still means the same thing, and `?show=` is the new spelling. **An alert masked by another one now reports `status: "inhibited"` over the API** instead of `"silenced"` — the reason this is a minor release and not a patch.
+- In TV mode, `Ctrl+F` no longer opens the browser's find-in-page. That search only ever found the rows already rendered, which on a filtered list of hundreds is the wrong tool; it remains available from the browser's own menu.
+
+### Fixed
+- **The `none` severity chip filtered nothing.** An alert whose source sends no severity is counted under `none`, but the filter compared the raw empty value, so clicking the chip emptied the list instead of showing those alerts.
+
 ## [0.13.3] - 2026-09-29
 
 ### Changed
@@ -459,7 +475,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.13.3...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/frakev/alertview/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/frakev/alertview/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/frakev/alertview/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/frakev/alertview/compare/v0.13.0...v0.13.1
