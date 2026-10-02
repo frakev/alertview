@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A second `Ctrl+F` hands the press to the browser's own find-in-page.** The shortcut has taken it over since 0.14.0 — the right default on a filtered list, where the browser only ever searches the rows already rendered, but it also removed the one tool for finding a word *inside* a row. Pressing `Ctrl+F` again, from the search box the first press focused, declines to suppress the default action and the browser opens its bar. Leaving the box puts the first behaviour back. No timer and no new state: the condition is simply that the focus is already in the box the shortcut would have filled, which in TV mode means the panel's field rather than the hidden header one. Nothing can open that bar by script, so letting the press through is the only way to offer it.
+
 ## [0.14.2] - 2026-09-30
 
 ### Fixed

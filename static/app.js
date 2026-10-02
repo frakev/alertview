@@ -1663,10 +1663,25 @@ function searchTarget() {
     : { id: 'search', openPanel: false };
 }
 
+/* Pressing the shortcut again, from inside the box it just filled, asks for the
+   browser's own find-in-page instead. The first press is what puts the focus
+   there, so "the focus is already there" is the whole condition: no timer to
+   tune and no state to reset. Leaving the box — a click elsewhere, or Escape
+   until it blurs, which takes two presses when there is a query to clear —
+   restores the first behaviour. Only Ctrl+F: a second "/" is a character. */
+function wantsBrowserFind(e) {
+  if (e.key !== 'f' && e.key !== 'F') return false;
+  if (!e.ctrlKey && !e.metaKey) return false;
+  return e.target.id === searchTarget().id;
+}
+
 /* Both take over from the browser's find-in-page, which only ever finds what is
-   already on screen — the wrong tool on a filtered list of hundreds. */
+   already on screen — the wrong tool on a filtered list of hundreds. Declining
+   to preventDefault is the only way to hand it back: the find bar is a default
+   action, and no script can open it. */
 document.addEventListener('keydown', e => {
   if (!wantsSearchFocus(e)) return;
+  if (wantsBrowserFind(e)) return;
   e.preventDefault();
   const want = searchTarget();
   if (want.openPanel) TV.openPanel();

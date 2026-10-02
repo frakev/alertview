@@ -128,6 +128,7 @@ small status bar (source dots, clock, last refresh, version).
 - Press **`T`** to toggle it, **`Escape`** to leave it.
 - **`Ctrl+F`** or **`/`** opens the filter panel with the search field focused,
   without leaving TV mode. `Escape` empties the field, then closes the panel.
+  **`Ctrl+F` again**, from that field, opens the browser's own find-in-page.
 - Whenever the filters hide anything, the status bar shows the count and what is
   filtering — a wall screen has to say why it is displaying 12 alerts out of 54,
   and the panel holding the chips is closed most of the time.
@@ -151,8 +152,14 @@ severity=critical, team!=dba
 
 `Ctrl+F` or `/` jumps to the search box — in TV mode, to the one in the filter
 panel, which those keys open. Both take over from the browser's find-in-page,
-which only searches the rows already on screen; it stays available from the
-browser's own menu.
+which only searches the rows already on screen.
+
+To get it anyway, **press `Ctrl+F` a second time** without leaving the search
+box: the dashboard lets that press through and the browser opens its own bar.
+Useful for finding a word inside a row — a link, an annotation — rather than
+narrowing the list. Leaving the search box puts the first behaviour back:
+click elsewhere, or press `Escape` until the box loses focus (twice, if there
+is a query to clear first).
 
 Filters are kept in the URL, so a view can be bookmarked or put on a screen:
 

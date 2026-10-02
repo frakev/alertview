@@ -16,7 +16,8 @@ const FNS = ['esc', 'sevClass', 'canonSev', 'sevOrderList', 'severityOrder', 'se
              'commentAuthor', 'commentToggleHtml', 'commentHtml', 'cardHtml', 'cardHtmlTV',
              'alertsInGroup', 'parseQuery', 'alertField', 'matchFilter', 'filtersMatch',
              'diffKnown', 'emptyStateHtml', 'cssOrigin', 'stylesheetNeedsReload',
-             'wantsSearchFocus', 'searchTarget', 'statusAllowed', 'filteredAlerts',
+             'wantsSearchFocus', 'searchTarget', 'wantsBrowserFind',
+             'statusAllowed', 'filteredAlerts',
              'applyChipSelection', 'parseFilterSet', 'formatFilterSet', 'severityCounts'];
 
 const App = { data: null, openLabels: new Set(), openComments: new Set(),
@@ -241,6 +242,31 @@ TV.active = true;
 assert.deepStrictEqual(H.searchTarget(), { id: 'tv-search', openPanel: true },
   'in TV mode it goes to the panel twin, and the panel has to be opened first — '
   + 'the header box is inside a display:none element and cannot take focus'); checks++;
+TV.active = false;
+
+/* Pressing the shortcut a second time hands the press to the browser. The
+   handler can only do that by NOT calling preventDefault, so the two halves
+   have to agree: wantsSearchFocus still has to claim Ctrl+F inside a field,
+   or the press would fall out of the handler before anyone decided anything. */
+const inBox = (k, mod = {}, id = 'search') =>
+  ({ key: k, target: { tagName: 'INPUT', id }, ...mod });
+
+ok(H.wantsSearchFocus(inBox('f', { ctrlKey: true })) === true,
+  'Ctrl+F inside the box is still the shortcut — the way out is wantsBrowserFind, not here');
+ok(H.wantsBrowserFind(inBox('f', { ctrlKey: true })) === true,
+  'a second Ctrl+F, from the box the first one focused, is for the browser');
+ok(H.wantsBrowserFind(inBox('F', { metaKey: true })) === true, 'Cmd+F the same way');
+ok(H.wantsBrowserFind(key('f', { ctrlKey: true })) === false,
+  'the first press comes from the page, and belongs to us');
+ok(H.wantsBrowserFind(inBox('f')) === false, 'a bare f in the box is a letter being typed');
+ok(H.wantsBrowserFind(inBox('/')) === false, 'and so is a second slash');
+
+// Which box counts is whichever one the shortcut would have focused.
+TV.active = true;
+ok(H.wantsBrowserFind(inBox('f', { ctrlKey: true }, 'tv-search')) === true,
+  'in TV mode the panel twin is that box');
+ok(H.wantsBrowserFind(inBox('f', { ctrlKey: true }, 'search')) === false,
+  'the header box is unreachable in TV mode, so a press from it is not a second press');
 TV.active = false;
 
 // ── Chip selection: a click toggles, with no modifier to hold ────────────
