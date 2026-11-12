@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-11-12
+
+### Security
+- **Dependency updates for five RustSec advisories**, none of them in AlertView's own code but all of them in the shipped binary:
+  - `rustls-webpki` 0.103.15 → 0.103.16 (RUSTSEC-2026-0382): certificate verification could accept distrusted intermediates. This is the TLS check on every outbound connection to Alertmanager, Grafana and Zabbix.
+  - `webpki-roots` 1.0.7 → 1.0.12 (RUSTSEC-2026-0381): the bundled root store still trusted the distrusted emSign intermediates.
+  - `quinn-proto` 0.11.17 → 0.11.19 (RUSTSEC-2026-0338, -0340, -0343): three ways for a remote peer to panic the QUIC stack.
+  - `tokio` 1.52.1 → 1.54.1 (RUSTSEC-2026-0386, unsound `AsyncFd` constructors).
+- `rustls` 0.23.45 → 0.23.46 (Dependabot).
+
 ## [0.14.3] - 2026-10-02
 
 ### Added
@@ -506,7 +516,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Cargo.toml with dependencies
 - Placeholder files for main components
 
-[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.3...HEAD
+[Unreleased]: https://github.com/frakev/alertview/compare/v0.14.4...HEAD
+[0.14.4]: https://github.com/frakev/alertview/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/frakev/alertview/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/frakev/alertview/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/frakev/alertview/compare/v0.14.0...v0.14.1
